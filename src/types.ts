@@ -57,8 +57,19 @@ export interface SearchEngine {
 
 export interface AppConfig {
   background: string;
+  mobileBackground?: string;
+  enableMobileWallpaper?: boolean;
+  fixedWallpaper?: boolean; // Deprecated in favor of specific rotation flags
+  pcRotation?: boolean;
+  pcRotationInterval?: number;
+  pcRotationMode?: "random" | "sequential";
+  mobileRotation?: boolean;
+  mobileRotationInterval?: number;
+  mobileRotationMode?: "random" | "sequential";
   backgroundBlur?: number;
   backgroundMask?: number;
+  mobileBackgroundBlur?: number;
+  mobileBackgroundMask?: number;
   customTitle: string;
   titleAlign: "left" | "center" | "right" | string;
   titleSize: number;
@@ -103,6 +114,7 @@ export interface WidgetConfig {
   colSpan?: number;
   rowSpan?: number;
   isPublic: boolean;
+  hideOnMobile?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
 }

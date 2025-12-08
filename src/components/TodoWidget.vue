@@ -1,40 +1,46 @@
 <script setup lang="ts">
 /* eslint-disable vue/no-mutating-props */
-import { ref, watch, onMounted } from 'vue'
-import { useStorage } from '@vueuse/core'
-import type { WidgetConfig } from '@/types'
+import { ref, watch, onMounted } from "vue";
+import { useStorage } from "@vueuse/core";
+import type { WidgetConfig } from "@/types";
 
-const props = defineProps<{ widget: WidgetConfig }>()
-const newItem = ref('')
+interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+const props = defineProps<{ widget: WidgetConfig }>();
+const newItem = ref("");
 
 // 本地持久化备份：防止网络断开时数据丢失
-const localBackup = useStorage<any[]>(`flatnas-todo-backup-${props.widget.id}`, [])
+const localBackup = useStorage<TodoItem[]>(`flatnas-todo-backup-${props.widget.id}`, []);
 
 watch(
   () => props.widget.data,
   (newVal) => {
-    if (newVal) localBackup.value = newVal
+    if (newVal) localBackup.value = newVal;
   },
   { deep: true },
-)
+);
 
 onMounted(() => {
   // 如果服务端数据为空，但本地有备份，则恢复备份
   if ((!props.widget.data || props.widget.data.length === 0) && localBackup.value.length > 0) {
-    props.widget.data = localBackup.value
+    props.widget.data = localBackup.value;
   }
-})
+});
 
 const add = () => {
-  if (!newItem.value) return
-  if (!props.widget.data) props.widget.data = []
-  props.widget.data.push({ id: Date.now().toString(), text: newItem.value, done: false })
-  newItem.value = ''
-}
+  if (!newItem.value) return;
+  if (!props.widget.data) props.widget.data = [];
+  props.widget.data.push({ id: Date.now().toString(), text: newItem.value, done: false });
+  newItem.value = "";
+};
 
 const remove = (index: number) => {
-  props.widget.data.splice(index, 1)
-}
+  props.widget.data.splice(index, 1);
+};
 </script>
 
 <template>
@@ -44,7 +50,7 @@ const remove = (index: number) => {
     <div class="font-bold text-gray-800 text-xs mb-2 flex justify-between items-center">
       <span>✅ 待办</span>
       <span class="text-[10px] text-gray-400"
-        >{{ widget.data?.filter((i: any) => !i.done).length || 0 }} 待完成</span
+        >{{ widget.data?.filter((i: TodoItem) => !i.done).length || 0 }} 待完成</span
       >
     </div>
 

@@ -25,7 +25,7 @@ const getInitialCity = () => {
       const data = JSON.parse(cachedCity);
       return data.city;
     }
-  } catch (e) {
+  } catch {
     // ignore error
   }
   return "定位中...";
@@ -133,7 +133,7 @@ const fetchWeather = async () => {
             city = data.city;
             useCache = true;
           }
-        } catch (e) {
+        } catch {
           localStorage.removeItem("flatnas_auto_city");
         }
       }
@@ -181,7 +181,7 @@ const fetchWeather = async () => {
           weather.value = data.weather;
           return;
         }
-      } catch (e) {
+      } catch {
         localStorage.removeItem(`flatnas_weather_${city}`);
       }
     }
@@ -221,7 +221,13 @@ const fetchWeather = async () => {
     }
   } catch (e) {
     console.warn("[Weather] 获取失败，转为离线模式", e);
-    weather.value = { temp: "22", city: "本地", text: "舒适" };
+    weather.value = {
+      temp: "22",
+      city: "本地",
+      text: "舒适",
+      humidity: "50%",
+      today: { min: "18", max: "25" },
+    };
   }
 };
 

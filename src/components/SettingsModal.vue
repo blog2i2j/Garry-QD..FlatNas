@@ -3,12 +3,26 @@ import { ref, onMounted, computed } from "vue";
 import { useMainStore } from "../stores/main";
 import type { RssFeed, WidgetConfig, RssCategory, SearchEngine, NavGroup, NavItem } from "@/types";
 import IconUploader from "./IconUploader.vue";
+import WallpaperLibrary from "./WallpaperLibrary.vue";
 import PasswordConfirmModal from "./PasswordConfirmModal.vue";
 import { VueDraggable } from "vue-draggable-plus";
 
 defineProps<{ show: boolean }>();
 const emit = defineEmits(["update:show"]);
 const store = useMainStore();
+
+const showWallpaperLibrary = ref(false);
+
+const handleWallpaperSelect = (payload: { url: string; type: string } | string) => {
+  const url = typeof payload === "string" ? payload : payload.url;
+  const type = typeof payload === "string" ? "pc" : payload.type;
+
+  if (type === "mobile") {
+    store.appConfig.mobileBackground = url;
+  } else {
+    store.appConfig.background = url;
+  }
+};
 
 const activeTab = ref("style");
 const searchWidget = computed(() => store.widgets.find((w) => w.id === "w5"));
@@ -82,6 +96,7 @@ const uploadMusic = async (event: Event) => {
 
 // Password Confirm Logic
 const showPasswordConfirm = ref(false);
+const showMultiUserWarning = ref(false);
 const pendingAction = ref<(() => void) | null>(null);
 const confirmTitle = ref("");
 
@@ -125,11 +140,14 @@ const toggleAuthMode = async () => {
 
   if (newMode === "single") {
     if (!confirm("确定要切换到单用户模式吗？\n切换后将隐藏注册入口，默认登录 Admin 账户。")) return;
+    performAuthModeSwitch(newMode);
   } else {
-    if (!confirm("确定要切换到多用户模式吗？\n切换后将允许新用户注册，登录时需输入用户名。"))
-      return;
+    // Show custom warning for multi-user mode switch
+    showMultiUserWarning.value = true;
   }
+};
 
+const performAuthModeSwitch = async (newMode: string) => {
   const success = await store.updateSystemConfig({ authMode: newMode });
   if (success) {
     alert(`已切换为${newMode === "single" ? "单用户模式" : "多用户模式"}`);
@@ -268,8 +286,9 @@ const handleReset = async () => {
       }
       // 移除成功弹窗，直接刷新
       window.location.reload();
-    } catch (e: any) {
-      alert("❌ 恢复失败: " + (e.message || "未知错误"));
+    } catch (e: unknown) {
+      const err = e as Error;
+      alert("❌ 恢复失败: " + (err.message || "未知错误"));
       console.error("[SettingsModal][Reset] failed", e);
     }
   }, "请输入密码以确认恢复初始化");
@@ -297,8 +316,9 @@ const handleSaveAsDefault = async () => {
       setTimeout(() => {
         saveDefaultBtnText.value = "💾 设为默认模板";
       }, 2000);
-    } catch (e: any) {
-      alert("❌ 保存失败: " + (e.message || "未知错误"));
+    } catch (e: unknown) {
+      const err = e as Error;
+      alert("❌ 保存失败: " + (err.message || "未知错误"));
       console.error("[SettingsModal][SaveDefault] failed", e);
     }
   }, "请输入密码以确认保存默认模板");
@@ -511,12 +531,25 @@ const removeWidget = (id: string) => {
   widgetToDeleteId.value = id;
   showDeleteWidgetConfirm.value = true;
 };
+
+// Wallpaper Library Logic
+// Wallpaper logic moved to WallpaperLibrary.vue
+// Keeping minimal code if needed, or remove completely if unused.
+// Since we removed the UI that uses these functions, we can remove the functions too.
+// However, to be safe and clean, I will remove the unused refs and functions.
+
+/* Removed: wallpapers, loadingWallpapers, fetchWallpapers, deleteWallpaper, uploadWallpaperInput, triggerWallpaperUpload, handleWallpaperUpload */
+/* Removed: mobileWallpapers, loadingMobileWallpapers, fetchMobileWallpapers, deleteMobileWallpaper, uploadMobileWallpaperInput, triggerMobileWallpaperUpload, handleMobileWallpaperUpload */
+
+onMounted(() => {
+  // Removed wallpaper fetches
+});
 </script>
 
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex h-[480px] relative"
+      class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col md:flex-row h-[600px] md:h-[480px] relative"
     >
       <button
         @click="close"
@@ -534,9 +567,13 @@ const removeWidget = (id: string) => {
         </svg>
       </button>
 
-      <div class="w-48 bg-gray-50 border-r border-gray-100 p-4 flex flex-col">
-        <h3 class="text-xl font-bold text-gray-800 mb-6 px-2">⚙️ 设置</h3>
-        <nav class="space-y-1">
+      <div
+        class="w-full md:w-48 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-100 p-4 flex flex-col md:flex-col shrink-0"
+      >
+        <h3 class="text-xl font-bold text-gray-800 mb-4 md:mb-6 px-2">⚙️ 设置</h3>
+        <nav
+          class="flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0"
+        >
           <button
             @click="activeTab = 'style'"
             :class="
@@ -544,7 +581,7 @@ const removeWidget = (id: string) => {
                 ? 'bg-purple-100 text-purple-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             🎨 外观与布局
           </button>
@@ -555,7 +592,7 @@ const removeWidget = (id: string) => {
                 ? 'bg-green-100 text-green-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             🧩 小组件
           </button>
@@ -566,7 +603,7 @@ const removeWidget = (id: string) => {
                 ? 'bg-orange-100 text-orange-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             📡 RSS 订阅
           </button>
@@ -577,7 +614,7 @@ const removeWidget = (id: string) => {
                 ? 'bg-blue-100 text-blue-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             🔎 搜索引擎
           </button>
@@ -588,7 +625,7 @@ const removeWidget = (id: string) => {
                 ? 'bg-purple-100 text-purple-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             🖥️ 万能窗口
           </button>
@@ -599,13 +636,13 @@ const removeWidget = (id: string) => {
                 ? 'bg-orange-100 text-orange-700 font-bold'
                 : 'text-gray-600 hover:bg-gray-100'
             "
-            class="w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
           >
             🔒 账户管理
           </button>
         </nav>
 
-        <div class="mt-auto pt-4 border-t border-gray-200 px-2 grid grid-cols-1 gap-2">
+        <div class="mt-auto pt-4 border-t border-gray-200 px-2 hidden md:grid grid-cols-1 gap-2">
           <div class="text-center flex items-center justify-center gap-1">
             <span class="text-xs text-gray-400 font-mono">v{{ store.currentVersion }}</span>
             <span
@@ -690,46 +727,20 @@ const removeWidget = (id: string) => {
                         backgroundColor: `rgba(0,0,0,${store.appConfig.backgroundMask ?? 0})`,
                       }"
                     />
-                    <button
-                      v-if="store.appConfig.background"
-                      @click="store.appConfig.background = ''"
-                      class="mt-2 text-xs text-red-500 hover:underline"
-                    >
-                      清除背景
-                    </button>
-                  </div>
-
-                  <div
-                    v-if="store.appConfig.background"
-                    class="grid grid-cols-2 gap-4 mt-2 p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <label class="block text-xs text-gray-500 mb-1 flex justify-between">
-                        <span>模糊半径</span>
-                        <span>{{ store.appConfig.backgroundBlur ?? 0 }}px</span>
-                      </label>
-                      <input
-                        type="range"
-                        v-model.number="store.appConfig.backgroundBlur"
-                        min="0"
-                        max="20"
-                        step="1"
-                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-gray-500 mb-1 flex justify-between">
-                        <span>遮罩浓度</span>
-                        <span>{{ Math.round((store.appConfig.backgroundMask ?? 0) * 100) }}%</span>
-                      </label>
-                      <input
-                        type="range"
-                        v-model.number="store.appConfig.backgroundMask"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                      />
+                    <div class="mt-2 flex justify-between items-center">
+                      <button
+                        v-if="store.appConfig.background"
+                        @click="store.appConfig.background = ''"
+                        class="text-xs text-red-500 hover:underline"
+                      >
+                        清除背景
+                      </button>
+                      <button
+                        @click="showWallpaperLibrary = true"
+                        class="text-xs text-blue-500 hover:underline font-bold flex items-center gap-1 ml-auto"
+                      >
+                        <span>🖼️</span> 管理壁纸库
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -737,6 +748,8 @@ const removeWidget = (id: string) => {
             </div>
 
             <div class="border-t border-gray-100"></div>
+
+            <WallpaperLibrary v-model:show="showWallpaperLibrary" @select="handleWallpaperSelect" />
 
             <div>
               <h4 class="text-lg font-bold mb-2 text-gray-800 border-l-4 border-purple-500 pl-2">
@@ -1597,16 +1610,37 @@ const removeWidget = (id: string) => {
                     <div class="flex flex-col items-end gap-1">
                       <span class="text-[10px] text-gray-400 font-medium">公开</span
                       ><label class="relative inline-flex items-center cursor-pointer"
-                        ><input type="checkbox" v-model="w.isPublic" class="sr-only peer" />
+                        ><input
+                          type="checkbox"
+                          v-model="w.isPublic"
+                          class="sr-only peer"
+                          @change="store.saveData()" />
                         <div
                           class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
                         ></div
                       ></label>
                     </div>
                     <div class="flex flex-col items-end gap-1">
+                      <span class="text-[10px] text-gray-400 font-medium">手机隐藏</span
+                      ><label class="relative inline-flex items-center cursor-pointer"
+                        ><input
+                          type="checkbox"
+                          v-model="w.hideOnMobile"
+                          class="sr-only peer"
+                          @change="store.saveData()" />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"
+                        ></div
+                      ></label>
+                    </div>
+                    <div class="flex flex-col items-end gap-1">
                       <span class="text-[10px] text-gray-400 font-medium">启用</span
                       ><label class="relative inline-flex items-center cursor-pointer"
-                        ><input type="checkbox" v-model="w.enable" class="sr-only peer" />
+                        ><input
+                          type="checkbox"
+                          v-model="w.enable"
+                          class="sr-only peer"
+                          @change="store.saveData()" />
                         <div
                           class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
                         ></div
@@ -1776,6 +1810,46 @@ const removeWidget = (id: string) => {
     :title="confirmTitle"
     :on-success="onAuthSuccess"
   />
+
+  <!-- Multi-User Warning Modal -->
+  <div
+    v-if="showMultiUserWarning"
+    class="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+  >
+    <div
+      class="bg-white rounded-xl shadow-xl p-6 w-96 border border-gray-100 transform scale-100 animate-fade-in"
+    >
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
+          ⚠️
+        </div>
+        <h3 class="text-lg font-bold text-gray-800">切换模式警告</h3>
+      </div>
+
+      <p class="text-sm text-gray-600 mb-6 leading-relaxed">
+        请先导出配置！<br />
+        切换到多用户模式会导致当前单用户配置丢失（数据隔离），是否确认继续？
+      </p>
+
+      <div class="flex gap-3">
+        <button
+          @click="showMultiUserWarning = false"
+          class="flex-1 px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors"
+        >
+          取消
+        </button>
+        <button
+          @click="
+            showMultiUserWarning = false;
+            performAuthModeSwitch('multi');
+          "
+          class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md"
+        >
+          确认切换
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Delete Confirmation Modal -->
   <div

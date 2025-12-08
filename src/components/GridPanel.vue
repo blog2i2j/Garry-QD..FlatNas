@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { useStorage } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
+import { useWallpaperRotation } from "../composables/useWallpaperRotation";
 import type { NavItem, WidgetConfig, NavGroup } from "@/types";
 import EditModal from "./EditModal.vue";
 import SettingsModal from "./SettingsModal.vue";
@@ -26,6 +27,7 @@ import AppSidebar from "./AppSidebar.vue";
 import SizeSelector from "./SizeSelector.vue";
 
 const store = useMainStore();
+useWallpaperRotation();
 
 const showEditModal = ref(false);
 const showSettingsModal = ref(false);
@@ -742,22 +744,45 @@ onMounted(() => {
   <div class="min-h-screen relative overflow-hidden flex flex-col">
     <!-- ✨ Global Background Layer -->
     <div
-      v-if="store.appConfig.background"
+      v-if="store.appConfig.background || store.appConfig.mobileBackground"
       class="fixed inset-0 z-0 pointer-events-none select-none"
     >
-      <!-- Image Layer with Blur -->
+      <!-- Desktop Image Layer -->
       <div
         class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat transition-all duration-300"
+        :class="(store.appConfig.enableMobileWallpaper ?? true) ? 'hidden md:block' : 'block'"
+        v-if="store.appConfig.background"
         :style="{
           backgroundImage: `url(${store.appConfig.background})`,
           filter: `blur(${store.appConfig.backgroundBlur ?? 0}px)`,
         }"
       ></div>
-      <!-- Mask Layer -->
+
+      <!-- Mobile Image Layer -->
+      <div
+        class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat transition-all duration-300 md:hidden"
+        v-if="(store.appConfig.enableMobileWallpaper ?? true) && store.appConfig.mobileBackground"
+        :style="{
+          backgroundImage: `url(${store.appConfig.mobileBackground})`,
+          filter: `blur(${store.appConfig.mobileBackgroundBlur ?? 0}px)`,
+        }"
+      ></div>
+
+      <!-- Desktop Mask Layer -->
       <div
         class="absolute inset-0 transition-all duration-300"
+        :class="(store.appConfig.enableMobileWallpaper ?? true) ? 'hidden md:block' : 'block'"
         :style="{
           backgroundColor: `rgba(0,0,0,${store.appConfig.backgroundMask ?? 0})`,
+        }"
+      ></div>
+
+      <!-- Mobile Mask Layer -->
+      <div
+        class="absolute inset-0 transition-all duration-300 md:hidden"
+        v-if="store.appConfig.enableMobileWallpaper ?? true"
+        :style="{
+          backgroundColor: `rgba(0,0,0,${store.appConfig.mobileBackgroundMask ?? 0})`,
         }"
       ></div>
     </div>
@@ -938,6 +963,7 @@ onMounted(() => {
               isEditMode
                 ? 'ring-2 ring-blue-400/50 rounded-2xl cursor-move hover:ring-blue-500'
                 : '',
+              widget.hideOnMobile ? 'hidden md:block' : '',
             ]"
           >
             <button
@@ -1230,7 +1256,12 @@ onMounted(() => {
                 >
                   <!-- Line 1 (Top) -->
                   <div
-                    class="text-xs truncate font-medium leading-tight"
+                    :class="[
+                      !item.description1 && !item.description2 && !item.description3
+                        ? 'text-left'
+                        : 'text-xs',
+                      'truncate font-medium leading-tight',
+                    ]"
                     :style="{
                       color:
                         item.titleColor ||
@@ -1241,7 +1272,8 @@ onMounted(() => {
                         item.backgroundImage || group.backgroundImage
                           ? '0 1px 2px rgba(0,0,0,0.8)'
                           : 'none',
-                      opacity: item.description1 ? 1 : 0.5,
+                      opacity:
+                        item.description1 || (!item.description2 && !item.description3) ? 1 : 0.5,
                     }"
                   >
                     {{ item.description1 || item.title }}

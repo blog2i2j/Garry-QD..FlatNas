@@ -11,6 +11,7 @@
 // 　　　　  依赖声明详见：https://developer.fnnas.com/docs/core-concepts/manifest#%E4%BE%9D%E8%B5%96%E7%AE%A1%E7%90%86
 // 　许可证: MIT
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 // 引入内置模块（解析查询字符串）
 const querystring = require('querystring')
 

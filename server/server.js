@@ -47,6 +47,8 @@ const OLD_DATA_FILE = path.join(DATA_DIR, "data.json");
 const SYSTEM_CONFIG_FILE = path.join(DATA_DIR, "system.json");
 const DEFAULT_FILE = path.join(__dirname, "default.json");
 const MUSIC_DIR = path.join(__dirname, "music");
+const BACKGROUNDS_DIR = path.join(DATA_DIR, "backgrounds");
+const MOBILE_BACKGROUNDS_DIR = path.join(DATA_DIR, "mobile_backgrounds");
 
 // Helper to ensure directory exists safely
 async function ensureDir(dirPath) {
@@ -120,6 +122,8 @@ async function ensureInit() {
   await ensureDir(DATA_DIR);
   await ensureDir(USERS_DIR);
   await ensureDir(MUSIC_DIR);
+  await ensureDir(BACKGROUNDS_DIR);
+  await ensureDir(MOBILE_BACKGROUNDS_DIR);
 
   // Load System Config
   try {
@@ -363,7 +367,7 @@ app.post("/api/login", async (req, res) => {
 
   if (match) {
     resetFailedAttempt(ip);
-    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: "30d" });
+    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: "3d" });
     res.json({ success: true, token, username });
   } else {
     recordFailedAttempt(ip);
@@ -752,6 +756,111 @@ app.get("/api/hot/news", async (req, res) => {
 
 // Serve music files statically
 app.use("/music", express.static(MUSIC_DIR));
+app.use("/backgrounds", express.static(BACKGROUNDS_DIR));
+app.use("/mobile_backgrounds", express.static(MOBILE_BACKGROUNDS_DIR));
+
+// Get backgrounds list
+app.get("/api/backgrounds", async (req, res) => {
+  try {
+    const files = await fs.readdir(BACKGROUNDS_DIR);
+    const bgFiles = files.filter((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return [".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"].includes(ext);
+    });
+    res.json(bgFiles);
+  } catch (err) {
+    console.error("Failed to read backgrounds dir", err);
+    res.json([]);
+  }
+});
+
+// Upload Background
+const bgStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, BACKGROUNDS_DIR);
+  },
+  filename: function (req, file, cb) {
+    const name = Buffer.from(file.originalname, "latin1").toString("utf8");
+    cb(null, name);
+  },
+});
+const bgUpload = multer({ storage: bgStorage });
+
+app.post("/api/backgrounds/upload", authenticateToken, bgUpload.array("files"), (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  res.json({ success: true, count: req.files.length });
+});
+
+// Delete Background
+app.delete("/api/backgrounds/:filename", authenticateToken, async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  const filename = req.params.filename;
+  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+  try {
+    await fs.unlink(path.join(BACKGROUNDS_DIR, filename));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete background", err);
+    res.status(500).json({ error: "Failed to delete background" });
+  }
+});
+
+// === Mobile Backgrounds ===
+
+// Get mobile backgrounds list
+app.get("/api/mobile_backgrounds", async (req, res) => {
+  try {
+    const files = await fs.readdir(MOBILE_BACKGROUNDS_DIR);
+    const bgFiles = files.filter((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return [".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"].includes(ext);
+    });
+    res.json(bgFiles);
+  } catch (err) {
+    console.error("Failed to read mobile backgrounds dir", err);
+    res.json([]);
+  }
+});
+
+// Upload Mobile Background
+const mobileBgStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, MOBILE_BACKGROUNDS_DIR);
+  },
+  filename: function (req, file, cb) {
+    const name = Buffer.from(file.originalname, "latin1").toString("utf8");
+    cb(null, name);
+  },
+});
+const mobileBgUpload = multer({ storage: mobileBgStorage });
+
+app.post(
+  "/api/mobile_backgrounds/upload",
+  authenticateToken,
+  mobileBgUpload.array("files"),
+  (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    res.json({ success: true, count: req.files.length });
+  },
+);
+
+// Delete Mobile Background
+app.delete("/api/mobile_backgrounds/:filename", authenticateToken, async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  const filename = req.params.filename;
+  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+  try {
+    await fs.unlink(path.join(MOBILE_BACKGROUNDS_DIR, filename));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to delete mobile background", err);
+    res.status(500).json({ error: "Failed to delete mobile background" });
+  }
+});
 
 // Get icons list
 app.get("/api/icons", async (req, res) => {
@@ -836,21 +945,70 @@ app.get("/api/fetch-meta", async (req, res) => {
   if (!url) return res.status(400).json({ error: "URL is required" });
 
   try {
+    // 1. Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({ error: "Invalid URL" });
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
 
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
     clearTimeout(timeout);
 
-    if (!response.ok) throw new Error("Failed to fetch");
+    if (!response.ok) {
+      console.warn(`Fetch meta failed: ${response.status} ${response.statusText} for ${url}`);
+      return res.json({ title: "", icon: "" });
+    }
 
-    const html = await response.text();
+    // 2. Check content type
+    const contentType = response.headers.get("content-type");
+    if (
+      contentType &&
+      !contentType.includes("text/html") &&
+      !contentType.includes("application/xhtml+xml")
+    ) {
+      console.warn(`Skipping non-html content: ${contentType} for ${url}`);
+      return res.json({ title: "", icon: "" });
+    }
+
+    // 3. Limit response size (read only first 100KB)
+    let html = "";
+    try {
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let receivedLength = 0;
+        const MAX_LENGTH = 100 * 1024; // 100KB
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          receivedLength += value.length;
+          html += decoder.decode(value, { stream: true });
+          if (receivedLength > MAX_LENGTH) {
+            await reader.cancel(); // Close stream
+            break;
+          }
+        }
+        html += decoder.decode(); // flush
+      } else {
+        // Fallback if no body
+        html = await response.text();
+      }
+    } catch (readError) {
+      console.error("Error reading response body:", readError);
+      // continue with whatever we have
+    }
 
     // Extract Title
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -862,43 +1020,171 @@ app.get("/api/fetch-meta", async (req, res) => {
     const iconMatch = html.match(
       /<link[^>]+rel=["'](?:shortcut\s+)?icon["'][^>]+href=["']([^"']+)["']/i,
     );
+
     if (iconMatch) {
       icon = iconMatch[1];
       // Handle relative URLs
       if (!icon.startsWith("http")) {
         try {
-          icon = new URL(icon, url).href;
-        } catch {
-          // ignore invalid relative url
+          const urlObj = new URL(url);
+          if (icon.startsWith("//")) {
+            icon = urlObj.protocol + icon;
+          } else if (icon.startsWith("/")) {
+            icon = urlObj.origin + icon;
+          } else {
+            // relative to current path
+            icon = new URL(icon, url).href;
+          }
+        } catch (e) {
+          console.error("Error resolving icon URL:", e);
         }
       }
     }
 
-    // If no icon found in HTML, frontend might use fallback, or we can check /favicon.ico here.
-    // Frontend has a fallback to api.iowen.cn, so we can just return what we found.
-    // But returning origin/favicon.ico is a good "second try" before external API.
-    if (!icon) {
-      // Nothing to do here
-    }
-
     res.json({ title, icon });
+  } catch (error) {
+    console.error("Fetch meta error:", error);
+    // Do not return 500, return empty result to prevent frontend error
+    res.json({ title: "", icon: "" });
+  }
+});
+
+// RSS Parse
+app.get("/api/rss/parse", async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: "URL is required" });
+
+  try {
+    // Set a timeout for the RSS request
+    const feed = await Promise.race([
+      rssParser.parseURL(url),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
+    ]);
+    res.json(feed);
   } catch (err) {
-    console.error("Fetch meta error:", err.message);
-    res.status(500).json({ error: "Failed to fetch meta" });
+    console.error(`Failed to parse RSS: ${url}`, err);
+    res.status(500).json({ error: "Failed to parse RSS feed" });
   }
 });
 
 // Serve static frontend files (Production/Docker)
 const DIST_DIR = path.join(__dirname, "../dist");
-app.use(express.static(DIST_DIR));
+const INDEX_HTML = path.join(DIST_DIR, "index.html");
 
-// Handle SPA routing - return index.html for all other routes
-app.get(/(.*)/, (req, res) => {
-  res.sendFile(path.join(DIST_DIR, "index.html"));
-});
+try {
+  await fs.access(INDEX_HTML);
+  app.use(express.static(DIST_DIR));
+
+  // Handle SPA routing - return index.html for all other routes
+  app.get(/(.*)/, (req, res) => {
+    res.sendFile(INDEX_HTML);
+  });
+} catch {
+  console.log("Frontend build not found, running in API-only mode");
+  app.get("/", (req, res) => {
+    res.send("FlatNas API Server Running");
+  });
+}
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
+
+  // RSS Fetch
+  socket.on("rss:fetch", async ({ url }) => {
+    try {
+      if (!url) throw new Error("URL required");
+      const feed = await Promise.race([
+        rssParser.parseURL(url),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
+      ]);
+      socket.emit("rss:data", { url, data: feed });
+    } catch (err) {
+      console.error(`RSS Socket Error [${url}]:`, err.message);
+      socket.emit("rss:error", { url, error: err.message });
+    }
+  });
+
+  // Weather Fetch
+  socket.on("weather:fetch", async ({ city }) => {
+    try {
+      if (!city) throw new Error("City required");
+      const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`);
+      if (!response.ok) throw new Error("Weather API error");
+      const data = await response.json();
+
+      const current = data.current_condition[0];
+      const text = current.lang_zh?.[0]?.value || current.weatherDesc[0].value;
+
+      const weatherData = {
+        temp: current.temp_C,
+        text: text,
+        city: city,
+        humidity: current.humidity,
+        windDir: current.winddir16Point,
+        windSpeed: current.windspeedKmph,
+        feelsLike: current.FeelsLikeC,
+        today: data.weather?.[0]
+          ? {
+              min: data.weather[0].mintempC,
+              max: data.weather[0].maxtempC,
+              uv: data.weather[0].uvIndex,
+            }
+          : null,
+        forecast: data.weather || [],
+      };
+
+      socket.emit("weather:data", { city, data: weatherData });
+    } catch (err) {
+      console.error(`Weather Socket Error [${city}]:`, err.message);
+      socket.emit("weather:error", { city, error: err.message });
+    }
+  });
+
+  // Hot Search Fetch
+  socket.on("hot:fetch", async ({ type, force }) => {
+    try {
+      // Check cache first
+      if (
+        !force &&
+        HOT_CACHE[type] &&
+        HOT_CACHE[type].data.length &&
+        Date.now() - HOT_CACHE[type].ts < CACHE_TTL_MS
+      ) {
+        socket.emit("hot:data", { type, data: HOT_CACHE[type].data });
+        return;
+      }
+
+      let items = [];
+      if (type === "weibo") {
+        const r = await fetch("https://weibo.com/ajax/side/hotSearch", {
+          headers: { "User-Agent": "Mozilla/5.0...", Referer: "https://weibo.com/" },
+        });
+        const j = await r.json();
+        items = (j.data.realtime || []).map((x) => ({
+          title: x.word,
+          url: "https://s.weibo.com/weibo?q=" + encodeURIComponent(x.word),
+          hot: x.num,
+        }));
+        HOT_CACHE.weibo = { ts: Date.now(), data: items };
+      } else if (type === "news") {
+        const feed = await rssParser.parseURL("https://www.chinanews.com.cn/rss/scroll-news.xml");
+        items = (feed.items || [])
+          .slice(0, 50)
+          .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));
+        HOT_CACHE.news = { ts: Date.now(), data: items };
+      }
+
+      socket.emit("hot:data", { type, data: items });
+    } catch (err) {
+      console.error(`Hot Socket Error [${type}]:`, err.message);
+      // Fallback to cache if available
+      if (HOT_CACHE[type] && HOT_CACHE[type].data.length) {
+        socket.emit("hot:data", { type, data: HOT_CACHE[type].data });
+      } else {
+        socket.emit("hot:error", { type, error: err.message });
+      }
+    }
+  });
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
