@@ -25,6 +25,7 @@ export const useMainStore = defineStore("main", () => {
   const username = ref(localStorage.getItem("flat-nas-username") || "");
   const isLogged = ref(!!token.value);
   const password = ref(""); // Only used for password change, not auth
+  const isExpandedMode = ref(false);
 
   const getHeaders = () => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -470,6 +471,7 @@ export const useMainStore = defineStore("main", () => {
     password,
     isLogged,
     username, // Export username
+    isExpandedMode,
     rssFeeds,
     rssCategories,
     init,

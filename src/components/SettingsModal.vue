@@ -94,6 +94,15 @@ const uploadMusic = async (event: Event) => {
   }
 };
 
+const piClickCount = ref(0);
+const handlePiClick = () => {
+  piClickCount.value++;
+  if (piClickCount.value === 3) {
+    store.isExpandedMode = !store.isExpandedMode;
+    piClickCount.value = 0;
+  }
+};
+
 // Password Confirm Logic
 const showPasswordConfirm = ref(false);
 const showMultiUserWarning = ref(false);
@@ -795,11 +804,20 @@ onMounted(() => {
                 </div>
                 <div>
                   <h4 class="text-sm font-bold text-gray-600 mb-1">标题颜色</h4>
-                  <input
-                    type="color"
-                    v-model="store.appConfig.titleColor"
-                    class="w-10 h-10 rounded cursor-pointer border-0 p-0"
-                  />
+                  <div class="flex items-center gap-2">
+                    <input
+                      type="color"
+                      v-model="store.appConfig.titleColor"
+                      class="w-10 h-10 rounded cursor-pointer border-0 p-0"
+                    />
+                    <button
+                      @click="store.appConfig.titleColor = '#ffffff'"
+                      class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors text-sm"
+                      title="重置颜色"
+                    >
+                      ↺
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <h4 class="text-sm font-bold text-gray-600 mb-1">分组垂直间距</h4>
@@ -816,6 +834,15 @@ onMounted(() => {
                       store.appConfig.groupGap ?? 30
                     }}</span>
                   </div>
+                </div>
+                <div class="flex items-end justify-end">
+                  <button
+                    @click="handlePiClick"
+                    class="text-[8px] text-gray-300 hover:text-gray-600 transition-colors opacity-50 hover:opacity-100 p-1"
+                    title="菩提祖师授长生"
+                  >
+                    π
+                  </button>
                 </div>
               </div>
             </div>

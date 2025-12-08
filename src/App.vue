@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import GridPanel from './components/GridPanel.vue'
+import { useMainStore } from './stores/main'
+
+const store = useMainStore()
+
+watch(
+  () => store.appConfig.customTitle,
+  (newTitle) => {
+    document.title = newTitle || 'FlatNas'
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   const style = document.createElement('style')

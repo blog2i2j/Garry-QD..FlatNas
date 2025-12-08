@@ -805,7 +805,10 @@ onMounted(() => {
         paddingLeft: isSidebarEnabled ? (sidebarCollapsed ? '100px' : '288px') : undefined,
       }"
     >
-      <div class="max-w-7xl mx-auto">
+      <div
+        class="mx-auto transition-all duration-300"
+        :class="store.isExpandedMode ? 'max-w-[95%]' : 'max-w-7xl'"
+      >
         <div class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 relative">
           <div
             class="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 flex-shrink-0 z-30 transition-all duration-500"
@@ -871,7 +874,8 @@ onMounted(() => {
 
           <div
             v-if="checkVisible(store.widgets.find((w) => w.id === 'w5'))"
-            class="w-full md:absolute md:left-1/2 md:-translate-x-1/2 md:w-64 z-20"
+            class="w-full md:absolute md:left-1/2 md:-translate-x-1/2 z-20 transition-all duration-300"
+            :class="store.isExpandedMode ? 'md:w-[32rem]' : 'md:w-64'"
           >
             <form
               class="mx-auto shadow-lg hover:shadow-xl transition-shadow rounded-full bg-white/90 backdrop-blur-md border border-white/40 flex items-center p-1"
@@ -950,7 +954,8 @@ onMounted(() => {
           v-model="draggableWidgets"
           :animation="300"
           :disabled="!isEditMode"
-          class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 text-white select-none grid-flow-dense"
+          class="grid grid-cols-1 gap-6 mb-8 text-white select-none grid-flow-dense transition-all duration-300"
+          :class="store.isExpandedMode ? 'md:grid-cols-8' : 'md:grid-cols-4'"
           style="grid-auto-rows: 140px"
           ghostClass="ghost"
         >
