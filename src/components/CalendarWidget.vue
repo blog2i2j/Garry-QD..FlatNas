@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vue/no-mutating-props */
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "../stores/main";
@@ -28,12 +29,15 @@ let timer: number | null = null;
 
 onMounted(() => {
   // Sync with minute
-  const syncTimer = setTimeout(() => {
-    now.value = new Date();
-    timer = setInterval(() => {
+  setTimeout(
+    () => {
       now.value = new Date();
-    }, 60000) as unknown as number;
-  }, (60 - new Date().getSeconds()) * 1000);
+      timer = setInterval(() => {
+        now.value = new Date();
+      }, 60000) as unknown as number;
+    },
+    (60 - new Date().getSeconds()) * 1000,
+  );
 });
 
 onUnmounted(() => {
@@ -42,8 +46,8 @@ onUnmounted(() => {
 
 // Day View Data
 const dayNum = computed(() => now.value.getDate());
-const weekDay = computed(() =>
-  ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][now.value.getDay()],
+const weekDay = computed(
+  () => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][now.value.getDay()],
 );
 const yearMonth = computed(() => `${now.value.getFullYear()}.${now.value.getMonth() + 1}`);
 
@@ -142,9 +146,7 @@ const goToday = () => {
       class="w-full h-full flex flex-col items-center justify-center cursor-pointer"
       @click="toggleStyle"
     >
-      <div
-        class="absolute -right-4 -bottom-6 text-9xl font-bold opacity-5 pointer-events-none"
-      >
+      <div class="absolute -right-4 -bottom-6 text-9xl font-bold opacity-5 pointer-events-none">
         {{ dayNum }}
       </div>
       <div class="text-xs opacity-70 tracking-widest uppercase mb-1">{{ yearMonth }}</div>
@@ -199,7 +201,11 @@ const goToday = () => {
 
       <!-- Grid -->
       <div class="grid grid-cols-7 gap-1 text-center flex-1 text-[10px] content-start">
-        <div v-for="d in ['日', '一', '二', '三', '四', '五', '六']" :key="d" class="text-gray-400 font-medium">
+        <div
+          v-for="d in ['日', '一', '二', '三', '四', '五', '六']"
+          :key="d"
+          class="text-gray-400 font-medium"
+        >
           {{ d }}
         </div>
         <div
@@ -209,8 +215,8 @@ const goToday = () => {
           :class="{
             'bg-red-500 text-white font-bold shadow-sm': d.today,
             'hover:bg-red-100 text-gray-700': d.current && !d.today,
-            'invisible': !d.current,
-            'cursor-pointer': d.current
+            invisible: !d.current,
+            'cursor-pointer': d.current,
           }"
         >
           {{ d.day }}

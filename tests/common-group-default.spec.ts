@@ -1,9 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useMainStore } from '../src/stores/main'
 
 describe('常用分组默认站点填充', () => {
   it('空常用分组时填充为10条', async () => {
+    // Mock fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ groups: [], widgets: [], appConfig: {}, rssFeeds: [], rssCategories: [] }),
+    })
+
     const pinia = createPinia(); setActivePinia(pinia)
     const store = useMainStore()
     // 模拟后端返回无 groups

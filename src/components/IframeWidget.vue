@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, reactive } from "vue";
+import { ref, watch, onMounted, computed } from "vue";
 import type { WidgetConfig } from "@/types";
 import { useElementSize } from "@vueuse/core";
 
@@ -12,7 +12,17 @@ const isLoading = ref(true);
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const containerRef = ref<HTMLElement | null>(null);
 const { width: containerWidth, height: containerHeight } = useElementSize(containerRef);
-const isScaled = ref(false);
+
+// Use local state for immediate reactivity, sync with store
+const isScaled = ref(!!props.widget.data?.scaled);
+
+watch(
+  () => props.widget.data?.scaled,
+  (val) => {
+    isScaled.value = !!val;
+  },
+);
+
 const refreshKey = ref(0);
 const currentProtocol = ref("");
 
@@ -20,7 +30,7 @@ onMounted(() => {
   currentProtocol.value = window.location.protocol;
 });
 
-const currentUrl = computed(() => {
+const rawTargetUrl = computed(() => {
   const { lanUrl, wanUrl, url } = props.widget.data || {};
   // 兼容旧数据：如果 wanUrl 为空，使用 url
   const effectiveWan = wanUrl || url || "";
@@ -28,6 +38,19 @@ const currentUrl = computed(() => {
   const effectiveLan = lanUrl || effectiveWan;
 
   return props.isLanMode ? effectiveLan : effectiveWan;
+});
+
+const isBlocked = computed(() => {
+  const target = rawTargetUrl.value;
+  // Hardcode block for gitee repo to prevent browser blocking
+  return !!(target && target.includes("gitee.com/gjx0808/FlatNas"));
+});
+
+const currentUrl = computed(() => {
+  if (isBlocked.value) {
+    return "";
+  }
+  return rawTargetUrl.value;
 });
 
 const scaleStyle = computed(() => {
@@ -46,7 +69,15 @@ const scaleStyle = computed(() => {
 });
 
 const toggleScale = () => {
+  // Update local state immediately for UI feedback
   isScaled.value = !isScaled.value;
+
+  if (!props.widget.data) {
+    // eslint-disable-next-line vue/no-mutating-props
+    props.widget.data = {};
+  }
+  // eslint-disable-next-line vue/no-mutating-props
+  props.widget.data.scaled = isScaled.value;
 };
 
 const onLoad = () => {
@@ -99,6 +130,14 @@ watch(
       @load="onLoad"
       @error="onError"
     ></iframe>
+
+    <div
+      v-else-if="isBlocked"
+      class="absolute inset-0 flex items-center justify-center text-red-400 text-xs flex-col gap-2 bg-red-50"
+    >
+      <span class="font-bold">⚠️ 禁止访问此链接</span>
+      <span class="text-[10px] opacity-70">Gitee 仓库页不支持嵌入</span>
+    </div>
 
     <div
       v-else

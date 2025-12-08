@@ -1,89 +1,101 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { VueCropper } from 'vue-cropper'
-import 'vue-cropper/dist/index.css'
+import { ref } from "vue";
+import { VueCropper } from "vue-cropper";
+import "vue-cropper/dist/index.css";
+import WallpaperLibrary from "./WallpaperLibrary.vue";
 
 const props = withDefaults(
   defineProps<{
-    modelValue?: string
-    crop?: boolean
-    previewStyle?: Record<string, string | number>
-    overlayStyle?: Record<string, string | number>
+    modelValue?: string;
+    crop?: boolean;
+    previewStyle?: Record<string, string | number>;
+    overlayStyle?: Record<string, string | number>;
   }>(),
   {
     crop: true,
     previewStyle: () => ({}),
     overlayStyle: () => ({}),
   },
-)
-const emit = defineEmits(['update:modelValue'])
+);
+const emit = defineEmits(["update:modelValue"]);
 
-const showCropper = ref(false)
-const uploadImgUrl = ref('')
-const cropper = ref()
-const fileInput = ref<HTMLInputElement | null>(null)
-const zoom = ref(1)
+const showCropper = ref(false);
+const showLibrary = ref(false);
+const uploadImgUrl = ref("");
+const cropper = ref();
+const fileInput = ref<HTMLInputElement | null>(null);
+const zoom = ref(1);
 
 const triggerSelect = () => {
-  fileInput.value?.click()
-}
+  if (!props.crop) {
+    showLibrary.value = true;
+  } else {
+    fileInput.value?.click();
+  }
+};
+
+const onLibrarySelect = (payload: { url: string; type: string } | string) => {
+  // Support both old string format (if any) and new object format
+  const url = typeof payload === "string" ? payload : payload.url;
+  emit("update:modelValue", url);
+};
 
 const onFileChange = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
 
   if (file.size > 5 * 1024 * 1024) {
-    alert('图片太大啦，请上传小于 5MB 的图片')
-    return
+    alert("图片太大啦，请上传小于 5MB 的图片");
+    return;
   }
 
-  const reader = new FileReader()
+  const reader = new FileReader();
   reader.onload = (e) => {
-    uploadImgUrl.value = e.target?.result as string
+    uploadImgUrl.value = e.target?.result as string;
 
     if (props.crop) {
-      zoom.value = 1 // Reset zoom
-      showCropper.value = true // 打开裁剪弹窗
+      zoom.value = 1; // Reset zoom
+      showCropper.value = true; // 打开裁剪弹窗
     } else {
       // 不裁剪，直接使用
-      emit('update:modelValue', uploadImgUrl.value)
+      emit("update:modelValue", uploadImgUrl.value);
     }
-  }
-  reader.readAsDataURL(file)
+  };
+  reader.readAsDataURL(file);
 
-  if (fileInput.value) fileInput.value.value = ''
-}
+  if (fileInput.value) fileInput.value.value = "";
+};
 
 const onZoomChange = (e: Event) => {
-  const newVal = parseFloat((e.target as HTMLInputElement).value)
-  const diff = newVal - zoom.value
-  cropper.value.changeScale(diff)
-  zoom.value = newVal
-}
+  const newVal = parseFloat((e.target as HTMLInputElement).value);
+  const diff = newVal - zoom.value;
+  cropper.value.changeScale(diff);
+  zoom.value = newVal;
+};
 
 const confirmCrop = () => {
   cropper.value.getCropData((data: string) => {
     // Resize to 216x216
-    const img = new Image()
+    const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 216
-      canvas.height = 216
-      const ctx = canvas.getContext('2d')
+      const canvas = document.createElement("canvas");
+      canvas.width = 216;
+      canvas.height = 216;
+      const ctx = canvas.getContext("2d");
       if (ctx) {
         // 使用高质量缩放算法 (如果浏览器支持)
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, 216, 216)
-        emit('update:modelValue', canvas.toDataURL('image/png'))
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, 216, 216);
+        emit("update:modelValue", canvas.toDataURL("image/png"));
       } else {
-        emit('update:modelValue', data)
+        emit("update:modelValue", data);
       }
-      showCropper.value = false
-    }
-    img.src = data
-  })
-}
+      showCropper.value = false;
+    };
+    img.src = data;
+  });
+};
 </script>
 
 <template>
@@ -99,10 +111,7 @@ const confirmCrop = () => {
          方便应用 blur 等样式 (img 上应用 blur 可能会导致边缘泛白，但 container overflow hidden 可以解决一部分)
          同时叠加 overlayStyle
       -->
-      <div
-        v-if="modelValue && modelValue.startsWith('data:image')"
-        class="absolute inset-0 z-0 overflow-hidden"
-      >
+      <div v-if="modelValue" class="absolute inset-0 z-0 overflow-hidden">
         <img
           :src="modelValue"
           class="w-full h-full object-cover transition-all duration-300"
@@ -121,9 +130,13 @@ const confirmCrop = () => {
         "
       >
         <span class="text-2xl text-gray-400 mb-1 group-hover:text-blue-500">+</span>
-        <span class="text-xs text-gray-500 group-hover:text-blue-600">点击上传 / 裁剪</span>
+        <span class="text-xs text-gray-500 group-hover:text-blue-600">{{
+          crop ? "点击上传 / 裁剪" : "从壁纸库选择"
+        }}</span>
       </div>
     </div>
+
+    <WallpaperLibrary v-model:show="showLibrary" @select="onLibrarySelect" />
 
     <div
       v-if="showCropper"

@@ -22,7 +22,7 @@ const getInitialCity = () => {
       const data = JSON.parse(cachedCity);
       return data.city;
     }
-  } catch (e) {
+  } catch {
     // ignore error
   }
   return "定位中...";
@@ -94,109 +94,37 @@ const updateTime = () => {
   isNight.value = hour < 6 || hour >= 18;
 };
 
-const isCacheValid = (timestamp: number, duration: number) => {
-  return Date.now() - timestamp < duration;
-};
-
 // 获取天气
 const fetchWeather = async () => {
-  try {
-    let city = "本地";
+  const city = props.widget?.data?.city || customCityInput.value || "Shanghai"; // Default fallback
 
-    // 优先使用自定义城市
-    if (props.widget?.data?.city) {
-      city = props.widget.data.city;
-    } else {
-      // 尝试从缓存读取自动定位城市 (缓存 1 小时)
-      const cachedCity = localStorage.getItem("flatnas_auto_city");
-      let useCache = false;
-      if (cachedCity) {
-        try {
-          const data = JSON.parse(cachedCity);
-          if (isCacheValid(data.timestamp, 60 * 60 * 1000)) {
-            city = data.city;
-            useCache = true;
-          }
-        } catch (e) {
-          localStorage.removeItem("flatnas_auto_city");
-        }
-      }
-
-      if (!useCache) {
-        // 否则使用 IP 定位
-        const ipRes = await fetch("/api/ip");
-        if (!ipRes.ok) throw new Error("IP API Error");
-        const ipData = await ipRes.json();
-
-        if (ipData.success && ipData.location) {
-          let loc = ipData.location.split(" ")[0];
-          loc = loc.replace(/^(?:.*?省|.*?自治区|.*?特别行政区)/, "");
-          const match = loc.match(/^(.*?[市州盟地区])/);
-          if (match) {
-            loc = match[1];
-          }
-          city = loc;
-
-          // 保存定位缓存
-          localStorage.setItem(
-            "flatnas_auto_city",
-            JSON.stringify({
-              city: city,
-              timestamp: Date.now(),
-            }),
-          );
-        }
-      }
+  // Setup socket listener
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onData = (payload: any) => {
+    if (payload.city === city || (payload.city === "Shanghai" && !props.widget?.data?.city)) {
+      weather.value = payload.data;
+      cleanup();
     }
+  };
 
-    // 检查天气缓存 (缓存 20 分钟)
-    const cachedWeather = localStorage.getItem(`flatnas_weather_${city}`);
-    if (cachedWeather) {
-      try {
-        const data = JSON.parse(cachedWeather);
-        if (isCacheValid(data.timestamp, 20 * 60 * 1000)) {
-          weather.value = data.weather;
-          return;
-        }
-      } catch (e) {
-        localStorage.removeItem(`flatnas_weather_${city}`);
-      }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onError = (payload: any) => {
+    if (payload.city === city) {
+      console.error("Weather socket error", payload.error);
+      weather.value.text = "Error";
+      cleanup();
     }
+  };
 
-    let url = `/api/weather?city=${encodeURIComponent(city)}`;
-    if (store.appConfig.weatherApiUrl) {
-      url = store.appConfig.weatherApiUrl;
-      if (url.includes("{city}")) {
-        url = url.replace("{city}", encodeURIComponent(city));
-      }
-    }
+  const cleanup = () => {
+    store.socket.off("weather:data", onData);
+    store.socket.off("weather:error", onError);
+  };
 
-    const weatherRes = await fetch(url);
-    if (!weatherRes.ok) throw new Error("Weather API Error");
-    const weatherData = await weatherRes.json();
+  store.socket.on("weather:data", onData);
+  store.socket.on("weather:error", onError);
 
-    if (weatherData.success && weatherData.data) {
-      weather.value = {
-        temp: weatherData.data.temp,
-        city: city,
-        text: weatherData.data.text,
-        humidity: weatherData.data.humidity,
-        today: weatherData.data.today,
-      };
-
-      // 保存天气缓存
-      localStorage.setItem(
-        `flatnas_weather_${city}`,
-        JSON.stringify({
-          weather: weather.value,
-          timestamp: Date.now(),
-        }),
-      );
-    }
-  } catch (e) {
-    console.warn("[Weather] 获取失败，转为离线模式", e);
-    weather.value = { ...weather.value, temp: "22", city: "本地", text: "舒适" };
-  }
+  store.socket.emit("weather:fetch", { city });
 };
 
 onMounted(() => {

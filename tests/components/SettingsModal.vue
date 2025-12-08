@@ -1,53 +1,51 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useMainStore } from '../stores/main'
-import IconUploader from './IconUploader.vue'
-import PasswordConfirmModal from './PasswordConfirmModal.vue'
-import { VueDraggable } from 'vue-draggable-plus'
+import { ref, computed, onMounted } from "vue";
+import { useMainStore } from "@/stores/main";
 
-const props = defineProps<{ show: boolean }>()
-const emit = defineEmits(['update:show'])
-const store = useMainStore()
+const emit = defineEmits(["update:show"]);
+defineProps<{ show: boolean }>();
+const store = useMainStore();
 
-const activeTab = ref('style')
-const passwordInput = ref('')
-const newPasswordInput = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
+const activeTab = ref("style");
+const passwordInput = ref("");
+const newPasswordInput = ref("");
+const fileInput = ref<HTMLInputElement | null>(null);
 
 // Password Confirm Logic
-const showPasswordConfirm = ref(false)
-const pendingAction = ref<(() => void) | null>(null)
-const confirmTitle = ref('')
+const showPasswordConfirm = ref(false);
+const pendingAction = ref<(() => void) | null>(null);
+const confirmTitle = ref("");
 
 const requestAuth = (action: () => void, title: string) => {
-  pendingAction.value = action
-  confirmTitle.value = title
-  showPasswordConfirm.value = true
-}
+  pendingAction.value = action;
+  confirmTitle.value = title;
+  showPasswordConfirm.value = true;
+};
 
 const onAuthSuccess = () => {
   if (pendingAction.value) {
-    pendingAction.value()
-    pendingAction.value = null
+    pendingAction.value();
+    pendingAction.value = null;
   }
-}
+};
 
-const close = () => emit('update:show', false)
+const close = () => emit("update:show", false);
 
-const handleLogin = () => {
-  if (store.login(passwordInput.value)) {
-    alert('登录成功！')
-    passwordInput.value = ''
-  } else {
-    alert('密码错误！')
+const handleLogin = async () => {
+  try {
+    await store.login("admin", passwordInput.value);
+    alert("登录成功！");
+    passwordInput.value = "";
+  } catch {
+    alert("密码错误！");
   }
-}
+};
 const handleChangePassword = () => {
-  if (!newPasswordInput.value || newPasswordInput.value.length < 4) return alert('密码至少4位')
-  store.changePassword(newPasswordInput.value)
-  alert('密码修改成功')
-  newPasswordInput.value = ''
-}
+  if (!newPasswordInput.value || newPasswordInput.value.length < 4) return alert("密码至少4位");
+  store.changePassword(newPasswordInput.value);
+  alert("密码修改成功");
+  newPasswordInput.value = "";
+};
 
 const handleExport = () => {
   try {
@@ -57,156 +55,157 @@ const handleExport = () => {
       appConfig: store.appConfig,
       password: store.password,
       groups: store.groups,
-    }
-    const jsonString = JSON.stringify(backupData, null, 2)
-    const blob = new Blob([jsonString], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `flat-nas-backup-${new Date().toISOString().substring(0, 10).replace(/-/g, '')}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    };
+    const jsonString = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `flat-nas-backup-${new Date().toISOString().substring(0, 10).replace(/-/g, "")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   } catch (e) {
-    alert('导出失败')
-    console.error('[SettingsModal][Export] failed', e)
+    alert("导出失败");
+    console.error("[SettingsModal][Export] failed", e);
   }
-}
+};
 
 const triggerImport = () => {
-  fileInput.value?.click()
-}
+  fileInput.value?.click();
+};
 const handleFileChange = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const reader = new FileReader()
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
   reader.onload = async (e) => {
     try {
-      const content = e.target?.result as string
-      const data = JSON.parse(content)
+      const content = e.target?.result as string;
+      const data = JSON.parse(content);
       if (!data.groups && data.items) {
-        data.groups = [{ id: Date.now().toString(), title: '默认分组', items: data.items }]
+        data.groups = [{ id: Date.now().toString(), title: "默认分组", items: data.items }];
       }
-      const r = await fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const r = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
-      })
-      if (!r.ok) throw new Error('import_post_failed:' + r.status)
-      alert('✅ 导入成功！')
-      window.location.reload()
+      });
+      if (!r.ok) throw new Error("import_post_failed:" + r.status);
+      alert("✅ 导入成功！");
+      window.location.reload();
     } catch (err) {
-      alert('❌ 导入失败，请检查文件格式是否为 JSON。')
-      console.error('[SettingsModal][Import] failed', err)
+      alert("❌ 导入失败，请检查文件格式是否为 JSON。");
+      console.error("[SettingsModal][Import] failed", err);
     } finally {
-      if (fileInput.value) fileInput.value.value = ''
+      if (fileInput.value) fileInput.value.value = "";
     }
-  }
-  reader.readAsText(file)
-}
+  };
+  reader.readAsText(file);
+};
 
-const saveDefaultBtnText = ref('💾 设为默认模板')
+const saveDefaultBtnText = ref("💾 设为默认模板");
 
 const handleReset = async () => {
   requestAuth(async () => {
     // 密码验证通过后直接执行
     try {
-      const r = await fetch('/api/reset', { method: 'POST' })
-      if (!r.ok) throw new Error('reset_failed')
+      const r = await fetch("/api/reset", { method: "POST" });
+      if (!r.ok) throw new Error("reset_failed");
       // 移除成功弹窗，直接刷新
-      window.location.reload()
+      window.location.reload();
     } catch (e) {
-      alert('❌ 恢复失败')
-      console.error('[SettingsModal][Reset] failed', e)
+      alert("❌ 恢复失败");
+      console.error("[SettingsModal][Reset] failed", e);
     }
-  }, '请输入密码以确认恢复初始化')
-}
+  }, "请输入密码以确认恢复初始化");
+};
 
 const handleSaveAsDefault = async () => {
   requestAuth(async () => {
     // 密码验证通过后直接执行
     try {
-      const r = await fetch('/api/default/save', { method: 'POST' })
-      if (!r.ok) throw new Error('save_default_failed')
-      
+      const r = await fetch("/api/default/save", { method: "POST" });
+      if (!r.ok) throw new Error("save_default_failed");
+
       // 移除成功弹窗，使用按钮文字反馈
-      saveDefaultBtnText.value = '✅ 保存成功！'
+      saveDefaultBtnText.value = "✅ 保存成功！";
       setTimeout(() => {
-        saveDefaultBtnText.value = '💾 设为默认模板'
-      }, 2000)
+        saveDefaultBtnText.value = "💾 设为默认模板";
+      }, 2000);
     } catch (e) {
-      alert('❌ 保存失败')
-      console.error('[SettingsModal][SaveDefault] failed', e)
+      alert("❌ 保存失败");
+      console.error("[SettingsModal][SaveDefault] failed", e);
     }
-  }, '请输入密码以确认保存默认模板')
-}
+  }, "请输入密码以确认保存默认模板");
+};
 
 // 修复：移除 computed 中的副作用，改用 onMounted 初始化
 onMounted(() => {
   store.widgets.forEach((w) => {
-    if (w.type === 'iframe' && !w.data) {
-      w.data = { url: '' }
+    if (w.type === "iframe" && !w.data) {
+      w.data = { url: "" };
     }
-  })
-})
+  });
+});
 
 const addSearchEngine = () => {
-  const id = Date.now().toString()
-  const key = 'custom-' + id
-  const label = '新搜索引擎'
-  const urlTemplate = 'https://example.com/search?q={q}'
+  const id = Date.now().toString();
+  const key = "custom-" + id;
+  const label = "新搜索引擎";
+  const urlTemplate = "https://example.com/search?q={q}";
 
   if (!store.appConfig.searchEngines) {
-    store.appConfig.searchEngines = []
+    store.appConfig.searchEngines = [];
   }
-  store.appConfig.searchEngines.push({ id, key, label, urlTemplate })
-}
+  store.appConfig.searchEngines.push({ id, key, label, urlTemplate });
+};
 const removeSearchEngine = (key: string) => {
-  const list = (store.appConfig.searchEngines || []).filter((e) => e.key !== key)
-  store.appConfig.searchEngines = list
+  const list = (store.appConfig.searchEngines || []).filter((e) => e.key !== key);
+  store.appConfig.searchEngines = list;
   if (store.appConfig.defaultSearchEngine === key) {
-    store.appConfig.defaultSearchEngine = list[0]?.key || undefined
+    store.appConfig.defaultSearchEngine = list[0]?.key || "";
   }
-}
+};
 
 // RSS Logic
 const rssForm = ref({
-  id: '',
-  title: '',
-  url: '',
-  category: '',
-  tags: '',
+  id: "",
+  title: "",
+  url: "",
+  category: "",
+  tags: "",
   enable: true,
   isPublic: true,
-})
-const editingRss = ref(false)
+});
+const editingRss = ref(false);
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const editRss = (feed?: any) => {
   if (feed) {
-    rssForm.value = { ...feed, tags: (feed.tags || []).join(', ') }
-    editingRss.value = true
+    rssForm.value = { ...feed, tags: (feed.tags || []).join(", ") };
+    editingRss.value = true;
   } else {
     rssForm.value = {
-      id: '',
-      title: '',
-      url: '',
-      category: '',
-      tags: '',
+      id: "",
+      title: "",
+      url: "",
+      category: "",
+      tags: "",
       enable: true,
       isPublic: true,
-    }
-    editingRss.value = true
+    };
+    editingRss.value = true;
   }
-}
+};
 
 const saveRss = () => {
-  if (!rssForm.value.title || !rssForm.value.url) return alert('请填写标题和 URL')
+  if (!rssForm.value.title || !rssForm.value.url) return alert("请填写标题和 URL");
 
   const tags = rssForm.value.tags
     .split(/[,，]/)
     .map((t) => t.trim())
-    .filter((t) => t)
+    .filter((t) => t);
   const newItem = {
     id: rssForm.value.id || Date.now().toString(),
     title: rssForm.value.title,
@@ -215,114 +214,118 @@ const saveRss = () => {
     tags,
     enable: rssForm.value.enable,
     isPublic: rssForm.value.isPublic,
-  }
+  };
 
-  if (!store.rssFeeds) store.rssFeeds = []
+  if (!store.rssFeeds) store.rssFeeds = [];
 
   if (rssForm.value.id) {
-    const index = store.rssFeeds.findIndex((f) => f.id === rssForm.value.id)
-    if (index !== -1) store.rssFeeds[index] = newItem
+    const index = store.rssFeeds.findIndex((f) => f.id === rssForm.value.id);
+    if (index !== -1) store.rssFeeds[index] = newItem;
   } else {
-    store.rssFeeds.push(newItem)
+    store.rssFeeds.push(newItem);
   }
 
   // Auto-add category
   if (rssForm.value.category) {
-    if (!store.rssCategories) store.rssCategories = []
-    const exists = store.rssCategories.some((c) => c.name === rssForm.value.category)
+    if (!store.rssCategories) store.rssCategories = [];
+    const exists = store.rssCategories.some((c) => c.name === rssForm.value.category);
     if (!exists) {
-      store.rssCategories.push({ id: Date.now().toString() + '-cat', name: rssForm.value.category })
+      store.rssCategories.push({
+        id: Date.now().toString() + "-cat",
+        name: rssForm.value.category,
+        feeds: [],
+      });
     }
   }
 
-  store.saveData() // Trigger save
-  editingRss.value = false
-}
+  store.saveData(); // Trigger save
+  editingRss.value = false;
+};
 
 const deleteRss = (id: string) => {
-  if (!confirm('确定删除此订阅源？')) return
-  store.rssFeeds = store.rssFeeds.filter((f) => f.id !== id)
-}
+  if (!confirm("确定删除此订阅源？")) return;
+  store.rssFeeds = store.rssFeeds.filter((f) => f.id !== id);
+};
 
-const rssWidget = computed(() => store.widgets.find((w) => w.type === 'rss'))
+const rssWidget = computed(() => store.widgets.find((w) => w.type === "rss"));
 
 // RSS Category Management
-const managingCategories = ref(false)
-const newCategoryName = ref('')
-const editingCategoryId = ref<string | null>(null)
-const editCategoryName = ref('')
+const managingCategories = ref(false);
+const newCategoryName = ref("");
+const editingCategoryId = ref<string | null>(null);
+const editCategoryName = ref("");
 
 const addCategory = () => {
-  const name = newCategoryName.value.trim()
-  if (!name) return
-  if (!store.rssCategories) store.rssCategories = []
-  if (store.rssCategories.some((c) => c.name === name)) return alert('分类已存在')
+  const name = newCategoryName.value.trim();
+  if (!name) return;
+  if (!store.rssCategories) store.rssCategories = [];
+  if (store.rssCategories.some((c) => c.name === name)) return alert("分类已存在");
 
-  store.rssCategories.push({ id: Date.now().toString() + '-cat', name })
-  newCategoryName.value = ''
-  store.saveData()
-}
+  store.rssCategories.push({ id: Date.now().toString() + "-cat", name, feeds: [] });
+  newCategoryName.value = "";
+  store.saveData();
+};
 
 const startEditCategory = (cat: { id: string; name: string }) => {
-  editingCategoryId.value = cat.id
-  editCategoryName.value = cat.name
-}
+  editingCategoryId.value = cat.id;
+  editCategoryName.value = cat.name;
+};
 
 const updateCategory = () => {
-  if (!editingCategoryId.value || !editCategoryName.value.trim()) return
-  const index = store.rssCategories.findIndex((c) => c.id === editingCategoryId.value)
+  if (!editingCategoryId.value || !editCategoryName.value.trim()) return;
+  const index = store.rssCategories.findIndex((c) => c.id === editingCategoryId.value);
   if (index !== -1) {
     // Update category name in feeds
-    const oldName = store.rssCategories[index].name
-    const newName = editCategoryName.value.trim()
-    store.rssCategories[index].name = newName
+    const oldName = store.rssCategories[index]!.name;
+    const newName = editCategoryName.value.trim();
+    store.rssCategories[index]!.name = newName;
 
     // Update associated feeds
     if (store.rssFeeds) {
       store.rssFeeds.forEach((f) => {
-        if (f.category === oldName) f.category = newName
-      })
+        if (f.category === oldName) f.category = newName;
+      });
     }
-    store.saveData()
+    store.saveData();
   }
-  editingCategoryId.value = null
-  editCategoryName.value = ''
-}
+  editingCategoryId.value = null;
+  editCategoryName.value = "";
+};
 
 const deleteCategory = (id: string) => {
-  if (!confirm('确定删除该分类？(该分类下的订阅源将变为无分类)')) return
-  const cat = store.rssCategories.find((c) => c.id === id)
+  if (!confirm("确定删除该分类？(该分类下的订阅源将变为无分类)")) return;
+  const cat = store.rssCategories.find((c) => c.id === id);
   if (cat) {
     // Clear category from feeds
     if (store.rssFeeds) {
       store.rssFeeds.forEach((f) => {
-        if (f.category === cat.name) f.category = ''
-      })
+        if (f.category === cat.name) f.category = "";
+      });
     }
-    store.rssCategories = store.rssCategories.filter((c) => c.id !== id)
-    store.saveData()
+    store.rssCategories = store.rssCategories.filter((c) => c.id !== id);
+    store.saveData();
   }
-}
+};
 
 // Tag Suggestions
 const allTags = computed(() => {
-  const tags = new Set<string>()
+  const tags = new Set<string>();
   store.rssFeeds?.forEach((f) => {
-    f.tags?.forEach((t) => tags.add(t))
-  })
-  return Array.from(tags)
-})
+    f.tags?.forEach((t) => tags.add(t));
+  });
+  return Array.from(tags);
+});
 
 const addTagToForm = (tag: string) => {
   const currentTags = rssForm.value.tags
     .split(/[,，]/)
     .map((t) => t.trim())
-    .filter((t) => t)
+    .filter((t) => t);
   if (!currentTags.includes(tag)) {
-    currentTags.push(tag)
-    rssForm.value.tags = currentTags.join(', ')
+    currentTags.push(tag);
+    rssForm.value.tags = currentTags.join(", ");
   }
-}
+};
 </script>
 
 <template>
@@ -512,70 +515,70 @@ const addTagToForm = (tag: string) => {
                       class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
                     >
                       {{
-                        w.type === 'clock'
-                          ? '⏰'
-                          : w.type === 'weather'
-                            ? '🌦️'
-                            : w.type === 'clockweather'
-                              ? '🕒🌦️'
-                              : w.type === 'calendar'
-                                ? '📅'
-                                : w.type === 'memo'
-                                  ? '📝'
-                                  : w.type === 'search'
-                                    ? '🔍'
-                                    : w.type === 'quote'
-                                      ? '💬'
-                                      : w.type === 'bookmarks'
-                                        ? '📑'
-                                        : w.type === 'todo'
-                                          ? '✅'
-                                          : w.type === 'calculator'
-                                            ? '🧮'
-                                            : w.type === 'ip'
-                                              ? '🌐'
-                                              : w.type === 'player'
-                                                ? '🎵'
-                                                : w.type === 'hot'
-                                                  ? '🔥'
-                                                  : w.type === 'rss'
-                                                    ? '📡'
-                                                    : '🖥️'
+                        w.type === "clock"
+                          ? "⏰"
+                          : w.type === "weather"
+                            ? "🌦️"
+                            : w.type === "clockweather"
+                              ? "🕒🌦️"
+                              : w.type === "calendar"
+                                ? "📅"
+                                : w.type === "memo"
+                                  ? "📝"
+                                  : w.type === "search"
+                                    ? "🔍"
+                                    : w.type === "quote"
+                                      ? "💬"
+                                      : w.type === "bookmarks"
+                                        ? "📑"
+                                        : w.type === "todo"
+                                          ? "✅"
+                                          : w.type === "calculator"
+                                            ? "🧮"
+                                            : w.type === "ip"
+                                              ? "🌐"
+                                              : w.type === "player"
+                                                ? "🎵"
+                                                : w.type === "hot"
+                                                  ? "🔥"
+                                                  : w.type === "rss"
+                                                    ? "📡"
+                                                    : "🖥️"
                       }}
                     </div>
                     <span class="font-bold text-gray-700 text-sm text-center">
                       {{
-                        w.type === 'clock'
-                          ? '时钟'
-                          : w.type === 'weather'
-                            ? '天气'
-                            : w.type === 'clockweather'
-                              ? '时钟+天气'
-                              : w.type === 'calendar'
-                                ? '日历'
-                                : w.type === 'memo'
-                                  ? '备忘录'
-                                  : w.type === 'search'
-                                    ? '聚合搜索'
-                                    : w.type === 'quote'
-                                      ? '每日一言'
-                                      : w.type === 'bookmarks'
-                                        ? '收藏夹'
-                                        : w.type === 'todo'
-                                          ? '待办事项'
-                                          : w.type === 'calculator'
-                                            ? '计算器'
-                                            : w.type === 'ip'
-                                              ? 'IP 信息'
-                                              : w.type === 'player'
-                                                ? '随机音乐'
-                                                : w.type === 'hot'
-                                                  ? '全网热搜'
-                                                  : w.type === 'rss'
-                                                    ? 'RSS 阅读器'
-                                                    : w.type === 'iframe'
-                                                      ? '万能窗口'
-                                                      : '未知组件'
+                        w.type === "clock"
+                          ? "时钟"
+                          : w.type === "weather"
+                            ? "天气"
+                            : w.type === "clockweather"
+                              ? "时钟+天气"
+                              : w.type === "calendar"
+                                ? "日历"
+                                : w.type === "memo"
+                                  ? "备忘录"
+                                  : w.type === "search"
+                                    ? "聚合搜索"
+                                    : w.type === "quote"
+                                      ? "每日一言"
+                                      : w.type === "bookmarks"
+                                        ? "收藏夹"
+                                        : w.type === "todo"
+                                          ? "待办事项"
+                                          : w.type === "calculator"
+                                            ? "计算器"
+                                            : w.type === "ip"
+                                              ? "IP 信息"
+                                              : w.type === "player"
+                                                ? "随机音乐"
+                                                : w.type === "hot"
+                                                  ? "全网热搜"
+                                                  : w.type === "rss"
+                                                    ? "RSS 阅读器"
+                                                    : w.type === "iframe"
+                                                      ? "万能窗口"
+                                                      : "未知组件"
                       }}
                     </span>
                   </div>
@@ -708,7 +711,7 @@ const addTagToForm = (tag: string) => {
               class="bg-orange-50 border border-orange-100 rounded-xl p-4 mb-6 animate-fade-in"
             >
               <h5 class="text-sm font-bold text-orange-800 mb-3">
-                {{ rssForm.id ? '编辑订阅源' : '新增订阅源' }}
+                {{ rssForm.id ? "编辑订阅源" : "新增订阅源" }}
               </h5>
               <div class="space-y-3">
                 <div>
@@ -807,7 +810,7 @@ const addTagToForm = (tag: string) => {
                   "
                   class="px-4 py-3 border rounded-xl text-sm font-bold transition-all"
                 >
-                  {{ managingCategories ? '返回订阅列表' : '🗂️ 管理分类' }}
+                  {{ managingCategories ? "返回订阅列表" : "🗂️ 管理分类" }}
                 </button>
               </div>
 
@@ -945,12 +948,12 @@ const addTagToForm = (tag: string) => {
                       <span
                         :class="feed.enable ? 'text-green-500' : 'text-gray-300'"
                         class="text-xs font-bold"
-                        >{{ feed.enable ? '已启用' : '已禁用' }}</span
+                        >{{ feed.enable ? "已启用" : "已禁用" }}</span
                       >
                       <span
                         :class="feed.isPublic ? 'text-blue-500' : 'text-gray-300'"
                         class="text-xs font-bold"
-                        >{{ feed.isPublic ? '公开' : '私有' }}</span
+                        >{{ feed.isPublic ? "公开" : "私有" }}</span
                       >
                     </div>
                   </div>
@@ -1125,8 +1128,8 @@ const addTagToForm = (tag: string) => {
       </div>
     </div>
   </div>
-  <PasswordConfirmModal 
-    v-model:show="showPasswordConfirm" 
+  <PasswordConfirmModal
+    v-model:show="showPasswordConfirm"
     :title="confirmTitle"
     :on-success="onAuthSuccess"
   />

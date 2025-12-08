@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
-import { useMainStore } from '../stores/main'
-import type { RssFeed } from '@/types'
+import { ref, onMounted, computed, watch } from "vue";
+import { useMainStore } from "../stores/main";
+import type { RssFeed } from "@/types";
 
-const store = useMainStore()
+const store = useMainStore();
 
 interface RssItem {
-  title: string
-  link: string
-  pubDate?: string
-  content?: string
-  contentSnippet?: string
+  title: string;
+  link: string;
+  pubDate?: string;
+  content?: string;
+  contentSnippet?: string;
 }
 
 // Cache structure: url -> { data: items, ts: timestamp }
-const cache = ref<Record<string, { data: RssItem[]; ts: number }>>({})
-const CACHE_TTL = 5 * 60 * 1000 // Cache 5 minutes for custom RSS
+const cache = ref<Record<string, { data: RssItem[]; ts: number }>>({});
+const CACHE_TTL = 5 * 60 * 1000; // Cache 5 minutes for custom RSS
 
-const activeFeedId = ref<string>('')
-const list = ref<RssItem[]>([])
-const loading = ref(false)
-const errorMsg = ref('')
+const activeFeedId = ref<string>("");
+const list = ref<RssItem[]>([]);
+const loading = ref(false);
+const errorMsg = ref("");
 
 // Get enabled feeds
-const enabledFeeds = computed(() => store.rssFeeds.filter((f) => f.enable))
+const enabledFeeds = computed(() => store.rssFeeds.filter((f) => f.enable));
 
 // Watch for feed changes to reset/update
 watch(
@@ -32,71 +32,84 @@ watch(
     if (newFeeds.length > 0) {
       // If current active feed is gone, switch to first
       if (!newFeeds.find((f) => f.id === activeFeedId.value)) {
-        const first = newFeeds[0]
+        const first = newFeeds[0];
         if (first) {
-          activeFeedId.value = first.id
-          fetchFeed(first)
+          activeFeedId.value = first.id;
+          fetchFeed(first);
         }
       }
     } else {
-      activeFeedId.value = ''
-      list.value = []
+      activeFeedId.value = "";
+      list.value = [];
     }
   },
   { deep: true },
-)
+);
 
 const fetchFeed = async (feed: RssFeed, force = false) => {
-  if (!feed) return
-  activeFeedId.value = feed.id
-  errorMsg.value = ''
+  if (!feed) return;
+  activeFeedId.value = feed.id;
+  errorMsg.value = "";
 
   // Check cache
-  const now = Date.now()
-  const cached = cache.value[feed.url]
+  const now = Date.now();
+  const cached = cache.value[feed.url];
   if (!force && cached && now - cached.ts < CACHE_TTL) {
-    list.value = cached.data
-    return
+    list.value = cached.data;
+    return;
   }
 
-  loading.value = true
-  list.value = []
+  loading.value = true;
+  list.value = [];
 
-  try {
-    const res = await fetch(`/api/rss/parse?url=${encodeURIComponent(feed.url)}`)
-    const payload = await res.json()
+  // Use Socket.IO
+  store.socket.emit("rss:fetch", { url: feed.url });
 
-    if (!res.ok) throw new Error(payload.error || res.statusText)
-    if (payload.error) throw new Error(payload.error)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onData = (payload: any) => {
+    if (payload.url === feed.url) {
+      const items = payload.data.items || [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      list.value = items.map((item: any) => ({
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        contentSnippet: item.contentSnippet,
+      }));
+      // Write cache
+      cache.value[feed.url] = { data: list.value, ts: Date.now() };
+      loading.value = false;
+      cleanup();
+    }
+  };
 
-    const items = payload.items || []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    list.value = items.map((item: any) => ({
-      title: item.title,
-      link: item.link,
-      pubDate: item.pubDate,
-      contentSnippet: item.contentSnippet,
-    }))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onError = (payload: any) => {
+    if (payload.url === feed.url) {
+      console.error(`Failed to load RSS: ${feed.title}`, payload.error);
+      errorMsg.value = "加载失败";
+      list.value = [];
+      loading.value = false;
+      cleanup();
+    }
+  };
 
-    // Write cache
-    cache.value[feed.url] = { data: list.value, ts: now }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (e: any) {
-    console.error(`Failed to load RSS: ${feed.title}`, e)
-    errorMsg.value = '加载失败'
-    list.value = []
-  } finally {
-    loading.value = false
-  }
-}
+  const cleanup = () => {
+    store.socket.off("rss:data", onData);
+    store.socket.off("rss:error", onError);
+  };
+
+  store.socket.on("rss:data", onData);
+  store.socket.on("rss:error", onError);
+};
 
 onMounted(() => {
-  const first = enabledFeeds.value[0]
+  const first = enabledFeeds.value[0];
   if (first) {
-    activeFeedId.value = first.id
-    fetchFeed(first)
+    activeFeedId.value = first.id;
+    fetchFeed(first);
   }
-})
+});
 </script>
 
 <template>

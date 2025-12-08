@@ -1,72 +1,73 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import type { WidgetConfig } from '@/types'
+import { ref, onMounted } from "vue";
+import type { WidgetConfig } from "@/types";
+import { useMainStore } from "../stores/main";
 
-defineProps<{ widget: WidgetConfig }>()
+const store = useMainStore();
+defineProps<{ widget: WidgetConfig }>();
 
 interface HotItem {
-  title: string
-  url: string
-  hot: string | number
+  title: string;
+  url: string;
+  hot: string | number;
 }
 
 // 缓存不同 Tab 的数据，避免来回切换时重复请求
-const cache = ref<Record<string, { data: HotItem[]; ts: number }>>({})
-const CACHE_TTL = 60 * 1000 // 缓存 1 分钟
+const cache = ref<Record<string, { data: HotItem[]; ts: number }>>({});
+const CACHE_TTL = 60 * 1000; // 缓存 1 分钟
 
-const activeTab = ref<'weibo' | 'news' | 'huxiu'>('weibo')
-const list = ref<HotItem[]>([])
-const loading = ref(false)
+const activeTab = ref<"weibo" | "news" | "huxiu">("weibo");
+const list = ref<HotItem[]>([]);
+const loading = ref(false);
 
 // 获取数据 (带缓存优化)
-const fetchHot = async (type: 'weibo' | 'news' | 'huxiu', force = false) => {
-  activeTab.value = type
+const fetchHot = async (type: "weibo" | "news" | "huxiu", force = false) => {
+  activeTab.value = type;
 
   // 检查缓存
-  const now = Date.now()
+  const now = Date.now();
   if (!force && cache.value[type] && now - cache.value[type].ts < CACHE_TTL) {
-    list.value = cache.value[type].data
-    return
+    list.value = cache.value[type].data;
+    return;
   }
 
-  loading.value = true
-  list.value = []
+  loading.value = true;
+  list.value = [];
 
-  try {
-    let url = `/api/hot/${type}`
-    if (type === 'huxiu') {
-      url = `/api/rss/parse?url=https://www.huxiu.com/rss/0.xml`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onData = (payload: any) => {
+    if (payload.type === type) {
+      list.value = payload.data;
+      cache.value[type] = { data: list.value, ts: Date.now() };
+      loading.value = false;
+      cleanup();
     }
+  };
 
-    const res = await fetch(url)
-    const ct = res.headers.get('content-type') || ''
-    const payload = ct.includes('application/json') ? await res.json() : await res.text()
-
-    if (!res.ok)
-      throw new Error(
-        typeof payload === 'string' ? payload.slice(0, 50) : payload?.error || res.statusText,
-      )
-    if (payload.error) throw new Error(payload.error)
-
-    let items = payload
-    if (type === 'huxiu' && payload.items) {
-      items = payload.items
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onError = (payload: any) => {
+    if (payload.type === type) {
+      console.error(`加载 ${type} 失败`, payload.error);
+      list.value = [{ title: "加载失败，请重试", url: "#", hot: "" }];
+      loading.value = false;
+      cleanup();
     }
+  };
 
-    list.value = Array.isArray(items) ? items : []
-    // 写入缓存
-    cache.value[type] = { data: list.value, ts: now }
-  } catch (e) {
-    console.error(`加载 ${type} 失败`, e)
-    list.value = [{ title: '加载失败，请重试', url: '#', hot: '' }]
-  } finally {
-    loading.value = false
-  }
-}
+  const cleanup = () => {
+    store.socket.off("hot:data", onData);
+    store.socket.off("hot:error", onError);
+  };
+
+  store.socket.on("hot:data", onData);
+  store.socket.on("hot:error", onError);
+
+  store.socket.emit("hot:fetch", { type, force });
+};
 
 onMounted(() => {
-  fetchHot('weibo')
-})
+  fetchHot("weibo");
+});
 </script>
 
 <template>
@@ -89,8 +90,8 @@ onMounted(() => {
             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
         "
       >
-        <span class="text-sm">{{ tab === 'weibo' ? '🔥' : tab === 'news' ? '🗞️' : '🐯' }}</span>
-        <span>{{ tab === 'weibo' ? '微博' : tab === 'news' ? '中新网' : '虎嗅' }}</span>
+        <span class="text-sm">{{ tab === "weibo" ? "🔥" : tab === "news" ? "🗞️" : "🐯" }}</span>
+        <span>{{ tab === "weibo" ? "微博" : tab === "news" ? "中新网" : "虎嗅" }}</span>
         <div
           v-if="activeTab === tab"
           class="absolute bottom-0 left-0 right-0 h-0.5"

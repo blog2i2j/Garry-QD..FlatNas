@@ -104,6 +104,33 @@ jspm_packages/
 .yarn/install-state.gz
 .pnp.*
 
-# User Data
+# IntelliJ IDEA
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# FlatNas specific
+server/data/visitors.json
+flatnas-helper/
+
+dist/
+.trae/documents/
+
+# FlatNas Media Files (防止上传本地音乐文件)
+server/music/*.mp3
+server/music/*.flac
+server/music/*.wav
+server/music/*.m4a
+server/music/*.ape
+server/music/*.ogg
+
+# User Data (保留你的新增规则)
 server/data/*
 !server/data/.gitkeep
+
+# IDE and System Files (保留你的新增规则)
+.trae/
+*.bak
+Thumbs.db
+.DS_Store

@@ -30,7 +30,7 @@ export function waitForAppearance(timeoutMs = 5000): Promise<HTMLElement> {
         resolve(el)
       }
     })
-    obs.observe(document.documentElement, { childList: true, subtree: true })
+    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true })
   })
 }
 
@@ -52,7 +52,7 @@ export function waitForDisappearance(timeoutMs = 10000): Promise<void> {
         resolve()
       }
     })
-    obs.observe(document.documentElement, { childList: true, subtree: true })
+    obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true })
   })
 }
 

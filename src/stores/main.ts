@@ -34,8 +34,17 @@ export const useMainStore = defineStore("main", () => {
     return headers;
   };
 
+  const createDefaultItems = () =>
+    Array.from({ length: 10 }, (_, i) => ({
+      id: `def-${Date.now()}-${i}`,
+      title: "待添加",
+      url: "",
+      icon: "",
+      isPublic: true,
+    }));
+
   // Version Check
-  const currentVersion = "1.0.19";
+  const currentVersion = "1.0.21";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -49,13 +58,16 @@ export const useMainStore = defineStore("main", () => {
 
   const checkUpdate = async () => {
     try {
-      const res = await fetch("https://api.github.com/repos/Garry-QD/FlatNas/releases/latest");
+      // Use Gitee tags API to avoid connection issues in China
+      const res = await fetch("https://gitee.com/api/v5/repos/gjx0808/FlatNas/tags");
       if (res.ok) {
         const data = await res.json();
-        latestVersion.value = data.tag_name;
+        if (data.length > 0) {
+          latestVersion.value = data[0].name;
+        }
       }
     } catch (e) {
-      console.error("Failed to check github update", e);
+      console.error("Failed to check update", e);
     }
 
     try {
@@ -75,6 +87,19 @@ export const useMainStore = defineStore("main", () => {
 
   const appConfig = ref<AppConfig>({
     background: "/default-wallpaper.svg",
+    mobileBackground: "/default-wallpaper.svg",
+    enableMobileWallpaper: true,
+    fixedWallpaper: false,
+    pcRotation: false,
+    pcRotationInterval: 30, // Default 30 minutes
+    pcRotationMode: "random",
+    mobileRotation: false,
+    mobileRotationInterval: 30,
+    mobileRotationMode: "random",
+    backgroundBlur: 0,
+    backgroundMask: 0,
+    mobileBackgroundBlur: 0,
+    mobileBackgroundMask: 0,
     customTitle: "我的导航",
     titleAlign: "left",
     titleSize: 48,
@@ -163,10 +188,10 @@ export const useMainStore = defineStore("main", () => {
       } else if (data.groups) {
         groups.value = data.groups;
         if (groups.value.length === 0) {
-          groups.value.push({ id: "g1", title: "常用", items: [], preset: true });
+          groups.value.push({ id: "g1", title: "常用", items: createDefaultItems(), preset: true });
         }
       } else {
-        groups.value = [{ id: "g1", title: "常用", items: [], preset: true }];
+        groups.value = [{ id: "g1", title: "常用", items: createDefaultItems(), preset: true }];
       }
 
       if (data.widgets) {
@@ -469,5 +494,6 @@ export const useMainStore = defineStore("main", () => {
     updateSystemConfig,
     systemConfig,
     isConnected,
+    socket,
   };
 });

@@ -4,8 +4,8 @@ import vue from "@vitejs/plugin-vue";
 import vueDevTools from "vite-plugin-vue-devtools";
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue(), vueDevTools()],
+export default defineConfig(({ mode }) => ({
+  plugins: [vue(), mode !== "test" && vueDevTools()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -25,6 +25,15 @@ export default defineConfig({
         target: "http://localhost:3000",
         changeOrigin: true,
       },
+      // ✨ Backgrounds 代理
+      "/backgrounds": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/mobile_backgrounds": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
       // ✨ CGI 代理
       "^.*\\.cgi.*": {
         target: "http://localhost:3000",
@@ -38,4 +47,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
