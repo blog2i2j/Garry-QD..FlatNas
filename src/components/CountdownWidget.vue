@@ -46,7 +46,7 @@ const saveConfig = () => {
   showConfig.value = false;
 };
 
-const timeLeft = ref({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+const timeLeft = ref({ days: 0, hours: 0, minutes: 0, seconds: 0, daysCeil: 0 });
 const isExpired = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -60,29 +60,46 @@ const isSmall = computed(
   () => (props.widget.colSpan ?? 1) <= 1 && (props.widget.rowSpan ?? 1) <= 1,
 );
 
+const displayDays = computed(() => (isSmall.value ? timeLeft.value.daysCeil : timeLeft.value.days));
+
 const calculate = () => {
   if (!props.widget.data?.targetDate) {
-    timeLeft.value = { days: 0, hours: 0, minutes: 0, seconds: 0 };
+    timeLeft.value = { days: 0, hours: 0, minutes: 0, seconds: 0, daysCeil: 0 };
     return;
   }
 
-  const target = new Date(props.widget.data.targetDate).getTime();
-  const now = new Date().getTime();
-  const diff = target - now;
+  try {
+    const target = new Date(props.widget.data.targetDate).getTime();
+    const now = new Date().getTime();
+    const diff = target - now;
 
-  if (diff <= 0) {
-    timeLeft.value = { days: 0, hours: 0, minutes: 0, seconds: 0 };
-    isExpired.value = true;
-    return;
+    if (diff <= 0) {
+      timeLeft.value = { days: 0, hours: 0, minutes: 0, seconds: 0, daysCeil: 0 };
+      isExpired.value = true;
+      return;
+    }
+
+    isExpired.value = false;
+
+    // Standard calculation
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    // Ceiling days for "Days Only" display (e.g. 1 hour left = 1 day)
+    const daysCeil = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+    timeLeft.value = {
+      days,
+      hours,
+      minutes,
+      seconds,
+      daysCeil,
+    };
+  } catch (e) {
+    console.error("Countdown calculation error:", e);
   }
-
-  isExpired.value = false;
-  timeLeft.value = {
-    days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-    hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-    minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-    seconds: Math.floor((diff % (1000 * 60)) / 1000),
-  };
 };
 
 onMounted(() => {
@@ -256,7 +273,7 @@ const formatNum = (num: number) => num.toString().padStart(2, "0");
             class="bg-white/20 backdrop-blur rounded px-1.5 py-1 text-xl font-bold font-mono min-w-[2.5rem] text-center"
             :class="{ 'text-3xl min-w-[3.5rem] py-2': isSmall }"
           >
-            {{ timeLeft.days }}
+            {{ displayDays }}
           </div>
           <span class="text-[10px] opacity-80 mt-0.5">天</span>
         </div>
@@ -286,7 +303,7 @@ const formatNum = (num: number) => num.toString().padStart(2, "0");
       <!-- Simple Style -->
       <div v-else-if="widget.data.style === 'simple'" class="flex flex-col items-center">
         <div class="font-bold font-mono text-blue-600" :class="isSmall ? 'text-5xl' : 'text-4xl'">
-          {{ timeLeft.days
+          {{ displayDays
           }}<span class="text-sm font-normal text-gray-400 ml-1" v-if="!isSmall">天</span>
         </div>
         <div v-if="isSmall" class="text-xs text-gray-400">天</div>
@@ -303,7 +320,7 @@ const formatNum = (num: number) => num.toString().padStart(2, "0");
           class="font-bold font-mono text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 drop-shadow-[0_0_5px_rgba(168,85,247,0.5)]"
           :class="isSmall ? 'text-5xl' : 'text-3xl'"
         >
-          {{ timeLeft.days }} <span v-if="!isSmall" class="text-lg">DAY</span>
+          {{ displayDays }} <span v-if="!isSmall" class="text-lg">DAY</span>
         </div>
         <div
           v-if="isSmall"

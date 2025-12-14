@@ -35,6 +35,8 @@ import SizeSelector from "./SizeSelector.vue";
 const store = useMainStore();
 useWallpaperRotation();
 
+const empireBackgroundUrl = `data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E`;
+
 const showEditModal = ref(false);
 const showSettingsModal = ref(false);
 const showGroupSettingsModal = ref(false);
@@ -346,6 +348,10 @@ const handleSizeSelect = (widget: GridLayoutItem, size: { colSpan: number; rowSp
 
   activeResizeWidgetId.value = null;
   store.saveData();
+};
+
+const isEmpireCloudWidget = (type: string) => {
+  return ["bookmarks", "countdown", "rss", "todo", "calendar", "hot"].includes(type);
 };
 
 const devtoolsClickCount = ref(0);
@@ -1020,12 +1026,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen relative overflow-hidden flex flex-col">
+  <div
+    class="min-h-screen relative overflow-hidden flex flex-col"
+    :class="{ 'empire-theme': store.appConfig.empireMode }"
+  >
     <!-- ✨ Global Background Layer -->
     <div
-      v-if="store.appConfig.background || store.appConfig.mobileBackground"
+      v-if="
+        store.appConfig.background || store.appConfig.mobileBackground || store.appConfig.empireMode
+      "
       class="fixed inset-0 z-0 pointer-events-none select-none"
     >
+      <!-- Empire Mode Background -->
+      <div
+        v-if="store.appConfig.empireMode"
+        class="absolute inset-0 z-20"
+        style="background: radial-gradient(circle at 50% 50%, #2a2a2a, #000000)"
+      >
+        <div
+          class="absolute inset-0 opacity-30"
+          :style="{ backgroundImage: `url('${empireBackgroundUrl}')` }"
+        ></div>
+      </div>
+
       <!-- Desktop Image Layer -->
       <div
         class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat transition-all duration-300"
@@ -1265,6 +1288,9 @@ onMounted(() => {
                 : '',
               widget.hideOnMobile ? 'hidden md:block' : '',
               activeResizeWidgetId === widget.id ? '!z-[1000]' : '',
+              store.appConfig.empireMode && isEmpireCloudWidget(widget.type)
+                ? 'empire-cloud-widget'
+                : '',
             ]"
           >
             <button
@@ -1584,7 +1610,7 @@ onMounted(() => {
                   </div>
                   <!-- MEM Label -->
                   <div
-                    class="absolute bottom-0.5 left-3 font-black italic text-xl text-white opacity-40 select-none z-10 tracking-tighter"
+                    class="absolute bottom-0.5 left-1/2 -translate-x-1/2 font-black italic text-xl text-white opacity-40 select-none z-10 tracking-tighter"
                   >
                     MEM
                   </div>
@@ -2077,5 +2103,140 @@ onMounted(() => {
 :deep(path[class*="fill-yellow-100"]),
 :deep(path[class*="fill-orange-100"]) {
   fill: #ffffff !important;
+}
+
+.empire-theme {
+  --group-title-color: #ffd700 !important;
+  --card-title-color: #ffd700 !important;
+  color: #ffd700 !important;
+}
+
+.empire-theme :deep(.text-gray-900),
+.empire-theme :deep(.text-gray-800),
+.empire-theme :deep(.text-gray-700),
+.empire-theme :deep(.text-gray-600),
+.empire-theme :deep(.text-gray-500),
+.empire-theme :deep(.text-gray-400) {
+  color: #ffd700 !important;
+}
+
+.empire-theme :deep(.bg-white) {
+  backdrop-filter: blur(10px);
+}
+
+.empire-theme :deep(.bg-gray-50) {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+.empire-theme :deep(svg) {
+  color: #ffd700 !important;
+  fill: currentColor;
+}
+
+.empire-theme :deep(.border-gray-200),
+.empire-theme :deep(.border-gray-100) {
+  border-color: rgba(255, 215, 0, 0.2) !important;
+}
+
+/* Force background override for ALL widget root elements */
+.empire-theme .vgl-item > * {
+  background-color: #000000 !important;
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(circle at 50% 50%, #2a2a2a, #000000) !important;
+  border: 1px solid rgba(255, 215, 0, 0.6) !important;
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.8),
+    0 0 10px rgba(255, 215, 0, 0.2) !important;
+}
+
+/* Hide original backgrounds of inner elements */
+.empire-theme .vgl-item > * > [class*="bg-"],
+.empire-theme .vgl-item > * > [class*="bg-gradient-"],
+.empire-theme :deep(.bg-white),
+.empire-theme :deep(.bg-white\/80),
+.empire-theme :deep(.bg-yellow-100\/90),
+.empire-theme :deep(.bg-gradient-to-br) {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Ensure backdrop-blur doesn't make things white */
+.empire-theme :deep(.backdrop-blur),
+.empire-theme :deep(.backdrop-blur-md),
+.empire-theme :deep(.backdrop-blur-sm) {
+  backdrop-filter: none !important;
+}
+
+/* Specific fix for Calendar, Todo, Bookmarks which use specific classes */
+.empire-theme .vgl-item :deep(.bg-white\/90),
+.empire-theme .vgl-item :deep(.bg-white\/50),
+.empire-theme .vgl-item :deep(.hover\:bg-white:hover) {
+  background-color: transparent !important;
+}
+
+/* Fix for Memo Widget */
+.empire-theme :deep(.bg-yellow-100\/90) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+/* Ensure text visibility on the dark background */
+.empire-theme :deep(.text-gray-900),
+.empire-theme :deep(.text-gray-800),
+.empire-theme :deep(.text-gray-700),
+.empire-theme :deep(.text-gray-600),
+.empire-theme :deep(.text-gray-500),
+.empire-theme :deep(.text-gray-400),
+.empire-theme :deep(.text-gray-300) {
+  color: #ffd700 !important;
+}
+
+/* Fix for Todo Widget input area */
+.empire-theme :deep(.bg-gray-50),
+.empire-theme :deep(.focus\:bg-white:focus),
+.empire-theme :deep(input),
+.empire-theme :deep(textarea) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #ffd700 !important;
+  border-color: rgba(255, 215, 0, 0.3) !important;
+}
+
+/* Fix for buttons and active states */
+.empire-theme :deep(.bg-blue-50),
+.empire-theme :deep(.bg-blue-100),
+.empire-theme :deep(.bg-red-50),
+.empire-theme :deep(.bg-red-100),
+.empire-theme :deep(.bg-orange-50),
+.empire-theme :deep(.bg-green-100),
+.empire-theme :deep(.hover\:bg-gray-100:hover),
+.empire-theme :deep(.hover\:bg-gray-200:hover) {
+  background-color: rgba(255, 215, 0, 0.1) !important;
+  color: #ffd700 !important;
+  border-color: rgba(255, 215, 0, 0.2) !important;
+}
+
+/* Fix for specific text colors (Blue/Red/Green usually used for links/status) */
+.empire-theme :deep(.text-blue-600),
+.empire-theme :deep(.text-blue-500),
+.empire-theme :deep(.text-blue-400),
+.empire-theme :deep(.text-red-600),
+.empire-theme :deep(.text-red-500),
+.empire-theme :deep(.text-green-600),
+.empire-theme :deep(.text-orange-600) {
+  color: #ffd700 !important;
+  text-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
+}
+
+/* Calendar Today Highlight */
+.empire-theme :deep(.text-red-600.font-bold) {
+  color: #ff4500 !important;
+  text-shadow: 0 0 10px rgba(255, 69, 0, 0.5);
+}
+
+/* Docker Status Bars */
+.empire-theme :deep(.bg-gray-200) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 </style>

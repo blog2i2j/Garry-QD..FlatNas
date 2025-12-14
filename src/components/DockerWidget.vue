@@ -350,12 +350,20 @@ const addToHome = (c: DockerContainer) => {
 
   if (!dockerGroup) return; // Should not happen
 
-  const lanUrl = getContainerLanUrl(c);
-  const publicUrl = getContainerPublicUrl(c);
+  let lanUrl = getContainerLanUrl(c);
+  let publicUrl = getContainerPublicUrl(c);
 
   if (!lanUrl && !publicUrl) {
-    alert("该容器没有暴露端口，无法添加");
-    return;
+    const port = prompt("未检测到端口映射（可能是 Host 网络模式），请手动输入端口号 (例如 8080):");
+    if (!port) return;
+
+    const lanHost =
+      (props.widget?.data && typeof props.widget.data.lanHost === "string"
+        ? props.widget.data.lanHost.trim()
+        : "") || "";
+    const host = lanHost || window.location.hostname;
+    lanUrl = `http://${host}:${port}`;
+    publicUrl = `http://${window.location.hostname}:${port}`; // Use same host for public initially or let user edit later
   }
 
   const title = (c.Names?.[0] || "Container").replace(/^\//, "");
@@ -639,7 +647,7 @@ const getStatusColor = (state: string) => {
                 <span>外网打开</span>
               </button>
               <button
-                v-if="c.State === 'running' && c.Ports.some((p) => p.PublicPort)"
+                v-if="c.State === 'running'"
                 @click="addToHome(c)"
                 class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="添加到桌面"

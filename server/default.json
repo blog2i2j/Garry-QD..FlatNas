@@ -722,7 +722,7 @@
       "type": "countdown",
       "enable": true,
       "data": {
-        "targetDate": "2026-02-02T00:00",
+        "targetDate": "2026-02-17T00:00",
         "title": "春节",
         "style": "neon"
       },
@@ -819,7 +819,6 @@
     "wallpaperApiMobileUpload": "/api/mobile_backgrounds/upload",
     "wallpaperApiMobileDeleteBase": "/api/mobile_backgrounds",
     "wallpaperMobileImageBase": "/mobile_backgrounds",
-    "sidebarViewMode": "groups",
     "mobileWallpaperOrder": [
       "104933-1741661373383a.jpg",
       "155548-17409885482e02.jpg",
@@ -829,6 +828,8 @@
       "img2.wallspic.com-azure-dian_lan_se_de-yuan_quan-fu_hao-yi_shu-2340x5070.png",
       "img2.wallspic.com-yi_shu-ye_ti-liu_ti-pin_hong_se-1440x2560.png",
       "img3.wallspic.com-sheng_dan_jie-sheng_dan_cai_deng-sheng_dan_shu-jia_ri-sheng_dan_jie_de_zhuang_shi_pin-3178x4768.jpg"
-    ]
+    ],
+    "sidebarViewMode": "groups",
+    "empireMode": false
   }
 }

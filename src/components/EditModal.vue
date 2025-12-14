@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import type { NavItem, SimpleIcon } from "@/types";
+import type { NavItem, SimpleIcon, AliIcon } from "@/types";
 import { useMainStore } from "../stores/main";
 import IconUploader from "./IconUploader.vue";
 import IconSelectionModal from "./IconSelectionModal.vue";
@@ -35,6 +35,7 @@ const iconCandidates = ref<string[]>([]);
 const searchSource = ref<"local" | "api">("local");
 const localIcons = ref<string[]>([]);
 const simpleIconsData = ref<SimpleIcon[] | null>(null);
+const aliIconsData = ref<AliIcon[] | null>(null);
 
 // 表单数据 (合并管理，比以前分散的 ref 更整洁)
 const form = ref<Omit<NavItem, "id">>({
@@ -140,6 +141,33 @@ const fetchSimpleIconsData = async () => {
     }
   } catch (e) {
     console.error("Failed to fetch simple-icons data", e);
+  }
+};
+
+const ALI_ICON_BASE_URL = "https://icon-manager.1851365c.er.aliyun-esa.net";
+
+// 获取 Ali Icons 数据
+const fetchAliIconsData = async () => {
+  if (aliIconsData.value) return;
+  try {
+    // 优先尝试使用本地代理，解决 CORS 问题
+    const res = await fetch("/api/ali-icons");
+    if (res.ok) {
+      aliIconsData.value = await res.json();
+    } else {
+      throw new Error("Proxy failed");
+    }
+  } catch (e) {
+    console.warn("Proxy fetch failed, trying direct fetch...", e);
+    // 降级尝试直接请求 (如果后端挂了但前端能通外网)
+    try {
+      const res = await fetch(`${ALI_ICON_BASE_URL}/icons.json`);
+      if (res.ok) {
+        aliIconsData.value = await res.json();
+      }
+    } catch (directErr) {
+      console.error("Failed to fetch ali-icons data", directErr);
+    }
   }
 };
 
@@ -284,6 +312,35 @@ const autoAdaptIcon = async () => {
       }
     }
 
+    // Phase 3: AliYun Icon Manager
+    console.log(`[Search] Phase 2 failed. Starting Phase 3 (AliYun) for: "${searchTerm}"`);
+    await fetchAliIconsData();
+    if (aliIconsData.value) {
+      const aliFuse = new Fuse(aliIconsData.value, {
+        keys: ["name", "cnName", "domain"],
+        threshold: 0.3,
+        ignoreLocation: true,
+      });
+
+      const aliResults = aliFuse.search(searchTerm);
+      const aliMatches = aliResults.map((result) => `${ALI_ICON_BASE_URL}${result.item.url}`);
+
+      console.log(`[Search] Phase 3 found ${aliMatches.length} matches`);
+
+      if (aliMatches.length > 0) {
+        if (aliMatches.length === 1) {
+          console.log(`[Search] Auto-selecting single Ali match: ${aliMatches[0]}`);
+          form.value.icon = aliMatches[0] || "";
+        } else {
+          console.log(`[Search] Showing selection modal for ${aliMatches.length} Ali matches`);
+          iconCandidates.value = aliMatches;
+          searchSource.value = "api";
+          showIconSelection.value = true;
+        }
+        return;
+      }
+    }
+
     // 原始逻辑兜底：尝试根据域名匹配
     const targetUrl = form.value.url || form.value.lanUrl;
     if (targetUrl) {
@@ -302,6 +359,76 @@ const autoAdaptIcon = async () => {
   } catch (e) {
     console.error(e);
     alert("搜索失败，请检查网络");
+  } finally {
+    isFetching.value = false;
+  }
+};
+
+// 网络匹配（直接搜索 AliYun 图标库）
+const networkMatch = async () => {
+  // 1. 确定搜索关键词
+  // 优先使用标题 (根据用户要求)
+  let searchTerm = form.value.title.trim();
+
+  // 如果标题为空，尝试从 URL 提取
+  if (!searchTerm) {
+    const targetUrl = form.value.url || form.value.lanUrl;
+    if (targetUrl) {
+      searchTerm = extractKeywordFromUrl(targetUrl);
+    }
+  }
+
+  // 如果还是为空，且图标输入框里有非 URL 内容，尝试使用它
+  if (!searchTerm) {
+    const iconInput = form.value.icon ? form.value.icon.trim() : "";
+    if (
+      iconInput &&
+      !iconInput.startsWith("http") &&
+      !iconInput.startsWith("/") &&
+      !iconInput.startsWith("data:")
+    ) {
+      searchTerm = iconInput;
+    }
+  }
+
+  if (!searchTerm) return alert("请输入标题或链接后重试！");
+
+  isFetching.value = true;
+  iconType.value = "image";
+
+  try {
+    console.log(`[Network Match] Searching AliYun for: "${searchTerm}"`);
+    await fetchAliIconsData();
+
+    if (aliIconsData.value) {
+      const aliFuse = new Fuse(aliIconsData.value, {
+        keys: ["name", "cnName", "domain"],
+        threshold: 0.3,
+        ignoreLocation: true,
+      });
+
+      const aliResults = aliFuse.search(searchTerm);
+      const aliMatches = aliResults.map((result) => `${ALI_ICON_BASE_URL}${result.item.url}`);
+
+      console.log(`[Network Match] Found ${aliMatches.length} matches`);
+
+      if (aliMatches.length > 0) {
+        if (aliMatches.length === 1) {
+          form.value.icon = aliMatches[0] || "";
+        } else {
+          iconCandidates.value = aliMatches;
+          searchSource.value = "api";
+          showIconSelection.value = true;
+        }
+      } else {
+        alert("未找到匹配的网络图标");
+      }
+    } else {
+      alert("获取图标库失败，请检查网络");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("网络匹配失败");
   } finally {
     isFetching.value = false;
   }
@@ -339,10 +466,12 @@ const autoFetchIcon = async () => {
   try {
     const urlObj = new URL(targetUrl);
     // 尝试多种来源抓取图标
+    // 调整顺序：优先使用可靠的 API，最后尝试直接访问 favicon.ico
     const candidates = [
-      `${urlObj.origin}/favicon.ico`,
-      `https://api.uomg.com/api/favicon?url=${encodeURIComponent(targetUrl)}`,
       `https://icons.duckduckgo.com/ip3/${urlObj.hostname}.ico`,
+      `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`,
+      `https://api.uomg.com/api/favicon?url=${encodeURIComponent(targetUrl)}`,
+      `${urlObj.origin}/favicon.ico`,
     ];
 
     let found = false;
@@ -449,15 +578,15 @@ const processIconError = () => {
     val.startsWith("http") &&
     !val.includes("favicon.ico") &&
     !val.includes("api.uomg.com") &&
-    !val.includes("simpleicons.org")
+    !val.includes("simpleicons.org") &&
+    !val.includes("duckduckgo.com") &&
+    !val.includes("google.com/s2")
   ) {
-    console.log("Icon load failed, trying to fallback to favicon:", val);
+    console.log("Icon load failed, trying to fallback to reliable API:", val);
     try {
       const urlObj = new URL(val);
-      // 尝试设置为该域名的 favicon
-      // 为了避免死循环，这里直接设置成 favicon 地址
-      // 如果已经是 favicon 地址了就不会进这里
-      form.value.icon = `${urlObj.origin}/favicon.ico`;
+      // 尝试使用 DuckDuckGo API，它比直接访问 favicon.ico 更可靠且不会产生 404 错误日志（会返回默认图标）
+      form.value.icon = `https://icons.duckduckgo.com/ip3/${urlObj.hostname}.ico`;
       return;
     } catch {
       // ignore
@@ -534,12 +663,21 @@ const submit = () => {
             <label class="block text-sm font-medium text-gray-600 mb-1"
               >标题 <span class="text-red-500">*</span></label
             >
-            <input
-              v-model="form.title"
-              type="text"
-              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors"
-              placeholder="例如：我的博客"
-            />
+            <div class="relative">
+              <input
+                v-model="form.title"
+                type="text"
+                class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors pr-24"
+                placeholder="例如：我的博客"
+              />
+              <button
+                @click="networkMatch"
+                class="absolute right-1 top-1 bottom-1 px-3 bg-purple-50 text-purple-600 text-xs font-bold rounded-md hover:bg-purple-100 flex items-center gap-1 transition-colors"
+                title="搜索网络图标库"
+              >
+                🌐 网络匹配
+              </button>
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-600 mb-1">标题颜色</label>
@@ -718,14 +856,16 @@ const submit = () => {
           </div>
 
           <div v-else class="space-y-3 animate-fade-in">
-            <input
-              v-model="form.icon"
-              type="text"
-              placeholder="图片 URL 地址..."
-              class="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-blue-500 outline-none"
-              @focus="iconInputFocused = true"
-              @blur="onIconInputBlur"
-            />
+            <div class="relative">
+              <input
+                v-model="form.icon"
+                type="text"
+                placeholder="图片 URL 地址..."
+                class="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-blue-500 outline-none"
+                @focus="iconInputFocused = true"
+                @blur="onIconInputBlur"
+              />
+            </div>
 
             <div
               class="text-xs text-gray-400 text-center flex items-center gap-2 before:h-px before:bg-gray-200 before:flex-1 after:h-px after:bg-gray-200 after:flex-1"

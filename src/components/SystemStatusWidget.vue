@@ -142,7 +142,6 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <span class="text-xl">🖥️</span>
       </div>
 
       <div

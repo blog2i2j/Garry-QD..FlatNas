@@ -47,7 +47,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.28dev";
+  const currentVersion = "1.0.29";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -146,6 +146,9 @@ export const useMainStore = defineStore("main", () => {
     wallpaperApiMobileUpload: "/api/mobile_backgrounds/upload",
     wallpaperApiMobileDeleteBase: "/api/mobile_backgrounds",
     wallpaperMobileImageBase: "/mobile_backgrounds",
+    mobileWallpaperOrder: [],
+    sidebarViewMode: "bookmarks",
+    empireMode: false,
   });
 
   const fetchSystemConfig = async () => {

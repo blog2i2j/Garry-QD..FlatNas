@@ -165,7 +165,8 @@ const fetchWeather = async () => {
 
   const onError = async (payload: WeatherErrorPayload) => {
     if (payload.city === city) {
-      console.error("Weather socket error", payload.error);
+      // 降低日志级别，避免在控制台刷屏错误，因为我们有后续的 REST API 降级策略
+      console.warn("[Weather] Socket fetch failed, switching to REST API fallback.", payload.error);
       const source = store.appConfig.weatherSource || "wttr";
       const key = store.appConfig.amapKey || "";
       const url = `/api/weather?city=${encodeURIComponent(city)}&source=${source}&key=${encodeURIComponent(key)}`;

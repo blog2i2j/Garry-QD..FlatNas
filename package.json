@@ -1,6 +1,6 @@
 {
   "name": "flat-nas",
-  "version": "1.0.28-dev",
+  "version": "1.0.29",
   "license": "AGPL-3.0",
   "private": true,
   "type": "module",

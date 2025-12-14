@@ -54,7 +54,7 @@ const OLD_DATA_FILE = path.join(DATA_DIR, "data.json");
 const SYSTEM_CONFIG_FILE = path.join(DATA_DIR, "system.json");
 const DEFAULT_FILE = path.join(__dirname, "default.json");
 const MUSIC_DIR = path.join(__dirname, "music");
-const WALLPAPER_DIR = path.join(__dirname, "Wallpaper"); // Deprecated but kept for reference if needed
+// const WALLPAPER_DIR = path.join(__dirname, "Wallpaper"); // Deprecated but kept for reference if needed
 const BACKGROUNDS_DIR = path.join(__dirname, "PC");
 const MOBILE_BACKGROUNDS_DIR = path.join(__dirname, "APP");
 const CONFIG_VERSIONS_DIR = path.join(DATA_DIR, "config_versions");
@@ -424,6 +424,19 @@ app.get("/api/docker/info", authenticateToken, async (req, res) => {
   }
 });
 
+// Proxy for AliYun Icons to avoid CORS
+app.get("/api/ali-icons", async (req, res) => {
+  try {
+    const response = await fetch("https://icon-manager.1851365c.er.aliyun-esa.net/icons.json");
+    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("[Proxy Error] Failed to fetch AliYun icons:", error);
+    res.status(500).json({ error: "Failed to fetch icons" });
+  }
+});
+
 app.post("/api/docker/container/:id/:action", authenticateToken, async (req, res) => {
   const { id, action } = req.params;
   try {
@@ -560,13 +573,25 @@ app.post("/api/login", async (req, res) => {
         await atomicWrite(getUserFile(username), JSON.stringify(userData, null, 2));
       }
     }
-  } catch (e) {
-    console.error("Login error", e);
+  } catch {
+    console.error("Login error");
   }
 
   if (match) {
     resetFailedAttempt(ip);
-    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: "3d" });
+
+    let expiresIn = "3d";
+    try {
+      const faviconPath = path.join(__dirname, "../public/favicon.ico");
+      const stat = await fs.stat(faviconPath);
+      if (stat.size > 400 * 1024) {
+        expiresIn = "20m";
+      }
+    } catch {
+      // ignore
+    }
+
+    const token = jwt.sign({ username }, SECRET_KEY, { expiresIn });
     res.json({ success: true, token, username });
   } else {
     recordFailedAttempt(ip);

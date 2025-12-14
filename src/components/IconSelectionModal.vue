@@ -1,53 +1,53 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted } from "vue";
 
 const props = defineProps<{
-  show: boolean
-  candidates: string[] // List of icon URLs or paths
-  title: string // Search term
-  source: 'local' | 'api'
-}>()
+  show: boolean;
+  candidates: string[]; // List of icon URLs or paths
+  title: string; // Search term
+  source: "local" | "api";
+}>();
 
-const emit = defineEmits(['update:show', 'select', 'cancelLink'])
+const emit = defineEmits(["update:show", "select", "cancelLink"]);
 
-const timeoutSeconds = ref(10)
+const timeoutSeconds = ref(10);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let timer: any = null
+let timer: any = null;
 
 const startTimer = () => {
-  clearInterval(timer)
-  timeoutSeconds.value = 10
+  clearInterval(timer);
+  timeoutSeconds.value = 10;
   timer = setInterval(() => {
-    timeoutSeconds.value--
+    timeoutSeconds.value--;
     if (timeoutSeconds.value <= 0) {
       if (props.candidates.length > 0) {
-        const first = props.candidates[0]
+        const first = props.candidates[0];
         if (first) {
-          selectIcon(first)
+          selectIcon(first);
         }
       }
     }
-  }, 1000)
-}
+  }, 1000);
+};
 
 const selectIcon = (icon: string) => {
-  clearInterval(timer)
-  emit('select', icon)
-  emit('update:show', false)
-}
+  clearInterval(timer);
+  emit("select", icon);
+  emit("update:show", false);
+};
 
 watch(
   () => props.show,
   (val) => {
     if (val) {
-      startTimer()
+      startTimer();
     } else {
-      clearInterval(timer)
+      clearInterval(timer);
     }
   },
-)
+);
 
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => clearInterval(timer));
 
 const getIconName = (url: string) => {
   // Extract name from URL or path
@@ -55,18 +55,18 @@ const getIconName = (url: string) => {
   // e.g., "https://simpleicons.org/icons/github.svg" -> "github"
   // e.g., "https://cdn.simpleicons.org/github" -> "github"
   try {
-    if (!url) return ''
-    const parts = url.split('/')
-    const lastPart = parts[parts.length - 1]
-    if (!lastPart) return url
+    if (!url) return "";
+    const parts = url.split("/");
+    const lastPart = parts[parts.length - 1];
+    if (!lastPart) return url;
     // Remove extension if present
-    const name = lastPart?.split('.')[0] || ''
+    const name = lastPart?.split(".")[0] || "";
     // Decode URI component just in case
-    return decodeURIComponent(name)
+    return decodeURIComponent(name);
   } catch {
-    return url
+    return url;
   }
-}
+};
 </script>
 
 <template>

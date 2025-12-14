@@ -135,6 +135,7 @@ export interface AppConfig {
   pcWallpaperOrder?: string[];
   mobileWallpaperOrder?: string[];
   sidebarViewMode?: "bookmarks" | "groups";
+  empireMode?: boolean;
 }
 
 export interface WidgetConfig {
@@ -171,6 +172,15 @@ export interface SimpleIcon {
     type: string;
     url: string;
   };
+}
+
+export interface AliIcon {
+  name: string;
+  cnName: string;
+  domain: string;
+  filename: string;
+  url: string;
+  downloadUrl: string;
 }
 
 export interface RssFeed {

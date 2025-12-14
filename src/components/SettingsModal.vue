@@ -1021,61 +1021,18 @@ onMounted(() => {
           >
             🔒 账户管理
           </button>
+          <button
+            @click="activeTab = 'about'"
+            :class="
+              activeTab === 'about'
+                ? 'bg-gray-200 text-gray-800 font-bold'
+                : 'text-gray-600 hover:bg-gray-100'
+            "
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            ℹ️ 关于
+          </button>
         </nav>
-
-        <div class="mt-auto pt-4 border-t border-gray-200 px-2 hidden md:grid grid-cols-1 gap-2">
-          <div class="text-center flex items-center justify-center gap-1">
-            <span class="text-xs text-gray-400 font-mono">v{{ store.currentVersion }}</span>
-            <span
-              v-if="store.hasUpdate && store.isLogged"
-              class="w-2 h-2 bg-red-500 rounded-full cursor-pointer"
-              title="发现新版本"
-              @click="store.checkUpdate"
-            ></span>
-          </div>
-          <div class="text-center text-xs text-gray-500">QQ群:613835409</div>
-          <div class="flex items-center justify-center gap-4">
-            <a
-              href="https://github.com/Garry-QD/FlatNas"
-              target="_blank"
-              class="hover:opacity-80 transition-opacity"
-              title="GitHub"
-            >
-              <img src="/icons/github.svg" alt="GitHub" class="w-6 h-6" />
-            </a>
-            <a
-              href="https://gitee.com/gjx0808/FlatNas"
-              target="_blank"
-              class="text-[#C71D23] hover:opacity-80 transition-opacity"
-              title="Gitee"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                class="w-6 h-6"
-              >
-                <path
-                  fill-rule="evenodd"
-                  clip-rule="evenodd"
-                  d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.811 17.914l-.943-.896c-.342-.325-.92-.332-1.19-.026l-2.72 3.067a.772.772 0 0 1-1.05.09l-6.55-5.314a.775.775 0 0 1 .1-1.267l6.894-4.003a.775.775 0 0 1 1.03.22l2.214 3.285a.775.775 0 0 0 1.19.12l1.024-.967a.775.775 0 0 0 .08-1.02l-3.65-5.504a.775.775 0 0 0-1.17-.14l-8.78 7.32a.775.775 0 0 0-.15 1.08l7.87 6.38a.775.775 0 0 0 1.05-.09l3.58-4.034a.775.775 0 0 0 .02-1.08z"
-                />
-              </svg>
-            </a>
-            <a
-              href="https://hub.docker.com/r/qdnas/flatnas"
-              target="_blank"
-              class="hover:opacity-80 transition-opacity"
-              title="Docker"
-            >
-              <img
-                src="/icons/Docker+Docker+docker.com.png"
-                alt="Docker"
-                class="w-6 h-6 object-contain scale-110"
-              />
-            </a>
-          </div>
-        </div>
       </div>
 
       <div class="flex-1 flex flex-col bg-white overflow-hidden">
@@ -1205,6 +1162,22 @@ onMounted(() => {
                     <span class="text-xs text-gray-500 w-6">{{
                       store.appConfig.groupGap ?? 30
                     }}</span>
+                  </div>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-gray-600 mb-1">黑暗模式</h4>
+                  <div class="flex items-center gap-2">
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        v-model="store.appConfig.empireMode"
+                        class="sr-only peer"
+                      />
+                      <div
+                        class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"
+                      ></div>
+                    </label>
+                    <span class="text-xs text-gray-500">开启明黄云纹模式</span>
                   </div>
                 </div>
                 <div class="flex items-end justify-end">
@@ -2766,6 +2739,91 @@ onMounted(() => {
                     导入有效密钥可解除5个用户的注册限制。
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+          <div
+            v-if="activeTab === 'about'"
+            class="min-h-full flex flex-col items-center justify-center"
+          >
+            <div class="max-w-md w-full text-center space-y-5">
+              <h4 class="text-2xl font-bold text-gray-800 mb-2">关于 FlatNas</h4>
+              <div class="flex items-center justify-center gap-2">
+                <span class="text-xs text-gray-400 font-mono">v{{ store.currentVersion }}</span>
+                <span
+                  v-if="store.hasUpdate && store.isLogged"
+                  class="w-2 h-2 bg-red-500 rounded-full cursor-pointer"
+                  title="发现新版本"
+                  @click="store.checkUpdate"
+                ></span>
+              </div>
+              <div class="text-xs text-gray-500">QQ群:613835409</div>
+              <div class="text-xs text-gray-500">
+                官网：
+                <a
+                  href="https://flatnas.top/"
+                  target="_blank"
+                  class="text-blue-500 hover:underline"
+                >
+                  https://flatnas.top/
+                </a>
+              </div>
+              <div class="text-xs text-gray-500">
+                图标库：
+                <a
+                  href="https://nasicon.top/"
+                  target="_blank"
+                  class="text-blue-500 hover:underline"
+                >
+                  https://nasicon.top/
+                </a>
+              </div>
+              <div class="text-xs text-gray-500">
+                飞牛知识馆：
+                <a href="http://qdnas.icu/" target="_blank" class="text-blue-500 hover:underline">
+                  http://qdnas.icu/
+                </a>
+              </div>
+              <div class="flex items-center justify-center gap-6">
+                <a
+                  href="https://github.com/Garry-QD/FlatNas"
+                  target="_blank"
+                  class="hover:opacity-80 transition-opacity"
+                  title="GitHub"
+                >
+                  <img src="/icons/github.svg" alt="GitHub" class="w-6 h-6" />
+                </a>
+                <a
+                  href="https://gitee.com/gjx0808/FlatNas"
+                  target="_blank"
+                  class="text-[#C71D23] hover:opacity-80 transition-opacity"
+                  title="Gitee"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="w-6 h-6"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      clip-rule="evenodd"
+                      d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.811 17.914l-.943-.896c-.342-.325-.92-.332-1.19-.026l-2.72 3.067a.772.772 0 0 1-1.05.09l-6.55-5.314a.775.775 0 0 1 .1-1.267l6.894-4.003a.775.775 0 0 1 1.03.22l2.214 3.285a.775.775 0 0 0 1.19.12l1.024-.967a.775.775 0 0 0 .08-1.02l-3.65-5.504a.775.775 0 0 0-1.17-.14l-8.78 7.32a.775.775 0 0 0-.15 1.08l7.87 6.38a.775.775 0 0 0 1.05-.09l3.58-4.034a.775.775 0 0 0 .02-1.08z"
+                    />
+                  </svg>
+                </a>
+                <a
+                  href="https://hub.docker.com/r/qdnas/flatnas"
+                  target="_blank"
+                  class="hover:opacity-80 transition-opacity"
+                  title="Docker"
+                >
+                  <img
+                    src="/icons/Docker+Docker+docker.com.png"
+                    alt="Docker"
+                    class="w-6 h-6 object-contain scale-110"
+                  />
+                </a>
               </div>
             </div>
           </div>
