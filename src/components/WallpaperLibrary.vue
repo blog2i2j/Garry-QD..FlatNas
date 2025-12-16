@@ -340,6 +340,37 @@ const togglePlayMode = () => {
   currentRotationMode.value = currentRotationMode.value === "random" ? "sequential" : "random";
 };
 
+const enableBingWallpaper = async () => {
+  loading.value = true;
+  try {
+    const token = localStorage.getItem("flat-nas-token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch("/api/backgrounds/bing", {
+      method: "POST",
+      headers,
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.filename) {
+        await fetchWallpapers(); // Refresh list
+        // Set as default
+        selectWallpaper(data.filename, "pc");
+        alert("Bing 每日壁纸设置成功！");
+      }
+    } else {
+      alert("获取 Bing 壁纸失败");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("网络错误");
+  } finally {
+    loading.value = false;
+  }
+};
+
 onMounted(() => {
   fetchWallpapers();
 });
@@ -709,6 +740,18 @@ onMounted(() => {
                 class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
                 placeholder="默认 /backgrounds，最终为 /prefix/{name}"
               />
+
+              <div class="mt-3 pt-3 border-t border-gray-100">
+                <button
+                  @click="enableBingWallpaper"
+                  class="w-full px-3 py-2 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 shadow-sm flex items-center justify-center gap-2"
+                >
+                  <span>🖼️</span> 一键开启 Bing 每日壁纸
+                </button>
+                <p class="text-[10px] text-gray-400 mt-1 text-center">
+                  自动下载今日 Bing 壁纸到库并设为 PC 默认
+                </p>
+              </div>
             </div>
           </div>
 

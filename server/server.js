@@ -1598,6 +1598,52 @@ const bgStorage = multer.diskStorage({
 });
 const bgUpload = multer({ storage: bgStorage });
 
+// Download Bing Wallpaper
+app.post("/api/backgrounds/bing", authenticateToken, async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    // 1. Get Bing Image URL
+    const bingRes = await fetch(
+      "https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN",
+    );
+    const bingData = await bingRes.json();
+    if (!bingData.images || bingData.images.length === 0) {
+      return res.status(500).json({ error: "Failed to fetch Bing image info" });
+    }
+
+    const imageBaseUrl = bingData.images[0].url;
+    const imageUrl = imageBaseUrl.startsWith("http")
+      ? imageBaseUrl
+      : `https://cn.bing.com${imageBaseUrl}`;
+    const dateStr = bingData.images[0].enddate; // YYYYMMDD
+    const filename = `bing_${dateStr}.jpg`;
+    const savePath = path.join(BACKGROUNDS_DIR, filename);
+
+    // 2. Check if already exists
+    try {
+      await fs.access(savePath);
+      // If exists, just return success
+      return res.json({ success: true, filename, existed: true });
+    } catch {
+      // Not exists, download
+    }
+
+    // 3. Download
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) throw new Error("Failed to download image");
+    const arrayBuffer = await imgRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    await fs.writeFile(savePath, buffer);
+
+    res.json({ success: true, filename });
+  } catch (err) {
+    console.error("Bing Wallpaper Error:", err);
+    res.status(500).json({ error: "Failed to download Bing wallpaper" });
+  }
+});
+
 app.post("/api/backgrounds/upload", authenticateToken, bgUpload.array("files"), (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
   res.json({ success: true, count: req.files.length });

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useMainStore } from "../stores/main";
-import type { RssFeed } from "@/types";
+import type { RssFeed, WidgetConfig } from "@/types";
+
+defineProps<{ widget: WidgetConfig }>();
 
 const store = useMainStore();
 
