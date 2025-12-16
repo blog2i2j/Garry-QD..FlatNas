@@ -57,7 +57,8 @@ watch(
 
 <template>
   <div
-    class="w-full h-full p-4 rounded-2xl bg-yellow-100/90 backdrop-blur border border-white/10 text-gray-700 relative group"
+    class="w-full h-full p-4 rounded-2xl backdrop-blur border border-white/10 text-gray-700 relative group"
+    :style="{ backgroundColor: `rgba(254, 249, 195, ${widget.opacity ?? 0.9})` }"
   >
     <textarea
       :readonly="!store.isLogged"

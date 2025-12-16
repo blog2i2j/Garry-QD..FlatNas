@@ -362,6 +362,10 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
         let memUsage = 0;
         let memLimit = 0;
         let memPercent = 0;
+        let netRx = 0;
+        let netTx = 0;
+        let blockRead = 0;
+        let blockWrite = 0;
 
         try {
           const cpuStats = s.cpu_stats;
@@ -396,11 +400,37 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
               memPercent = (memUsage / memLimit) * 100.0;
             }
           }
+
+          // Network IO (Accumulate all interfaces)
+          if (s.networks) {
+            Object.values(s.networks).forEach((n) => {
+              netRx += n.rx_bytes || 0;
+              netTx += n.tx_bytes || 0;
+            });
+          }
+
+          // Block IO
+          if (s.blkio_stats && s.blkio_stats.io_service_bytes_recursive) {
+            s.blkio_stats.io_service_bytes_recursive.forEach((io) => {
+              if (io.op === "Read") blockRead += io.value;
+              if (io.op === "Write") blockWrite += io.value;
+            });
+          }
         } catch {
           // Ignore calculation errors
         }
 
-        return { ...c, stats: { cpuPercent, memUsage, memLimit, memPercent } };
+        return {
+          ...c,
+          stats: {
+            cpuPercent,
+            memUsage,
+            memLimit,
+            memPercent,
+            netIO: { rx: netRx, tx: netTx },
+            blockIO: { read: blockRead, write: blockWrite },
+          },
+        };
       }
       return c;
     });
@@ -1263,11 +1293,161 @@ async function fetchWeatherFromAMap(city, key) {
   };
 }
 
+const QWEATHER_GEO_CACHE = new Map(); // CityName -> LocationID
+const QWEATHER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+function base64UrlEncode(str) {
+  return Buffer.from(str)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+async function fetchWeatherFromQWeather(city, projectId, keyId, privateKey) {
+  if (!projectId || !keyId || !privateKey) throw new Error("QWeather credentials required");
+
+  // Auto-format Private Key if needed
+  let finalKey = privateKey.trim();
+  if (!finalKey.startsWith("-----BEGIN PRIVATE KEY-----")) {
+    finalKey = `-----BEGIN PRIVATE KEY-----\n${finalKey}\n-----END PRIVATE KEY-----`;
+  }
+
+  // Manual JWT Generation (Bypassing jsonwebtoken library checks for EdDSA)
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "EdDSA", kid: keyId };
+  const payload = {
+    iss: projectId,
+    iat: now,
+    exp: now + 900, // 15 mins
+  };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const data = `${encodedHeader}.${encodedPayload}`;
+
+  const signature = crypto.sign(null, Buffer.from(data), finalKey);
+  const encodedSignature = signature
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+
+  const token = `${data}.${encodedSignature}`;
+
+  const headers = { Authorization: `Bearer ${token}` };
+
+  // Resolve City
+  let locationId = "";
+  let cityName = city;
+
+  if (!city || city === "auto" || city === "本地") {
+    // 优先使用国内 IP 定位源，提高速度
+    try {
+      // 尝试 pconline (太平洋电脑网)，速度通常较快
+      const res = await fetch("https://whois.pconline.com.cn/ipJson.jsp?json=true");
+      const buffer = await res.arrayBuffer();
+      const decoder = new TextDecoder("gbk");
+      const text = decoder.decode(buffer);
+      const data = JSON.parse(text.trim());
+      if (data.city) {
+        cityName = data.city;
+      } else {
+        throw new Error("No city found");
+      }
+    } catch {
+      // Fallback to ipapi.co (slower)
+      try {
+        const ipRes = await fetch("https://ipapi.co/json/");
+        if (ipRes.ok) {
+          const ipData = await ipRes.json();
+          cityName = ipData.city || "Beijing";
+        } else {
+          cityName = "Beijing";
+        }
+      } catch {
+        cityName = "Beijing";
+      }
+    }
+  }
+
+  // Check Cache for Location ID
+  const cacheKey = cityName.toLowerCase();
+  if (QWEATHER_GEO_CACHE.has(cacheKey)) {
+    const cached = QWEATHER_GEO_CACHE.get(cacheKey);
+    if (Date.now() - cached.ts < QWEATHER_CACHE_TTL) {
+      locationId = cached.id;
+      // cityName = cached.name; // Keep original query name or use cached official name?
+    }
+  }
+
+  if (!locationId) {
+    // Lookup Location ID
+    const geoUrl = `https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(cityName)}`;
+    const geoRes = await fetch(geoUrl, { headers });
+    if (!geoRes.ok) throw new Error("QWeather GeoAPI failed");
+    const geoData = await geoRes.json();
+    if (geoData.code !== "200" || !geoData.location?.length)
+      throw new Error("QWeather City Lookup failed");
+
+    locationId = geoData.location[0].id;
+    cityName = geoData.location[0].name; // Use official name
+
+    // Cache it
+    QWEATHER_GEO_CACHE.set(cacheKey, { id: locationId, name: cityName, ts: Date.now() });
+  }
+
+  // Fetch Weather and Forecast in Parallel
+  const weatherUrl = `https://devapi.qweather.com/v7/weather/now?location=${locationId}`;
+  const forecastUrl = `https://devapi.qweather.com/v7/weather/3d?location=${locationId}`;
+
+  const [weatherRes, forecastRes] = await Promise.all([
+    fetch(weatherUrl, { headers }),
+    fetch(forecastUrl, { headers }),
+  ]);
+
+  if (!weatherRes.ok) throw new Error("QWeather Weather API failed");
+  const weatherData = await weatherRes.json();
+  if (weatherData.code !== "200")
+    throw new Error("QWeather API returned error: " + weatherData.code);
+
+  const nowData = weatherData.now;
+
+  let today = { min: "", max: "" };
+  let forecast = [];
+  if (forecastRes.ok) {
+    const forecastData = await forecastRes.json();
+    if (forecastData.code === "200" && forecastData.daily) {
+      const d = forecastData.daily[0];
+      today = { min: d.tempMin, max: d.tempMax };
+      forecast = forecastData.daily.map((day) => ({
+        date: day.fxDate,
+        mintempC: day.tempMin,
+        maxtempC: day.tempMax,
+      }));
+    }
+  }
+
+  return {
+    temp: nowData.temp,
+    text: nowData.text,
+    city: cityName,
+    humidity: nowData.humidity + "%",
+    windDir: nowData.windDir,
+    windSpeed: nowData.windScale,
+    today: today,
+    forecast: forecast,
+  };
+}
+
 // Weather
 app.get("/api/weather", async (req, res) => {
   const city = req.query.city || "";
   const source = req.query.source || "wttr";
   const key = req.query.key || "";
+  const projectId = req.query.projectId || "";
+  const keyId = req.query.keyId || "";
+  const privateKey = req.query.privateKey || "";
 
   // Allow "auto" or empty city to mean "local"
   // if (!city) return res.status(400).json({ error: "City is required" });
@@ -1276,6 +1456,8 @@ app.get("/api/weather", async (req, res) => {
     let data;
     if (source === "amap" && key) {
       data = await fetchWeatherFromAMap(city, key);
+    } else if (source === "qweather") {
+      data = await fetchWeatherFromQWeather(city, projectId, keyId, privateKey);
     } else {
       // Default to wttr.in
       // If city is empty/auto for wttr, it uses requester IP automatically
@@ -1791,11 +1973,13 @@ io.on("connection", (socket) => {
   });
 
   // Weather Fetch
-  socket.on("weather:fetch", async ({ city, source, key }) => {
+  socket.on("weather:fetch", async ({ city, source, key, projectId, keyId, privateKey }) => {
     try {
       let data;
       if (source === "amap" && key) {
         data = await fetchWeatherFromAMap(city, key);
+      } else if (source === "qweather") {
+        data = await fetchWeatherFromQWeather(city, projectId, keyId, privateKey);
       } else {
         const queryCity = !city || city === "auto" || city === "本地" ? "" : city;
         data = await fetchWeatherFromWttr(queryCity);

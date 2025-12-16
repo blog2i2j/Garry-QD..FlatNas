@@ -114,7 +114,8 @@ onMounted(() => {
 
 <template>
   <div
-    class="w-full h-full bg-white/80 backdrop-blur border border-white/40 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:shadow-md transition-all group"
+    class="w-full h-full backdrop-blur border border-white/40 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:shadow-md transition-all group"
+    :style="{ backgroundColor: `rgba(255, 255, 255, ${widget?.opacity ?? 0.8})` }"
   >
     <!-- Header / Tabs -->
     <div class="flex border-b border-gray-100 bg-white/50 select-none overflow-x-auto no-scrollbar">

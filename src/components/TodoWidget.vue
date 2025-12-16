@@ -73,7 +73,8 @@ const remove = (index: number) => {
 
 <template>
   <div
-    class="w-full h-full bg-white/90 backdrop-blur-md border border-white/40 rounded-2xl flex flex-col overflow-hidden p-3"
+    class="w-full h-full backdrop-blur-md border border-white/40 rounded-2xl flex flex-col overflow-hidden p-3"
+    :style="{ backgroundColor: `rgba(255, 255, 255, ${widget.opacity ?? 0.9})` }"
   >
     <div class="font-bold text-gray-800 text-xs mb-2 flex justify-between items-center">
       <div class="flex items-center gap-2">

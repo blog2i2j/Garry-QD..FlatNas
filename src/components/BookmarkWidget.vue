@@ -294,7 +294,8 @@ const openUrl = (url: string) => {
 
 <template>
   <div
-    class="w-full h-full bg-white/90 backdrop-blur-md border border-white/40 rounded-2xl flex flex-col overflow-hidden shadow-sm relative group hover:bg-white transition-colors"
+    class="w-full h-full backdrop-blur-md border border-white/40 rounded-2xl flex flex-col overflow-hidden shadow-sm relative group transition-colors"
+    :style="{ backgroundColor: `rgba(255, 255, 255, ${widget.opacity ?? 0.9})` }"
   >
     <div
       class="px-4 py-3 border-b border-gray-200/50 flex justify-between items-center bg-white/50 shrink-0"

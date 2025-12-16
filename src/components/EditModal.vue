@@ -393,11 +393,16 @@ const networkMatch = async () => {
 
   if (!searchTerm) return alert("请输入标题或链接后重试！");
 
+  await searchAliIcons(searchTerm);
+};
+
+// 核心搜索函数
+const searchAliIcons = async (searchTerm: string) => {
   isFetching.value = true;
   iconType.value = "image";
 
   try {
-    console.log(`[Network Match] Searching AliYun for: "${searchTerm}"`);
+    console.log(`[Search] Searching AliYun for: "${searchTerm}"`);
     await fetchAliIconsData();
 
     if (aliIconsData.value) {
@@ -410,7 +415,7 @@ const networkMatch = async () => {
       const aliResults = aliFuse.search(searchTerm);
       const aliMatches = aliResults.map((result) => `${ALI_ICON_BASE_URL}${result.item.url}`);
 
-      console.log(`[Network Match] Found ${aliMatches.length} matches`);
+      console.log(`[Search] Found ${aliMatches.length} matches`);
 
       if (aliMatches.length > 0) {
         if (aliMatches.length === 1) {
@@ -428,10 +433,19 @@ const networkMatch = async () => {
     }
   } catch (e) {
     console.error(e);
-    alert("网络匹配失败");
+    alert("搜索失败");
   } finally {
     isFetching.value = false;
   }
+};
+
+// 二级域名匹配
+const domainMatch = () => {
+  const targetUrl = form.value.url || form.value.lanUrl;
+  if (!targetUrl) return alert("请先填写链接！");
+  const keyword = extractKeywordFromUrl(targetUrl);
+  if (!keyword) return alert("无法从链接提取有效关键词");
+  searchAliIcons(keyword);
 };
 
 // 选中图标
@@ -673,9 +687,9 @@ const submit = () => {
               <button
                 @click="networkMatch"
                 class="absolute right-1 top-1 bottom-1 px-3 bg-purple-50 text-purple-600 text-xs font-bold rounded-md hover:bg-purple-100 flex items-center gap-1 transition-colors"
-                title="搜索网络图标库"
+                title="根据标题搜索网络图标库"
               >
-                🌐 网络匹配
+                🌐 标题匹配
               </button>
             </div>
           </div>
@@ -734,12 +748,21 @@ const submit = () => {
           <label class="block text-sm font-medium text-gray-600 mb-1"
             >外网链接 <span class="text-red-500">*</span></label
           >
-          <input
-            v-model="form.url"
-            type="text"
-            class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors"
-            placeholder="https://example.com"
-          />
+          <div class="relative">
+            <input
+              v-model="form.url"
+              type="text"
+              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors pr-24"
+              placeholder="https://example.com"
+            />
+            <button
+              @click="domainMatch"
+              class="absolute right-1 top-1 bottom-1 px-3 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-md hover:bg-indigo-100 flex items-center gap-1 transition-colors"
+              title="根据链接二级域名匹配图标"
+            >
+              🔗 域名匹配
+            </button>
+          </div>
         </div>
 
         <div>
@@ -796,7 +819,7 @@ const submit = () => {
                     v-if="isFetching"
                     class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
                   ></span>
-                  {{ isFetching ? "适配中..." : "🧩 自动适配图标" }}
+                  {{ isFetching ? "适配中..." : "🧩 本地匹配" }}
                 </button>
 
                 <button

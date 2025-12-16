@@ -5,7 +5,7 @@ defineOptions({
 import { computed, onMounted, onUnmounted, ref, nextTick, toRef } from "vue";
 import { useMainStore } from "../stores/main";
 import { useDevice } from "../composables/useDevice";
-import type { BookmarkCategory } from "@/types";
+import type { BookmarkCategory, BookmarkItem } from "@/types";
 import { parseBookmarks } from "../utils/bookmark";
 import { VueDraggable } from "vue-draggable-plus";
 
@@ -134,8 +134,14 @@ const handleKeydown = (e: KeyboardEvent) => {
 };
 
 const showAddModal = ref(false);
+const showEditModal = ref(false);
 const newBookmarkUrl = ref("");
+const editingBookmarkId = ref<string | null>(null);
+const editingBookmarkTitle = ref("");
+const editingBookmarkUrl = ref("");
+const editingBookmarkIcon = ref("");
 const addInputRef = ref<HTMLInputElement | null>(null);
+const editInputRef = ref<HTMLInputElement | null>(null);
 
 const openAddModal = () => {
   newBookmarkUrl.value = "";
@@ -143,6 +149,49 @@ const openAddModal = () => {
   nextTick(() => {
     addInputRef.value?.focus();
   });
+};
+
+const openEditModal = (item: BookmarkItem) => {
+  editingBookmarkId.value = item.id;
+  editingBookmarkTitle.value = item.title;
+  editingBookmarkUrl.value = item.url;
+  editingBookmarkIcon.value = item.icon || "";
+  showEditModal.value = true;
+  nextTick(() => {
+    editInputRef.value?.focus();
+  });
+};
+
+const confirmEditBookmark = async () => {
+  if (!editingBookmarkId.value || !editingBookmarkUrl.value) return;
+
+  // Find the bookmark and update it
+  for (const widget of store.widgets) {
+    if (widget.type === "bookmarks" && widget.data) {
+      for (const cat of widget.data as BookmarkCategory[]) {
+        const item = cat.children.find((c) => c.id === editingBookmarkId.value);
+        if (item) {
+          item.title = editingBookmarkTitle.value || item.title;
+          item.url = editingBookmarkUrl.value;
+          item.icon = editingBookmarkIcon.value || item.icon;
+
+          // Auto fetch icon if empty
+          if (!item.icon) {
+            try {
+              item.icon = `https://api.iowen.cn/favicon/${new URL(item.url).hostname}.png`;
+            } catch {
+              // ignore
+            }
+          }
+
+          store.saveData();
+          showEditModal.value = false;
+          return;
+        }
+      }
+    }
+  }
+  showEditModal.value = false;
 };
 
 const confirmAddBookmark = async () => {
@@ -472,29 +521,52 @@ const menuItems = computed(() => {
                   </span>
                 </a>
 
-                <!-- Delete Button -->
-                <button
-                  v-if="!collapsed"
-                  @click.stop="handleDeleteBookmark(category, item.id)"
-                  class="p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                  :class="[
-                    store.appConfig.background
-                      ? 'hover:bg-red-500/20 text-red-400'
-                      : 'hover:bg-red-500/10 text-red-500',
-                  ]"
-                  title="删除书签"
+                <!-- Edit/Delete Buttons (Visible on Hover & Logged In) -->
+                <div
+                  v-if="store.isLogged && !collapsed"
+                  class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1.5"
-                    stroke="currentColor"
-                    class="w-3 h-3"
+                  <button
+                    @click.stop="openEditModal(item)"
+                    class="p-1 rounded-full hover:bg-blue-500/20 text-blue-400"
+                    title="编辑书签"
                   >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-3 h-3"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    @click.stop="handleDeleteBookmark(category, item.id)"
+                    class="p-1 rounded-full hover:bg-red-500/20 text-red-400"
+                    title="删除书签"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-3 h-3"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
 
                 <!-- Tooltip for collapsed -->
                 <div
@@ -705,16 +777,125 @@ const menuItems = computed(() => {
             :class="
               store.appConfig.background
                 ? 'text-white/60 hover:bg-white/10 hover:text-white'
-                : 'text-gray-500 hover:bg-gray-100'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
             "
           >
             取消
           </button>
           <button
             @click="confirmAddBookmark"
-            class="px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow-sm transition-colors"
+            class="px-3 py-1.5 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-sm"
           >
-            确定
+            添加
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Bookmark Modal -->
+    <div
+      v-if="showEditModal"
+      class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      @click.self="showEditModal = false"
+    >
+      <div
+        class="rounded-xl p-4 w-80 shadow-2xl space-y-3 animate-fade-in border backdrop-blur-md transition-colors duration-300"
+        :class="
+          store.appConfig.background ? 'bg-black/60 border-white/10' : 'bg-white border-gray-100'
+        "
+      >
+        <h3
+          class="font-bold text-sm"
+          :class="store.appConfig.background ? 'text-white' : 'text-gray-800'"
+        >
+          编辑书签
+        </h3>
+
+        <div class="space-y-2">
+          <div>
+            <label
+              class="text-xs opacity-70 mb-1 block"
+              :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+              >标题</label
+            >
+            <input
+              ref="editInputRef"
+              v-model="editingBookmarkTitle"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+              :class="
+                store.appConfig.background
+                  ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                  : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+              "
+              @keyup.enter="confirmEditBookmark"
+            />
+          </div>
+          <div>
+            <label
+              class="text-xs opacity-70 mb-1 block"
+              :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+              >链接</label
+            >
+            <input
+              v-model="editingBookmarkUrl"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+              :class="
+                store.appConfig.background
+                  ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                  : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+              "
+              @keyup.enter="confirmEditBookmark"
+            />
+          </div>
+          <div>
+            <label
+              class="text-xs opacity-70 mb-1 block"
+              :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+              >图标 URL (可选)</label
+            >
+            <div class="flex gap-2">
+              <div
+                class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden border border-gray-200/50"
+              >
+                <img
+                  v-if="editingBookmarkIcon"
+                  :src="editingBookmarkIcon"
+                  class="w-5 h-5 object-contain"
+                  @error="editingBookmarkIcon = ''"
+                />
+                <span v-else class="text-[10px] text-gray-400">icon</span>
+              </div>
+              <input
+                v-model="editingBookmarkIcon"
+                class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+                :class="
+                  store.appConfig.background
+                    ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                    : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+                "
+                @keyup.enter="confirmEditBookmark"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button
+            @click="showEditModal = false"
+            class="px-3 py-1.5 text-xs rounded-lg transition-colors"
+            :class="
+              store.appConfig.background
+                ? 'text-white/60 hover:bg-white/10 hover:text-white'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+            "
+          >
+            取消
+          </button>
+          <button
+            @click="confirmEditBookmark"
+            class="px-3 py-1.5 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-sm"
+          >
+            保存
           </button>
         </div>
       </div>

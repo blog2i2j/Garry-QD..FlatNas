@@ -16,6 +16,7 @@ export interface NavItem {
   backgroundMask?: number;
   iconSize?: number;
   containerId?: string;
+  containerName?: string;
   allowRestart?: boolean;
   allowStop?: boolean;
 }
@@ -151,6 +152,7 @@ export interface WidgetConfig {
   h?: number;
   isPublic: boolean;
   hideOnMobile?: boolean;
+  opacity?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
   layouts?: {

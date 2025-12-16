@@ -54,6 +54,45 @@ onMounted(() => {
   // if (!hasDocker) { ... }
 });
 
+const testWeatherResult = ref<{ success: boolean; message: string } | null>(null);
+const isTestingWeather = ref(false);
+
+const testQWeather = async () => {
+  isTestingWeather.value = true;
+  testWeatherResult.value = null;
+  const source = "qweather";
+  const projectId = store.appConfig.qweatherProjectId || "";
+  const keyId = store.appConfig.qweatherKeyId || "";
+  const privateKey = store.appConfig.qweatherPrivateKey || "";
+
+  // Use "auto" to trigger IP location on server, or "Shanghai" as a safe default for testing
+  const city = "auto";
+  const url = `/api/weather?city=${encodeURIComponent(city)}&source=${source}&projectId=${encodeURIComponent(projectId)}&keyId=${encodeURIComponent(keyId)}&privateKey=${encodeURIComponent(privateKey)}`;
+
+  try {
+    const res = await fetch(url);
+    const j = await res.json();
+    if (res.ok && j.success && j.data) {
+      testWeatherResult.value = {
+        success: true,
+        message: `连接成功！已获取 ${j.data.city} 天气：${j.data.text} ${j.data.temp}°C`,
+      };
+    } else {
+      testWeatherResult.value = {
+        success: false,
+        message: `连接失败: ${j.error || "未知错误"}`,
+      };
+    }
+  } catch (e) {
+    testWeatherResult.value = {
+      success: false,
+      message: `请求异常: ${(e as Error).message || String(e)}`,
+    };
+  } finally {
+    isTestingWeather.value = false;
+  }
+};
+
 const passwordInput = ref("");
 const newPasswordInput = ref("");
 
@@ -69,6 +108,7 @@ const toggleDockerMock = (checked: boolean) => {
 // Delete Confirmation Logic
 const showDeleteWidgetConfirm = ref(false);
 const widgetToDeleteId = ref("");
+const editingOpacityId = ref<string | null>(null);
 
 const confirmRemoveWidget = () => {
   const index = store.widgets.findIndex((w) => w.id === widgetToDeleteId.value);
@@ -938,7 +978,7 @@ onMounted(() => {
       </button>
 
       <div
-        class="w-full md:w-48 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-100 p-4 flex flex-col md:flex-col shrink-0"
+        class="w-full md:w-1/4 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-100 p-4 flex flex-col md:flex-col shrink-0"
       >
         <h3 class="text-xl font-bold text-gray-800 mb-4 md:mb-6 px-2">⚙️ 设置</h3>
         <nav
@@ -1402,89 +1442,122 @@ onMounted(() => {
                     </div>
                   </template>
                   <template v-else>
-                    <div class="flex flex-col items-center gap-2 flex-1 justify-center scale-100">
-                      <div
-                        class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
-                      >
-                        {{
-                          w.type === "clock"
-                            ? "⏰"
-                            : w.type === "weather"
-                              ? "🌦️"
-                              : w.type === "clockweather"
-                                ? "🕒🌦️"
-                                : w.type === "calendar"
-                                  ? "📅"
-                                  : w.type === "memo"
-                                    ? "📝"
-                                    : w.type === "search"
-                                      ? "🔍"
-                                      : w.type === "quote"
-                                        ? "💬"
-                                        : w.type === "bookmarks"
-                                          ? "📑"
-                                          : w.type === "todo"
-                                            ? "✅"
-                                            : w.type === "calculator"
-                                              ? "🧮"
-                                              : w.type === "ip"
-                                                ? "🌐"
-                                                : w.type === "player"
-                                                  ? "🎵"
-                                                  : w.type === "hot"
-                                                    ? "🔥"
-                                                    : w.type === "rss"
-                                                      ? "📡"
-                                                      : w.type === "sidebar"
-                                                        ? "⬅️"
-                                                        : "🖥️"
-                        }}
-                      </div>
-                      <span
-                        class="font-bold text-gray-700 text-sm leading-snug text-center truncate w-full px-1"
-                      >
-                        {{
-                          w.type === "clock"
-                            ? "时钟"
-                            : w.type === "weather"
-                              ? "天气"
-                              : w.type === "clockweather"
-                                ? "时钟+天气"
-                                : w.type === "sidebar"
-                                  ? "侧边栏"
+                    <div
+                      class="flex flex-col items-center gap-2 flex-1 justify-center scale-100 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors w-full"
+                      @click="editingOpacityId = w.id"
+                      title="点击调整透明度"
+                    >
+                      <template v-if="editingOpacityId === w.id">
+                        <div class="w-full px-2" @click.stop>
+                          <label class="text-[10px] text-gray-500 block mb-1"
+                            >透明度 {{ Math.round((w.opacity ?? 1) * 100) }}%</label
+                          >
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1"
+                            step="0.1"
+                            :value="w.opacity ?? 1"
+                            @input="
+                              (e) => {
+                                w.opacity = parseFloat((e.target as HTMLInputElement).value);
+                                store.saveData();
+                              }
+                            "
+                            class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                          />
+                          <button
+                            @click.stop="editingOpacityId = null"
+                            class="mt-1 text-xs text-blue-500 hover:text-blue-700 w-full text-center"
+                          >
+                            完成
+                          </button>
+                        </div>
+                      </template>
+                      <template v-else>
+                        <div
+                          class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
+                        >
+                          {{
+                            w.type === "clock"
+                              ? "⏰"
+                              : w.type === "weather"
+                                ? "🌦️"
+                                : w.type === "clockweather"
+                                  ? "🕒🌦️"
                                   : w.type === "calendar"
-                                    ? "日历"
+                                    ? "📅"
                                     : w.type === "memo"
-                                      ? "备忘录"
+                                      ? "📝"
                                       : w.type === "search"
-                                        ? "聚合搜索"
+                                        ? "🔍"
                                         : w.type === "quote"
-                                          ? "每日一言"
+                                          ? "💬"
                                           : w.type === "bookmarks"
-                                            ? "收藏夹"
+                                            ? "📑"
                                             : w.type === "todo"
-                                              ? "待办事项"
+                                              ? "✅"
                                               : w.type === "calculator"
-                                                ? "计算器"
+                                                ? "🧮"
                                                 : w.type === "ip"
-                                                  ? "IP 信息"
+                                                  ? "🌐"
                                                   : w.type === "player"
-                                                    ? "随机音乐"
+                                                    ? "🎵"
                                                     : w.type === "hot"
-                                                      ? "全网热搜"
+                                                      ? "🔥"
                                                       : w.type === "rss"
-                                                        ? "RSS 阅读器"
-                                                        : w.type === "system-status"
-                                                          ? "宿主机状态"
-                                                          : w.type === "iframe"
-                                                            ? "万能窗口"
-                                                            : w.type === "countdown"
-                                                              ? "倒计时"
-                                                              : w.type === "docker"
-                                                                ? "Docker 管理"
-                                                                : `未知组件 (${w.type})`
-                        }}
-                      </span>
+                                                        ? "📡"
+                                                        : w.type === "sidebar"
+                                                          ? "⬅️"
+                                                          : "🖥️"
+                          }}
+                        </div>
+                        <span
+                          class="font-bold text-gray-700 text-sm leading-snug text-center truncate w-full px-1"
+                        >
+                          {{
+                            w.type === "clock"
+                              ? "时钟"
+                              : w.type === "weather"
+                                ? "天气"
+                                : w.type === "clockweather"
+                                  ? "时钟+天气"
+                                  : w.type === "sidebar"
+                                    ? "侧边栏"
+                                    : w.type === "calendar"
+                                      ? "日历"
+                                      : w.type === "memo"
+                                        ? "备忘录"
+                                        : w.type === "search"
+                                          ? "聚合搜索"
+                                          : w.type === "quote"
+                                            ? "每日一言"
+                                            : w.type === "bookmarks"
+                                              ? "收藏夹"
+                                              : w.type === "todo"
+                                                ? "待办事项"
+                                                : w.type === "calculator"
+                                                  ? "计算器"
+                                                  : w.type === "ip"
+                                                    ? "IP 信息"
+                                                    : w.type === "player"
+                                                      ? "随机音乐"
+                                                      : w.type === "hot"
+                                                        ? "全网热搜"
+                                                        : w.type === "rss"
+                                                          ? "RSS 阅读器"
+                                                          : w.type === "system-status"
+                                                            ? "宿主机状态"
+                                                            : w.type === "iframe"
+                                                              ? "万能窗口"
+                                                              : w.type === "countdown"
+                                                                ? "倒计时"
+                                                                : w.type === "docker"
+                                                                  ? "Docker 管理"
+                                                                  : `未知组件 (${w.type})`
+                          }}
+                        </span>
+                      </template>
                     </div>
                     <div
                       class="grid grid-cols-3 gap-2 w-full mt-2 md:flex md:items-center md:justify-center md:gap-4"
@@ -1573,6 +1646,15 @@ onMounted(() => {
                       />
                       <span class="text-sm">高德地图 (AMap)</span>
                     </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        v-model="store.appConfig.weatherSource"
+                        value="qweather"
+                        class="text-blue-500"
+                      />
+                      <span class="text-sm">和风天气 (QWeather)</span>
+                    </label>
                   </div>
                 </div>
 
@@ -1593,6 +1675,63 @@ onMounted(() => {
                     >
                     申请 Web 服务 Key。
                   </p>
+                </div>
+
+                <div
+                  v-if="store.appConfig.weatherSource === 'qweather'"
+                  class="animate-fade-in space-y-2"
+                >
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Project ID</label>
+                    <input
+                      v-model="store.appConfig.qweatherProjectId"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                      placeholder="请输入 Project ID"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Key ID</label>
+                    <input
+                      v-model="store.appConfig.qweatherKeyId"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                      placeholder="请输入 Key ID"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Private Key</label>
+                    <textarea
+                      v-model="store.appConfig.qweatherPrivateKey"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none min-h-[80px]"
+                      placeholder="请输入 Private Key (需包含 -----BEGIN PRIVATE KEY----- 头尾)"
+                    ></textarea>
+                  </div>
+                  <p class="text-[10px] text-gray-500 mt-1">
+                    请前往
+                    <a
+                      href="https://console.qweather.com/"
+                      target="_blank"
+                      class="text-blue-500 underline"
+                      >和风天气控制台</a
+                    >
+                    获取 JWT 凭证。
+                  </p>
+                  <div class="flex items-center gap-2 mt-2">
+                    <button
+                      @click="testQWeather"
+                      class="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors flex items-center gap-1"
+                      :disabled="isTestingWeather"
+                    >
+                      <span v-if="isTestingWeather" class="animate-spin">⏳</span>
+                      {{ isTestingWeather ? "测试中..." : "测试连接" }}
+                    </button>
+                    <span
+                      v-if="testWeatherResult"
+                      class="text-xs"
+                      :class="testWeatherResult.success ? 'text-green-600' : 'text-red-600'"
+                    >
+                      {{ testWeatherResult.message }}
+                    </span>
+                  </div>
                 </div>
 
                 <div>

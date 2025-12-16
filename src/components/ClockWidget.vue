@@ -70,11 +70,19 @@ const hourDeg = computed(() => hours.value * 30);
     class="w-full h-full relative group transition-all overflow-hidden rounded-2xl border border-white/10"
     :class="[
       widget.data?.style === 'digital'
-        ? 'bg-black/20 backdrop-blur hover:bg-black/30'
+        ? 'backdrop-blur hover:bg-black/30'
         : widget.data?.style === 'retro'
-          ? 'bg-[#e8dcc4] text-gray-900 border-[#8b5a2b]'
-          : 'bg-white/90 text-gray-800',
+          ? 'text-gray-900 border-[#8b5a2b]'
+          : 'text-gray-800',
     ]"
+    :style="{
+      backgroundColor:
+        widget.data?.style === 'digital'
+          ? `rgba(0, 0, 0, ${widget.opacity ?? 0.2})`
+          : widget.data?.style === 'retro'
+            ? `rgba(232, 220, 196, ${widget.opacity ?? 1})`
+            : `rgba(255, 255, 255, ${widget.opacity ?? 0.9})`,
+    }"
   >
     <!-- Toggle Button -->
     <button
@@ -117,10 +125,18 @@ const hourDeg = computed(() => hours.value * 30);
         <!-- Clock Face -->
         <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-md">
           <circle cx="50" cy="50" r="48" fill="white" stroke="#e5e7eb" stroke-width="2" />
-          
+
           <!-- Hour Markers -->
           <g v-for="i in 12" :key="i" :transform="`rotate(${i * 30} 50 50)`">
-            <line x1="50" y1="6" x2="50" y2="10" stroke="#374151" stroke-width="2" stroke-linecap="round" />
+            <line
+              x1="50"
+              y1="6"
+              x2="50"
+              y2="10"
+              stroke="#374151"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
           </g>
 
           <!-- Hands -->
@@ -154,7 +170,7 @@ const hourDeg = computed(() => hours.value * 30);
             stroke-linecap="round"
             :transform="`rotate(${secDeg} 50 50)`"
           />
-          
+
           <!-- Center Dot -->
           <circle cx="50" cy="50" r="2" fill="#ef4444" />
         </svg>
@@ -168,22 +184,41 @@ const hourDeg = computed(() => hours.value * 30);
     >
       <div class="relative w-full max-w-[140px] aspect-square">
         <!-- Top Ring -->
-        <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-4 border-2 border-[#8b5a2b] rounded-full z-0"></div>
+        <div
+          class="absolute -top-1 left-1/2 -translate-x-1/2 w-4 h-4 border-2 border-[#8b5a2b] rounded-full z-0"
+        ></div>
         <div class="absolute -top-0.5 left-1/2 -translate-x-1/2 w-2 h-1 bg-[#8b5a2b] z-0"></div>
 
         <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-lg relative z-10">
           <!-- Outer Rim -->
           <circle cx="50" cy="50" r="48" fill="#fcf8ed" stroke="#8b5a2b" stroke-width="3" />
           <circle cx="50" cy="50" r="45" fill="none" stroke="#d4b483" stroke-width="1" />
-          
+
           <!-- Roman Numerals (Simplified) -->
-          <text v-for="(n, i) in ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI']" 
-                :key="i"
-                x="50" y="16"
-                text-anchor="middle"
-                class="text-[8px] font-serif font-bold fill-[#5c3a1e]"
-                :transform="`rotate(${i * 30} 50 50)`"
-          >{{ n }}</text>
+          <text
+            v-for="(n, i) in [
+              'XII',
+              'I',
+              'II',
+              'III',
+              'IV',
+              'V',
+              'VI',
+              'VII',
+              'VIII',
+              'IX',
+              'X',
+              'XI',
+            ]"
+            :key="i"
+            x="50"
+            y="16"
+            text-anchor="middle"
+            class="text-[8px] font-serif font-bold fill-[#5c3a1e]"
+            :transform="`rotate(${i * 30} 50 50)`"
+          >
+            {{ n }}
+          </text>
 
           <!-- Decorative inner circle -->
           <circle cx="50" cy="50" r="25" fill="none" stroke="#e8dcc4" stroke-width="0.5" />
@@ -203,7 +238,7 @@ const hourDeg = computed(() => hours.value * 30);
             stroke-width="0.5"
             :transform="`rotate(${secDeg} 50 50)`"
           />
-          
+
           <circle cx="50" cy="50" r="1.5" fill="#8b5a2b" />
         </svg>
       </div>

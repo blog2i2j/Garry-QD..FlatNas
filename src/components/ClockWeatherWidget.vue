@@ -145,7 +145,10 @@ const fetchWeather = async () => {
 
       if (!useCache) {
         // 如果使用的是高德地图，直接交给后端处理定位
-        if (store.appConfig.weatherSource === "amap" && store.appConfig.amapKey) {
+        if (
+          (store.appConfig.weatherSource === "amap" && store.appConfig.amapKey) ||
+          store.appConfig.weatherSource === "qweather"
+        ) {
           city = "auto";
         } else {
           // 改用后端接口获取位置，解决 HTTPS 下 Mixed Content 问题
@@ -206,7 +209,14 @@ const fetchWeather = async () => {
     } else {
       const source = store.appConfig.weatherSource || "wttr";
       const key = store.appConfig.amapKey || "";
+      const projectId = store.appConfig.qweatherProjectId || "";
+      const keyId = store.appConfig.qweatherKeyId || "";
+      const privateKey = store.appConfig.qweatherPrivateKey || "";
+
       url += `&source=${source}&key=${encodeURIComponent(key)}`;
+      if (source === "qweather") {
+        url += `&projectId=${encodeURIComponent(projectId)}&keyId=${encodeURIComponent(keyId)}&privateKey=${encodeURIComponent(privateKey)}`;
+      }
     }
 
     const weatherRes = await fetch(url);

@@ -47,7 +47,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.29";
+  const currentVersion = "1.0.30";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -184,8 +184,58 @@ export const useMainStore = defineStore("main", () => {
     }
   };
 
+  const CACHE_KEY = "flat-nas-data-cache";
+
+  const saveToCache = (data: Record<string, unknown>) => {
+    try {
+      const cacheData = {
+        groups: data.groups,
+        widgets: data.widgets,
+        appConfig: data.appConfig,
+        rssFeeds: data.rssFeeds,
+        rssCategories: data.rssCategories,
+        username: data.username || username.value,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch (e) {
+      console.warn("Cache save failed", e);
+    }
+  };
+
+  const loadFromCache = () => {
+    try {
+      const json = localStorage.getItem(CACHE_KEY);
+      if (!json) return false;
+      const cache = JSON.parse(json);
+
+      // Security check: only load cache if it belongs to current user
+      const cachedUser = cache.username || "";
+      const currentUser = username.value || "";
+      // Allow loading 'admin' cache if current user is empty (guest mode / initial load)
+      const isMatch = cachedUser === currentUser || (currentUser === "" && cachedUser === "admin");
+      if (!isMatch) return false;
+
+      if (cache.groups) groups.value = cache.groups;
+      if (cache.widgets) widgets.value = cache.widgets;
+      if (cache.appConfig) appConfig.value = { ...appConfig.value, ...cache.appConfig };
+      if (cache.rssFeeds) rssFeeds.value = cache.rssFeeds;
+      if (cache.rssCategories) rssCategories.value = cache.rssCategories;
+
+      return true;
+    } catch (e) {
+      console.warn("Cache load failed", e);
+      return false;
+    }
+  };
+
   const init = async () => {
     isInitializing = true;
+    const loaded = loadFromCache();
+    // Yield to main thread to allow rendering cached content
+    if (loaded) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await fetchSystemConfig();
     try {
       const headers: Record<string, string> = {};
@@ -361,6 +411,7 @@ export const useMainStore = defineStore("main", () => {
       if (token.value) {
         socket.emit("auth", { token: token.value });
       }
+      saveToCache(data);
       isInitializing = false;
     } catch (e) {
       console.error("加载失败", e);
@@ -406,6 +457,7 @@ export const useMainStore = defineStore("main", () => {
           if (body.password) {
             password.value = "";
           }
+          saveToCache(body);
         }
 
         if (res.status === 401) {

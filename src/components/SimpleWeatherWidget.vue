@@ -166,10 +166,18 @@ const fetchWeather = async () => {
   const onError = async (payload: WeatherErrorPayload) => {
     if (payload.city === city) {
       // 降低日志级别，避免在控制台刷屏错误，因为我们有后续的 REST API 降级策略
-      console.warn("[Weather] Socket fetch failed, switching to REST API fallback.", payload.error);
+      // console.warn("[Weather] Socket fetch failed, switching to REST API fallback.", payload.error);
       const source = store.appConfig.weatherSource || "wttr";
       const key = store.appConfig.amapKey || "";
-      const url = `/api/weather?city=${encodeURIComponent(city)}&source=${source}&key=${encodeURIComponent(key)}`;
+      const projectId = store.appConfig.qweatherProjectId || "";
+      const keyId = store.appConfig.qweatherKeyId || "";
+      const privateKey = store.appConfig.qweatherPrivateKey || "";
+
+      let url = `/api/weather?city=${encodeURIComponent(city)}&source=${source}&key=${encodeURIComponent(key)}`;
+      if (source === "qweather") {
+        url += `&projectId=${encodeURIComponent(projectId)}&keyId=${encodeURIComponent(keyId)}&privateKey=${encodeURIComponent(privateKey)}`;
+      }
+
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error("REST weather failed");
@@ -201,7 +209,11 @@ const fetchWeather = async () => {
 
   const source = store.appConfig.weatherSource || "wttr";
   const key = store.appConfig.amapKey || "";
-  store.socket.emit("weather:fetch", { city, source, key });
+  const projectId = store.appConfig.qweatherProjectId || "";
+  const keyId = store.appConfig.qweatherKeyId || "";
+  const privateKey = store.appConfig.qweatherPrivateKey || "";
+
+  store.socket.emit("weather:fetch", { city, source, key, projectId, keyId, privateKey });
 };
 
 onMounted(() => {
@@ -220,7 +232,11 @@ onUnmounted(() => {
     class="h-full w-full relative overflow-hidden text-white group select-none transition-all duration-500 rounded-2xl"
   >
     <!-- 动态背景层 -->
-    <div class="absolute inset-0 transition-colors duration-1000 ease-in-out" :class="bgClass">
+    <div
+      class="absolute inset-0 transition-colors duration-1000 ease-in-out"
+      :class="bgClass"
+      :style="{ opacity: widget?.opacity ?? 1 }"
+    >
       <!-- 晴天动画 -->
       <div
         v-if="weatherType === 'sunny'"
@@ -311,6 +327,7 @@ onUnmounted(() => {
     <div
       class="absolute inset-0 backdrop-blur-[0px] group-hover:backdrop-blur-[2px] transition-all duration-500"
       :class="isBrightWeather ? 'bg-black/30' : 'bg-black/5'"
+      :style="{ opacity: widget?.opacity ?? 1 }"
     ></div>
 
     <!-- 内容区域 -->

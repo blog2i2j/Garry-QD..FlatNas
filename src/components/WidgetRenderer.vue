@@ -26,7 +26,7 @@ defineProps<{
   <CalendarWidget v-else-if="widget.type === 'calendar'" :widget="widget" />
   <MemoWidget v-else-if="widget.type === 'memo'" :widget="widget" />
   <TodoWidget v-else-if="widget.type === 'todo'" :widget="widget" />
-  <CalculatorWidget v-else-if="widget.type === 'calculator'" />
+  <CalculatorWidget v-else-if="widget.type === 'calculator'" :widget="widget" />
   <div
     v-else-if="widget.type === 'ip'"
     class="flex items-center justify-center h-full text-gray-500 text-xs"

@@ -198,17 +198,25 @@ const prevMonth = () => {
 const goToday = () => {
   currentMonth.value = new Date();
 };
+
+const isHovered = ref(false);
 </script>
 
 <template>
   <div
     class="w-full h-full relative overflow-hidden group transition-all"
+    @mouseenter="isHovered = true"
+    @mouseleave="isHovered = false"
     :class="[
-      widget.data?.style !== 'day'
-        ? 'bg-white/90 text-gray-800'
-        : 'bg-red-500/20 text-white hover:bg-red-500/30',
+      widget.data?.style !== 'day' ? 'text-gray-800' : 'text-white',
       'rounded-2xl backdrop-blur border border-white/10',
     ]"
+    :style="{
+      backgroundColor:
+        widget.data?.style === 'day'
+          ? `rgba(239, 68, 68, ${isHovered ? Math.min((widget.opacity ?? 0.2) + 0.1, 1) : (widget.opacity ?? 0.2)})`
+          : `rgba(255, 255, 255, ${widget.opacity ?? 0.9})`,
+    }"
   >
     <button
       @click.stop="toggleStyle"
