@@ -18,5 +18,17 @@ export function useDevice(deviceMode?: Ref<"auto" | "desktop" | "tablet" | "mobi
   const isMobile = computed(() => deviceKey.value === "mobile");
   const isTablet = computed(() => deviceKey.value === "tablet");
   const isDesktop = computed(() => deviceKey.value === "desktop");
-  return { deviceKey, isMobile, isTablet, isDesktop };
+
+  // Browser Detection
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isVia = ua.includes("Via");
+  const isQuark = ua.includes("Quark");
+  const isUC = ua.includes("UCBrowser") || ua.includes("UBrowser");
+  const isSafari =
+    ua.includes("Safari") &&
+    !ua.includes("Chrome") &&
+    !ua.includes("CriOS") &&
+    !ua.includes("Android");
+
+  return { deviceKey, isMobile, isTablet, isDesktop, isVia, isQuark, isUC, isSafari };
 }

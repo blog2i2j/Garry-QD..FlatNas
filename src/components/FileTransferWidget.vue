@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { io, type Socket } from "socket.io-client";
 import { useStorage } from "@vueuse/core";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "@/stores/main";
@@ -26,6 +27,7 @@ type UploadQueueItem = {
 
 const props = defineProps<{ widget: WidgetConfig }>();
 const store = useMainStore();
+const socket = ref<Socket | null>(null);
 
 const activeTab = useStorage<"chat" | "files" | "photos">(
   `flatnas-transfer-tab-${props.widget.id}`,
@@ -98,6 +100,22 @@ const formatTime = (ts: number) => {
 };
 
 const fileKeyFor = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
+
+const onTransferUpdate = (event: { type: "add" | "delete"; item?: TransferItem; id?: string }) => {
+  if (event.type === "add" && event.item) {
+    if (!items.value.some((x) => x.id === event.item!.id)) {
+      items.value = [event.item, ...items.value].slice(0, 1000);
+    }
+  } else if (event.type === "delete" && event.id) {
+    items.value = items.value.filter((x) => x.id !== event.id);
+    if (selectedIds.value[event.id]) {
+      const next = { ...selectedIds.value };
+      delete next[event.id];
+      selectedIds.value = next;
+    }
+    if (previewItem.value?.id === event.id) closePreview();
+  }
+};
 
 const fetchItems = async () => {
   if (!store.isLogged) return;
@@ -215,6 +233,14 @@ const clearSelection = () => {
 const toggleMultiSelectMode = () => {
   multiSelectMode.value = !multiSelectMode.value;
   if (!multiSelectMode.value) clearSelection();
+};
+
+const copyToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    console.error("Copy failed", e);
+  }
 };
 
 const onDocKeyDown = (e: KeyboardEvent) => {
@@ -366,7 +392,9 @@ const uploadQueueItem = async (q: UploadQueueItem) => {
     q.progress = 1;
     const newItem = completeData.item as TransferItem | undefined;
     if (newItem) {
-      items.value = [newItem, ...items.value].slice(0, 200);
+      if (!items.value.some((x) => x.id === newItem.id)) {
+        items.value = [newItem, ...items.value].slice(0, 200);
+      }
     } else {
       await fetchItems();
     }
@@ -402,7 +430,9 @@ const sendText = async () => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
     const item = data.item as TransferItem;
-    if (item) items.value = [item, ...items.value].slice(0, 200);
+    if (item && !items.value.some((x) => x.id === item.id)) {
+      items.value = [item, ...items.value].slice(0, 200);
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     error.value = msg || "发送失败";
@@ -521,12 +551,21 @@ onMounted(() => {
   document.addEventListener("paste", onPaste);
   document.addEventListener("keydown", onDocKeyDown);
   document.addEventListener("pointerdown", onDocPointerDownCapture, true);
+
+  socket.value = io();
+  socket.value.on("transfer:update", onTransferUpdate);
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("paste", onPaste);
   document.removeEventListener("keydown", onDocKeyDown);
   document.removeEventListener("pointerdown", onDocPointerDownCapture, true);
+
+  if (socket.value) {
+    socket.value.off("transfer:update", onTransferUpdate);
+    socket.value.close();
+  }
+
   queue.value.forEach((q) => pauseUpload(q));
   for (const url of Object.values(blobUrlById.value)) URL.revokeObjectURL(url);
 });
@@ -692,6 +731,22 @@ onBeforeUnmount(() => {
         @click.stop
         @contextmenu.prevent
       >
+        <button
+          v-if="contextMenuTargetId && findItemById(contextMenuTargetId)?.type === 'text'"
+          class="w-full text-left px-2.5 py-1.5 text-[13px] hover:bg-white/10 transition-colors text-white"
+          @click="
+            async () => {
+              const id = contextMenuTargetId;
+              const it = id ? findItemById(id) : null;
+              closeContextMenu();
+              if (it && it.type === 'text') {
+                await copyToClipboard(it.content);
+              }
+            }
+          "
+        >
+          复制
+        </button>
         <button
           class="w-full text-left px-2.5 py-1.5 text-[13px] hover:bg-white/10 transition-colors"
           :class="store.isLogged ? 'text-white' : 'text-white/40 cursor-not-allowed'"

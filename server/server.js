@@ -1310,6 +1310,7 @@ app.post("/api/transfer/text", authenticateToken, express.json(), async (req, re
     if (data.items.length > 1000) data.items = data.items.slice(0, 1000);
 
     await writeTransferIndex(data);
+    io.emit("transfer:update", { type: "add", item: newItem });
     res.json({ success: true, item: newItem });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -1452,6 +1453,7 @@ app.post("/api/transfer/upload/complete", authenticateToken, express.json(), asy
     if (data.items.length > 1000) data.items = data.items.slice(0, 1000);
     await writeTransferIndex(data);
 
+    io.emit("transfer:update", { type: "add", item: newItem });
     res.json({ success: true, item: newItem });
   } catch (e) {
     console.error("Complete upload error:", e);
@@ -1513,6 +1515,7 @@ app.delete("/api/transfer/items/:id", authenticateToken, async (req, res) => {
       }
     }
 
+    io.emit("transfer:update", { type: "delete", id });
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

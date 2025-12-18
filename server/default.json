@@ -549,7 +549,19 @@
       "colSpan": 1,
       "rowSpan": 1,
       "isPublic": false,
-      "hideOnMobile": true
+      "hideOnMobile": true,
+      "x": 0,
+      "y": 2,
+      "w": 1,
+      "h": 1,
+      "layouts": {
+        "desktop": {
+          "x": 0,
+          "y": 2,
+          "w": 1,
+          "h": 1
+        }
+      }
     },
     {
       "id": "w8",
@@ -744,6 +756,39 @@
       }
     },
     {
+      "id": "file-transfer",
+      "type": "file-transfer",
+      "enable": false,
+      "colSpan": 1,
+      "rowSpan": 3,
+      "isPublic": false,
+      "hideOnMobile": true,
+      "w": 1,
+      "h": 3,
+      "layouts": {
+        "desktop": {
+          "x": 0,
+          "y": 0,
+          "w": 1,
+          "h": 3
+        }
+      },
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "system-status",
+      "type": "system-status",
+      "enable": false,
+      "isPublic": false,
+      "colSpan": 1,
+      "rowSpan": 1,
+      "data": {
+        "useMock": false
+      },
+      "hideOnMobile": true
+    },
+    {
       "id": "docker",
       "type": "docker",
       "enable": false,
@@ -836,6 +881,8 @@
     "qweatherProjectId": "",
     "qweatherKeyId": "",
     "qweatherPrivateKey": "",
-    "amapKey": ""
+    "amapKey": "",
+    "customCss": "",
+    "gridVersion": 2
   }
 }

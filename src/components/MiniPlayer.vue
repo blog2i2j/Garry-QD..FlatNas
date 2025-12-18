@@ -1,215 +1,231 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useMainStore } from '../stores/main'
+import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { useStorage } from "@vueuse/core";
+import { useMainStore } from "../stores/main";
 
-const store = useMainStore()
-const isPlaying = ref(false)
-const audioRef = ref<HTMLAudioElement | null>(null)
-const musicList = ref<string[]>([])
-const currentSongName = ref('加载中...')
-const titleWrapRef = ref<HTMLElement | null>(null)
-const titleTextRef = ref<HTMLElement | null>(null)
-const marqueeEnabled = ref(false)
-const marqueeDuration = ref('3s')
-const marqueeTo = ref('0px')
+const store = useMainStore();
+const isPlaying = ref(false);
+const audioRef = ref<HTMLAudioElement | null>(null);
+const musicVolume = useStorage<number>("flat-nas-music-volume", 0.7);
+const musicList = ref<string[]>([]);
+const currentSongName = ref("加载中...");
+const titleWrapRef = ref<HTMLElement | null>(null);
+const titleTextRef = ref<HTMLElement | null>(null);
+const marqueeEnabled = ref(false);
+const marqueeDuration = ref("3s");
+const marqueeTo = ref("0px");
 
 // 📜 播放历史管理
-const history = ref<string[]>([])
-const historyIndex = ref(-1)
+const history = ref<string[]>([]);
+const historyIndex = ref(-1);
 
 // 🎶 智能 URL 处理
 const getMusicUrl = (fileName: string) => {
-  if (!fileName || fileName === '加载中...' || fileName === '无音乐') return undefined
+  if (!fileName || fileName === "加载中..." || fileName === "无音乐") return undefined;
   // Support nested paths by encoding each segment separately
-  return `/music/${fileName.split('/').map(part => encodeURIComponent(part).replace(/'/g, '%27')).join('/')}`
-}
+  return `/music/${fileName
+    .split("/")
+    .map((part) => encodeURIComponent(part).replace(/'/g, "%27"))
+    .join("/")}`;
+};
 
 // 📥 获取列表
 const fetchMusicList = async () => {
   try {
-    const res = await fetch('/api/music-list')
-    const files = await res.json()
+    const res = await fetch("/api/music-list");
+    const files = await res.json();
     if (files.length > 0) {
-      musicList.value = files
+      musicList.value = files;
       // 初始化播放第一首
-      const firstSong = files[Math.floor(Math.random() * files.length)]
-      currentSongName.value = firstSong
-      history.value = [firstSong]
-      historyIndex.value = 0
+      const firstSong = files[Math.floor(Math.random() * files.length)];
+      currentSongName.value = firstSong;
+      history.value = [firstSong];
+      historyIndex.value = 0;
 
       if (store.appConfig.autoPlayMusic) {
         setTimeout(() => {
-          playAudio()
-        }, 1000)
+          playAudio();
+        }, 1000);
       }
     } else {
-      currentSongName.value = '无音乐'
+      currentSongName.value = "无音乐";
     }
   } catch {
-    currentSongName.value = '获取失败'
+    currentSongName.value = "获取失败";
   }
-}
+};
 
 // ⏭️ 切歌 (下一首)
 const playNext = () => {
-  if (musicList.value.length <= 1) return
+  if (musicList.value.length <= 1) return;
 
   // 如果在历史记录中不是最新的，直接前进
   if (historyIndex.value < history.value.length - 1) {
-    historyIndex.value++
-    currentSongName.value = history.value[historyIndex.value] || ''
+    historyIndex.value++;
+    currentSongName.value = history.value[historyIndex.value] || "";
   } else {
     // 否则随机新歌
-    let nextSong = currentSongName.value
+    let nextSong = currentSongName.value;
     while (nextSong === currentSongName.value) {
-      nextSong = musicList.value[Math.floor(Math.random() * musicList.value.length)] || ''
+      nextSong = musicList.value[Math.floor(Math.random() * musicList.value.length)] || "";
     }
-    currentSongName.value = nextSong
-    history.value.push(nextSong)
-    historyIndex.value++
+    currentSongName.value = nextSong;
+    history.value.push(nextSong);
+    historyIndex.value++;
   }
 
-  playAudio()
-}
+  playAudio();
+};
 
 // ⏮️ 上一首
 const playPrev = () => {
   if (historyIndex.value > 0) {
-    historyIndex.value--
-    currentSongName.value = history.value[historyIndex.value] || ''
-    playAudio()
+    historyIndex.value--;
+    currentSongName.value = history.value[historyIndex.value] || "";
+    playAudio();
   }
-}
+};
 
 // 🔊 播放逻辑封装
 const playAudio = () => {
   setTimeout(() => {
     if (audioRef.value) {
-      audioRef.value.load()
-      const promise = audioRef.value.play()
+      audioRef.value.load();
+      const promise = audioRef.value.play();
       if (promise !== undefined) {
         promise
           .then(() => {
-            isPlaying.value = true
+            isPlaying.value = true;
           })
           .catch((e) => {
-            console.error('[MiniPlayer] Play failed:', e)
-            isPlaying.value = false
-          })
+            console.error("[MiniPlayer] Play failed:", e);
+            isPlaying.value = false;
+          });
       }
     }
-  }, 100)
-}
+  }, 100);
+};
 
 const handleError = (e: Event) => {
-  const target = e.target as HTMLAudioElement
-  console.error('[MiniPlayer] Audio error:', target.error, target.src)
-  isPlaying.value = false
-}
+  const target = e.target as HTMLAudioElement;
+  console.error("[MiniPlayer] Audio error:", target.error, target.src);
+  isPlaying.value = false;
+};
 
 // ⏯️ 播放控制
 const toggleMusic = async () => {
-  const player = audioRef.value
-  if (!player) return
+  const player = audioRef.value;
+  if (!player) return;
   if (isPlaying.value) {
-    player.pause()
-    isPlaying.value = false
+    player.pause();
+    isPlaying.value = false;
   } else {
     // if (player.readyState === 0 || player.error) player.load() // playAudio/toggle already handles loading implicitly via play or manual load
     try {
       // 如果是暂停状态直接 play，如果是出错状态可能需要 load
-      if (player.error) player.load()
-      await player.play()
-      isPlaying.value = true
+      if (player.error) player.load();
+      await player.play();
+      isPlaying.value = true;
     } catch (e) {
-      console.error('[MiniPlayer] Toggle play failed:', e)
-      player.load() // 失败尝试重载
+      console.error("[MiniPlayer] Toggle play failed:", e);
+      player.load(); // 失败尝试重载
       // 再次尝试播放可能会导致死循环，这里只 load
     }
   }
-}
+};
 
 const setupMarquee = () => {
-  const wrap = titleWrapRef.value
-  const text = titleTextRef.value
+  const wrap = titleWrapRef.value;
+  const text = titleTextRef.value;
   if (!wrap || !text) {
-    marqueeEnabled.value = false
-    return
+    marqueeEnabled.value = false;
+    return;
   }
-  const overflow = text.scrollWidth - wrap.clientWidth
+  const overflow = text.scrollWidth - wrap.clientWidth;
   if (overflow > 0 && isPlaying.value) {
-    marqueeEnabled.value = true
-    const seconds = Math.max(overflow / 50, 2)
-    marqueeDuration.value = seconds + 's'
-    marqueeTo.value = '-' + overflow + 'px'
+    marqueeEnabled.value = true;
+    const seconds = Math.max(overflow / 50, 2);
+    marqueeDuration.value = seconds + "s";
+    marqueeTo.value = "-" + overflow + "px";
   } else {
-    marqueeEnabled.value = false
+    marqueeEnabled.value = false;
   }
-}
+};
 
 // 监听歌曲变化和播放状态，更新跑马灯
 watch([currentSongName, isPlaying], async () => {
-  await nextTick()
-  setupMarquee()
-})
+  await nextTick();
+  setupMarquee();
+});
 
-let mountTimer: ReturnType<typeof setTimeout>
-let gestureHandlerAttached = false
+// 监听音量变化
+watch(
+  musicVolume,
+  (val) => {
+    if (audioRef.value) {
+      audioRef.value.volume = Math.max(0, Math.min(1, val));
+    }
+  },
+  { immediate: true },
+);
+
+let mountTimer: ReturnType<typeof setTimeout>;
+let gestureHandlerAttached = false;
 
 const tryAutoplay = async () => {
-  if (!store.appConfig.autoPlayMusic) return
-  const player = audioRef.value
-  if (!player) return
+  if (!store.appConfig.autoPlayMusic) return;
+  const player = audioRef.value;
+  if (!player) return;
   try {
-    player.load()
-    await player.play()
-    isPlaying.value = true
+    player.load();
+    await player.play();
+    isPlaying.value = true;
   } catch {
-    attachGestureAutoplay()
+    attachGestureAutoplay();
   }
-}
+};
 
 const attachGestureAutoplay = () => {
-  if (gestureHandlerAttached) return
-  gestureHandlerAttached = true
+  if (gestureHandlerAttached) return;
+  gestureHandlerAttached = true;
   const handler = async () => {
-    await tryAutoplay()
-    detach()
-  }
+    await tryAutoplay();
+    detach();
+  };
   const detach = () => {
-    window.removeEventListener('pointerdown', handler)
-    window.removeEventListener('touchstart', handler)
-    window.removeEventListener('keydown', handler)
-    document.removeEventListener('click', handler)
-  }
-  window.addEventListener('pointerdown', handler, { once: true })
-  window.addEventListener('touchstart', handler, { once: true })
-  window.addEventListener('keydown', handler, { once: true })
-  document.addEventListener('click', handler, { once: true })
-}
+    window.removeEventListener("pointerdown", handler);
+    window.removeEventListener("touchstart", handler);
+    window.removeEventListener("keydown", handler);
+    document.removeEventListener("click", handler);
+  };
+  window.addEventListener("pointerdown", handler, { once: true });
+  window.addEventListener("touchstart", handler, { once: true });
+  window.addEventListener("keydown", handler, { once: true });
+  document.addEventListener("click", handler, { once: true });
+};
 
 onMounted(() => {
-  console.log('[MiniPlayer] Mounted')
+  console.log("[MiniPlayer] Mounted");
   // 延迟加载，避免因父组件重渲染导致的快速卸载重挂引发的请求 Abort
   mountTimer = setTimeout(() => {
-    fetchMusicList()
-    setTimeout(setupMarquee, 200)
-  }, 500)
-  if (store.appConfig.autoPlayMusic) attachGestureAutoplay()
-})
+    fetchMusicList();
+    setTimeout(setupMarquee, 200);
+  }, 500);
+  if (store.appConfig.autoPlayMusic) attachGestureAutoplay();
+});
 
 onUnmounted(() => {
-  console.log('[MiniPlayer] Unmounted')
-  if (mountTimer) clearTimeout(mountTimer)
-})
+  console.log("[MiniPlayer] Unmounted");
+  if (mountTimer) clearTimeout(mountTimer);
+});
 
 watch(
   () => store.appConfig.autoPlayMusic,
   async (val) => {
-    if (val) await tryAutoplay()
+    if (val) await tryAutoplay();
   },
-  { immediate: false }
-)
+  { immediate: false },
+);
 </script>
 
 <template>
@@ -274,11 +290,11 @@ watch(
               }
             : { whiteSpace: 'nowrap' }
         "
-        >{{ currentSongName.replace(/\.(mp3|flac|wav|m4a)$/i, '') }}</span
+        >{{ currentSongName.replace(/\.(mp3|flac|wav|m4a)$/i, "") }}</span
       >
       <div class="flex items-center w-full pr-0">
         <span class="text-[12px] opacity-70 origin-left truncate w-auto mr-auto">{{
-          isPlaying ? '正在播放' : '已暂停'
+          isPlaying ? "正在播放" : "已暂停"
         }}</span>
         <div class="flex items-center gap-0.5 flex-shrink-0 origin-right">
           <button
