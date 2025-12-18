@@ -1173,57 +1173,51 @@ app.get("/api/ping", async (req, res) => {
 // Trust Proxy Configuration
 app.set("trust proxy", true); // Enable trusting X-Forwarded-For
 
-// Helper to get client IP
-const getClientIp = (req) => {
-  // 0. Allow user to force a specific header via env
+const getClientIpInfo = (req) => {
   if (process.env.IP_HEADER) {
-    const headerVal = req.headers[process.env.IP_HEADER.toLowerCase()];
+    const headerName = process.env.IP_HEADER.toLowerCase();
+    const headerVal = req.headers[headerName];
     if (headerVal) {
-      return headerVal.split(",")[0].trim();
+      const ip = String(headerVal).split(",")[0].trim();
+      return { ip, source: "header", header: headerName };
     }
   }
 
-  // 1. Priority: Cloudflare / Real-IP / Forwarded-For
-  // We iterate through common headers used by reverse proxies
   const headersToCheck = [
-    "cf-connecting-ip", // Cloudflare
-    "x-real-ip", // Nginx, Traefik, etc.
-    "x-client-ip", // Some other proxies
+    "cf-connecting-ip",
+    "x-real-ip",
+    "x-client-ip",
     "x-original-forwarded-for",
-    "x-forwarded-for", // Standard
-    "forwarded", // RFC 7239
+    "x-forwarded-for",
+    "forwarded",
   ];
 
   for (const header of headersToCheck) {
     const val = req.headers[header];
-    if (val) {
-      // Handle comma-separated lists (e.g. x-forwarded-for: client, proxy1, proxy2)
-      // We always take the first one (client)
-      let ip = val.split(",")[0].trim();
+    if (!val) continue;
 
-      // Clean IPv6 mapped IPv4
-      if (ip.startsWith("::ffff:")) {
-        ip = ip.substring(7);
-      }
+    const raw = String(val).split(",")[0].trim();
+    let ip = raw;
 
-      if (ip) return ip;
+    if (header === "forwarded") {
+      const m = raw.match(/for=(?:"?\[?([^;\]"]+)\]?"?)/i);
+      if (m?.[1]) ip = m[1].trim();
     }
+
+    ip = ip.replace(/^::ffff:/, "");
+    ip = ip.replace(/^"|"$/g, "");
+
+    if (ip) return { ip, source: "header", header };
   }
 
-  // 2. Fallback to Express req.ip (if trust proxy is on) or socket address
-  let ip = req.ip || req.socket.remoteAddress || "";
-
-  // Clean IPv6 mapped IPv4
-  if (ip && ip.startsWith("::ffff:")) {
-    ip = ip.substring(7);
-  }
-
-  return ip;
+  let ip = (req.ip || req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  return { ip, source: "socket", header: "" };
 };
 
 // IP Proxy
 app.get("/api/ip", async (req, res) => {
-  const clientIp = getClientIp(req);
+  const client = getClientIpInfo(req);
+  const clientIp = client.ip;
 
   // Debug info for headers (safe to expose to admin/user in this context)
   const debugHeaders = {
@@ -1269,7 +1263,16 @@ app.get("/api/ip", async (req, res) => {
       }
 
       if (ip)
-        return res.json({ success: true, ip, location, source: s.type, clientIp, debugHeaders });
+        return res.json({
+          success: true,
+          ip,
+          location,
+          source: s.type,
+          clientIp,
+          clientIpSource: client.source,
+          clientIpHeader: client.header,
+          debugHeaders,
+        });
     } catch {
       // ignore
     }
@@ -1280,6 +1283,8 @@ app.get("/api/ip", async (req, res) => {
     location: "Unknown",
     source: "fallback",
     clientIp,
+    clientIpSource: client.source,
+    clientIpHeader: client.header,
     debugHeaders,
   });
 });

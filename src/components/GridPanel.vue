@@ -442,14 +442,15 @@ const checkNetwork = async () => {
       const end = performance.now();
       latency.value = Math.round(end - start);
     }
-    // 判定逻辑优化：只要 Hostname 是内网 IP，或者后端检测到的 Client IP 是内网 IP，都算内网环境
-    // 支持 Split-Horizon DNS：即使 Hostname 是公网域名（如 nas.domain.com），
-    // 只要后端检测到 Client IP 是内网 IP（如 192.168.x.x），依然判定为内网环境。
-    isLanMode.value =
-      isInternalNetwork(window.location.hostname) || isInternalNetwork(ipInfo.value.clientIp);
+    const hostnameIsLan = isInternalNetwork(window.location.hostname);
+    const canTrustClientIp = ipInfo.value.clientIpSource === "header";
+    const clientIsLan = canTrustClientIp && isInternalNetwork(ipInfo.value.clientIp);
+    isLanMode.value = hostnameIsLan || clientIsLan;
   } catch {
-    isLanMode.value =
-      isInternalNetwork(window.location.hostname) || isInternalNetwork(ipInfo.value.clientIp);
+    const hostnameIsLan = isInternalNetwork(window.location.hostname);
+    const canTrustClientIp = ipInfo.value.clientIpSource === "header";
+    const clientIsLan = canTrustClientIp && isInternalNetwork(ipInfo.value.clientIp);
+    isLanMode.value = hostnameIsLan || clientIsLan;
   } finally {
     isChecking.value = false;
   }
@@ -1078,6 +1079,7 @@ const ipInfo = ref({
   baiduLatency: "--",
   details: [] as string[], // 用于存储所有检测到的 IP
   clientIp: "",
+  clientIpSource: "",
 });
 
 const formattedLocation = computed(() => {
@@ -1112,10 +1114,11 @@ const fetchIp = async (force = false) => {
         const { timestamp, data } = JSON.parse(cached);
         if (Date.now() - timestamp < CACHE_DURATION) {
           ipInfo.value = data;
-          // 恢复缓存时也要更新内网状态
-          if (data.clientIp && isInternalNetwork(data.clientIp)) {
-            isLanMode.value = true;
-          }
+          const hostnameIsLan = isInternalNetwork(window.location.hostname);
+          const canTrustClientIp = data?.clientIpSource === "header";
+          const clientIsLan =
+            canTrustClientIp && !!data?.clientIp && isInternalNetwork(String(data.clientIp));
+          isLanMode.value = hostnameIsLan || clientIsLan;
           return;
         }
       }
@@ -1132,6 +1135,7 @@ const fetchIp = async (force = false) => {
     baiduLatency: "...",
     details: [],
     clientIp: "",
+    clientIpSource: "",
   };
 
   // 检测 223.5.5.5 延迟 (通过后端 /api/ping)
@@ -1159,19 +1163,28 @@ const fetchIp = async (force = false) => {
       ipInfo.value.displayIp = data.ip;
       ipInfo.value.location = data.location || "未知位置";
       ipInfo.value.clientIp = data.clientIp || "";
+      ipInfo.value.clientIpSource = data.clientIpSource || "";
 
-      // 获取到 IP 后立即更新内网状态
-      if (data.clientIp && isInternalNetwork(data.clientIp)) {
-        isLanMode.value = true;
-      }
+      const hostnameIsLan = isInternalNetwork(window.location.hostname);
+      const canTrustClientIp = ipInfo.value.clientIpSource === "header";
+      const clientIsLan =
+        canTrustClientIp &&
+        !!ipInfo.value.clientIp &&
+        isInternalNetwork(String(ipInfo.value.clientIp));
+      isLanMode.value = hostnameIsLan || clientIsLan;
     } else {
       ipInfo.value.displayIp = data.ip || "获取失败";
       ipInfo.value.location = "未知位置";
       ipInfo.value.clientIp = data.clientIp || "";
+      ipInfo.value.clientIpSource = data.clientIpSource || "";
 
-      if (data.clientIp && isInternalNetwork(data.clientIp)) {
-        isLanMode.value = true;
-      }
+      const hostnameIsLan = isInternalNetwork(window.location.hostname);
+      const canTrustClientIp = ipInfo.value.clientIpSource === "header";
+      const clientIsLan =
+        canTrustClientIp &&
+        !!ipInfo.value.clientIp &&
+        isInternalNetwork(String(ipInfo.value.clientIp));
+      isLanMode.value = hostnameIsLan || clientIsLan;
     }
     updateCache();
   } catch (e) {
