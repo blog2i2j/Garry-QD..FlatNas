@@ -1175,13 +1175,43 @@ app.set("trust proxy", true); // Enable trusting X-Forwarded-For
 
 // Helper to get client IP
 const getClientIp = (req) => {
-  // If trust proxy is set, req.ip is automatically the first IP in X-Forwarded-For
-  let ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
-
-  // Fallback manual parsing if needed (though req.ip should handle it with trust proxy)
-  if (ip && ip.includes(",")) {
-    ip = ip.split(",")[0].trim();
+  // 0. Allow user to force a specific header via env
+  if (process.env.IP_HEADER) {
+    const headerVal = req.headers[process.env.IP_HEADER.toLowerCase()];
+    if (headerVal) {
+      return headerVal.split(",")[0].trim();
+    }
   }
+
+  // 1. Priority: Cloudflare / Real-IP / Forwarded-For
+  // We iterate through common headers used by reverse proxies
+  const headersToCheck = [
+    "cf-connecting-ip", // Cloudflare
+    "x-real-ip", // Nginx, Traefik, etc.
+    "x-client-ip", // Some other proxies
+    "x-original-forwarded-for",
+    "x-forwarded-for", // Standard
+    "forwarded", // RFC 7239
+  ];
+
+  for (const header of headersToCheck) {
+    const val = req.headers[header];
+    if (val) {
+      // Handle comma-separated lists (e.g. x-forwarded-for: client, proxy1, proxy2)
+      // We always take the first one (client)
+      let ip = val.split(",")[0].trim();
+
+      // Clean IPv6 mapped IPv4
+      if (ip.startsWith("::ffff:")) {
+        ip = ip.substring(7);
+      }
+
+      if (ip) return ip;
+    }
+  }
+
+  // 2. Fallback to Express req.ip (if trust proxy is on) or socket address
+  let ip = req.ip || req.socket.remoteAddress || "";
 
   // Clean IPv6 mapped IPv4
   if (ip && ip.startsWith("::ffff:")) {
@@ -1194,6 +1224,16 @@ const getClientIp = (req) => {
 // IP Proxy
 app.get("/api/ip", async (req, res) => {
   const clientIp = getClientIp(req);
+
+  // Debug info for headers (safe to expose to admin/user in this context)
+  const debugHeaders = {
+    "x-forwarded-for": req.headers["x-forwarded-for"],
+    "x-real-ip": req.headers["x-real-ip"],
+    "cf-connecting-ip": req.headers["cf-connecting-ip"],
+    "x-client-ip": req.headers["x-client-ip"],
+    forwarded: req.headers["forwarded"],
+    remoteAddress: req.socket.remoteAddress,
+  };
 
   const sources = [
     { url: "https://whois.pconline.com.cn/ipJson.jsp?json=true", type: "pconline" },
@@ -1228,12 +1268,20 @@ app.get("/api/ip", async (req, res) => {
         location = data.city;
       }
 
-      if (ip) return res.json({ success: true, ip, location, source: s.type, clientIp });
+      if (ip)
+        return res.json({ success: true, ip, location, source: s.type, clientIp, debugHeaders });
     } catch {
       // ignore
     }
   }
-  res.json({ success: false, ip: clientIp, location: "Unknown", source: "fallback", clientIp });
+  res.json({
+    success: false,
+    ip: clientIp,
+    location: "Unknown",
+    source: "fallback",
+    clientIp,
+    debugHeaders,
+  });
 });
 
 // --- File Transfer Helper ---
