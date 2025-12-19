@@ -40,6 +40,23 @@ const weather = ref({
 });
 const isNight = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
+let alignTimer: ReturnType<typeof setTimeout> | null = null;
+const rainDrops = ref(
+  Array.from({ length: 6 }, (_, i) => ({
+    id: i + 1,
+    animationDelay: `${Math.random()}s`,
+    opacity: Math.random(),
+  })),
+);
+const snowFlakes = ref(
+  Array.from({ length: 12 }, (_, i) => ({
+    id: i + 1,
+    left: `${Math.random() * 100}%`,
+    top: "-10px",
+    animationDelay: `${Math.random() * 5}s`,
+    animationDuration: `${3 + Math.random() * 4}s`,
+  })),
+);
 
 // Initialize input
 if (props.widget?.data?.city) {
@@ -255,14 +272,38 @@ const fetchWeather = async () => {
   }
 };
 
-onMounted(() => {
+const startTimer = () => {
   updateTime();
+  if (alignTimer) clearTimeout(alignTimer);
+  if (timer) clearInterval(timer);
+  const msToNextMinute = (60 - new Date().getSeconds()) * 1000;
+  alignTimer = setTimeout(() => {
+    updateTime();
+    timer = setInterval(updateTime, 60000);
+  }, msToNextMinute);
+};
+
+const stopTimer = () => {
+  if (alignTimer) clearTimeout(alignTimer);
+  alignTimer = null;
+  if (timer) clearInterval(timer);
+  timer = null;
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "hidden") stopTimer();
+  else startTimer();
+};
+
+onMounted(() => {
   fetchWeather();
-  timer = setInterval(updateTime, 1000);
+  startTimer();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer);
+  stopTimer();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 </script>
 
@@ -332,24 +373,24 @@ onUnmounted(() => {
         class="absolute inset-0 flex justify-around items-start overflow-hidden opacity-50"
       >
         <div
-          v-for="i in 6"
-          :key="i"
+          v-for="d in rainDrops"
+          :key="d.id"
           class="w-0.5 h-16 bg-gradient-to-b from-transparent to-white animate-rain"
-          :style="{ animationDelay: `${Math.random()}s`, opacity: Math.random() }"
+          :style="{ animationDelay: d.animationDelay, opacity: d.opacity }"
         ></div>
       </div>
 
       <!-- 雪天动画 -->
       <div v-if="weatherType === 'snow'" class="absolute inset-0 overflow-hidden">
         <div
-          v-for="i in 12"
-          :key="i"
+          v-for="s in snowFlakes"
+          :key="s.id"
           class="absolute w-1.5 h-1.5 bg-white rounded-full animate-snow opacity-80"
           :style="{
-            left: `${Math.random() * 100}%`,
-            top: '-10px',
-            animationDelay: `${Math.random() * 5}s`,
-            animationDuration: `${3 + Math.random() * 4}s`,
+            left: s.left,
+            top: s.top,
+            animationDelay: s.animationDelay,
+            animationDuration: s.animationDuration,
           }"
         ></div>
       </div>

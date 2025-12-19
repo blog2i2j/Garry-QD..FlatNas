@@ -1142,6 +1142,14 @@ app.get("/api/docker-status", async (req, res) => {
   }
 });
 
+app.get("/api/rtt", (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.set("Surrogate-Control", "no-store");
+  res.json({ success: true, ts: Date.now() });
+});
+
 // Ping
 app.get("/api/ping", async (req, res) => {
   const target = req.query.target || "8.8.8.8";
@@ -1363,8 +1371,10 @@ app.post("/api/transfer/text", authenticateToken, express.json(), async (req, re
     if (data.items.length > 1000) data.items = data.items.slice(0, 1000);
 
     await writeTransferIndex(data);
-    io.emit("transfer:update", { type: "add", item: newItem });
     res.json({ success: true, item: newItem });
+    setTimeout(() => {
+      io.emit("transfer:update", { type: "add", item: newItem });
+    }, 0);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -1506,8 +1516,10 @@ app.post("/api/transfer/upload/complete", authenticateToken, express.json(), asy
     if (data.items.length > 1000) data.items = data.items.slice(0, 1000);
     await writeTransferIndex(data);
 
-    io.emit("transfer:update", { type: "add", item: newItem });
     res.json({ success: true, item: newItem });
+    setTimeout(() => {
+      io.emit("transfer:update", { type: "add", item: newItem });
+    }, 0);
   } catch (e) {
     console.error("Complete upload error:", e);
     res.status(500).json({ success: false, error: e.message });
@@ -1568,8 +1580,10 @@ app.delete("/api/transfer/items/:id", authenticateToken, async (req, res) => {
       }
     }
 
-    io.emit("transfer:update", { type: "delete", id });
     res.json({ success: true });
+    setTimeout(() => {
+      io.emit("transfer:update", { type: "delete", id });
+    }, 0);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -2577,6 +2591,51 @@ io.on("connection", (socket) => {
       }
     } catch (err) {
       console.error("Memo update error:", err.message);
+    }
+  });
+
+  socket.on("todo:update", async ({ token, widgetId, content }) => {
+    try {
+      let username = "admin";
+      if (token) {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        username = decoded.username;
+      } else if (systemConfig.authMode === "single") {
+        username = "admin";
+      } else {
+        return;
+      }
+
+      if (!cachedUsersData[username]) {
+        const filePath = getUserFile(username);
+        try {
+          const json = await fs.readFile(filePath, "utf-8");
+          cachedUsersData[username] = JSON.parse(json);
+        } catch {
+          return;
+        }
+      }
+
+      const userData = cachedUsersData[username];
+      let widget = null;
+      if (userData.widgets) {
+        widget = userData.widgets.find((w) => w.id === widgetId);
+      }
+
+      if (widget) {
+        if (widget.data !== content) {
+          widget.data = content;
+          atomicWrite(getUserFile(username), JSON.stringify(userData, null, 2)).catch(
+            console.error,
+          );
+          socket.to(`user:${username}`).emit("todo:updated", { widgetId, content });
+          if (systemConfig.authMode === "single") {
+            io.emit("todo:updated", { widgetId, content });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Todo update error:", err.message);
     }
   });
 

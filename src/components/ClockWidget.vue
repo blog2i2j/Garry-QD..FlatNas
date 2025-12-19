@@ -36,19 +36,36 @@ const toggleStyle = () => {
 };
 
 const now = ref(new Date());
-let timer: number | null = null;
+let timer: ReturnType<typeof setInterval> | null = null;
 
 const updateTime = () => {
   now.value = new Date();
-  requestAnimationFrame(updateTime);
+};
+
+const startTimer = () => {
+  updateTime();
+  if (timer) clearInterval(timer);
+  timer = setInterval(updateTime, 1000);
+};
+
+const stopTimer = () => {
+  if (timer) clearInterval(timer);
+  timer = null;
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "hidden") stopTimer();
+  else startTimer();
 };
 
 onMounted(() => {
-  timer = requestAnimationFrame(updateTime);
+  startTimer();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (timer) cancelAnimationFrame(timer);
+  stopTimer();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 
 // Digital Logic

@@ -25,6 +25,11 @@ describe("WallpaperLibrary.vue", () => {
         show: true,
         title: "Test Library",
       },
+      global: {
+        stubs: {
+          Teleport: true,
+        },
+      },
     });
 
     expect(wrapper.find("h3").text()).toBe("Test Library");
@@ -35,6 +40,7 @@ describe("WallpaperLibrary.vue", () => {
 
     // Check if fetch was called
     expect(global.fetch).toHaveBeenCalledWith("/api/backgrounds");
+    expect(global.fetch).toHaveBeenCalledWith("/api/mobile_backgrounds");
   });
 
   it("emits update:show when close is clicked", async () => {
@@ -42,11 +48,19 @@ describe("WallpaperLibrary.vue", () => {
       props: {
         show: true,
       },
+      global: {
+        stubs: {
+          Teleport: true,
+        },
+      },
     });
 
-    // Find the close overlay or button
-    // Based on component code, clicking self (overlay) emits update:show
-    await wrapper.trigger("click");
+    const closeBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().trim() === "✕");
+
+    expect(closeBtn).toBeTruthy();
+    await closeBtn!.trigger("click");
 
     expect(wrapper.emitted("update:show")).toBeTruthy();
     expect(wrapper.emitted("update:show")?.[0]).toEqual([false]);

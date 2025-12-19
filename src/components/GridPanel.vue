@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick, toRef } from "vue";
+import {
+  ref,
+  onMounted,
+  onUnmounted,
+  computed,
+  watch,
+  nextTick,
+  toRef,
+  defineAsyncComponent,
+} from "vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { GridLayout, GridItem } from "grid-layout-plus";
 import { useStorage } from "@vueuse/core";
@@ -8,31 +17,30 @@ import { useWallpaperRotation } from "../composables/useWallpaperRotation";
 import { useDevice } from "../composables/useDevice";
 import { generateLayout, type GridLayoutItem } from "../utils/gridLayout";
 import type { NavItem, WidgetConfig, NavGroup } from "@/types";
-import EditModal from "./EditModal.vue";
-import SettingsModal from "./SettingsModal.vue";
-import GroupSettingsModal from "./GroupSettingsModal.vue";
-import LoginModal from "./LoginModal.vue";
-import BookmarkWidget from "./BookmarkWidget.vue";
-import MemoWidget from "./MemoWidget.vue";
-import TodoWidget from "./TodoWidget.vue";
-import CalculatorWidget from "./CalculatorWidget.vue";
-import MiniPlayer from "./MiniPlayer.vue";
-import HotWidget from "./HotWidget.vue";
-import ClockWeatherWidget from "./ClockWeatherWidget.vue";
-import RssWidget from "./RssWidget.vue";
-import IconShape from "./IconShape.vue";
-import IframeWidget from "./IframeWidget.vue";
-import SimpleWeatherWidget from "./SimpleWeatherWidget.vue";
-import CalendarWidget from "./CalendarWidget.vue";
-import ClockWidget from "./ClockWidget.vue";
-import AppSidebar from "./AppSidebar.vue";
-import CountdownWidget from "./CountdownWidget.vue";
-import DockerWidget from "./DockerWidget.vue";
-import SystemStatusWidget from "./SystemStatusWidget.vue";
-import CustomCssWidget from "./CustomCssWidget.vue";
-import FileTransferWidget from "./FileTransferWidget.vue";
-
-import SizeSelector from "./SizeSelector.vue";
+const EditModal = defineAsyncComponent(() => import("./EditModal.vue"));
+const SettingsModal = defineAsyncComponent(() => import("./SettingsModal.vue"));
+const GroupSettingsModal = defineAsyncComponent(() => import("./GroupSettingsModal.vue"));
+const LoginModal = defineAsyncComponent(() => import("./LoginModal.vue"));
+const BookmarkWidget = defineAsyncComponent(() => import("./BookmarkWidget.vue"));
+const MemoWidget = defineAsyncComponent(() => import("./MemoWidget.vue"));
+const TodoWidget = defineAsyncComponent(() => import("./TodoWidget.vue"));
+const CalculatorWidget = defineAsyncComponent(() => import("./CalculatorWidget.vue"));
+const MiniPlayer = defineAsyncComponent(() => import("./MiniPlayer.vue"));
+const HotWidget = defineAsyncComponent(() => import("./HotWidget.vue"));
+const ClockWeatherWidget = defineAsyncComponent(() => import("./ClockWeatherWidget.vue"));
+const RssWidget = defineAsyncComponent(() => import("./RssWidget.vue"));
+const IconShape = defineAsyncComponent(() => import("./IconShape.vue"));
+const IframeWidget = defineAsyncComponent(() => import("./IframeWidget.vue"));
+const SimpleWeatherWidget = defineAsyncComponent(() => import("./SimpleWeatherWidget.vue"));
+const CalendarWidget = defineAsyncComponent(() => import("./CalendarWidget.vue"));
+const ClockWidget = defineAsyncComponent(() => import("./ClockWidget.vue"));
+const AppSidebar = defineAsyncComponent(() => import("./AppSidebar.vue"));
+const CountdownWidget = defineAsyncComponent(() => import("./CountdownWidget.vue"));
+const DockerWidget = defineAsyncComponent(() => import("./DockerWidget.vue"));
+const SystemStatusWidget = defineAsyncComponent(() => import("./SystemStatusWidget.vue"));
+const CustomCssWidget = defineAsyncComponent(() => import("./CustomCssWidget.vue"));
+const FileTransferWidget = defineAsyncComponent(() => import("./FileTransferWidget.vue"));
+const SizeSelector = defineAsyncComponent(() => import("./SizeSelector.vue"));
 
 const store = useMainStore();
 useWallpaperRotation();
@@ -51,7 +59,11 @@ const currentGroupId = ref<string>("");
 const isLanMode = ref(false);
 const latency = ref(0);
 const isChecking = ref(true);
-const forceMode = useStorage<"auto" | "lan" | "wan">("flat-nas-network-mode", "auto");
+const networkScope = typeof window !== "undefined" ? window.location.hostname : "default";
+const forceMode = useStorage<"auto" | "lan" | "wan">(
+  `flat-nas-network-mode:${networkScope}`,
+  "auto",
+);
 
 const effectiveIsLan = computed(() => {
   if (forceMode.value === "lan") return true;
@@ -407,7 +419,7 @@ const toggleDevTools = () => {
 };
 
 const handleNetworkClick = async () => {
-  checkNetwork();
+  checkLatency();
 
   const now = Date.now();
   if (!devtoolsClickTimer.value) {
@@ -429,35 +441,23 @@ const handleNetworkClick = async () => {
   }
 };
 
-const checkNetwork = async () => {
+const checkLatency = async () => {
   isChecking.value = true;
   const start = performance.now();
   try {
-    const pingUrl = `/api/ping?target=localhost&ts=${Date.now()}`;
-    const res = await fetch(pingUrl, { method: "GET", cache: "no-cache" });
-    const data = await res.json();
-    if (data.success && data.latency) {
-      latency.value = parseInt(data.latency);
-    } else {
-      const end = performance.now();
-      latency.value = Math.round(end - start);
-    }
-    const hostnameIsLan = isInternalNetwork(window.location.hostname);
-    const canTrustClientIp = ipInfo.value.clientIpSource === "header";
-    const clientIsLan = canTrustClientIp && isInternalNetwork(ipInfo.value.clientIp);
-    isLanMode.value = hostnameIsLan || clientIsLan;
+    const res = await fetch(`/api/rtt?ts=${Date.now()}`, { method: "GET", cache: "no-store" });
+    await res.json().catch(() => null);
+    latency.value = Math.round(performance.now() - start);
   } catch {
-    const hostnameIsLan = isInternalNetwork(window.location.hostname);
-    const canTrustClientIp = ipInfo.value.clientIpSource === "header";
-    const clientIsLan = canTrustClientIp && isInternalNetwork(ipInfo.value.clientIp);
-    isLanMode.value = hostnameIsLan || clientIsLan;
+    latency.value = 0;
   } finally {
     isChecking.value = false;
   }
 };
 
 onMounted(() => {
-  setTimeout(() => checkNetwork(), 2000);
+  isLanMode.value = isInternalNetwork(window.location.hostname);
+  setTimeout(() => checkLatency(), 2000);
   fetchIp();
   store.init().then(() => {
     store.cleanInvalidGroups();
@@ -630,6 +630,21 @@ const previousStatsMap = ref<
 >({});
 
 const fetchContainerStatuses = async () => {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    if (containerPollTimer) clearTimeout(containerPollTimer);
+    containerPollTimer = null;
+    return;
+  }
+
+  const hasAnyContainerItems = store.groups.some((g) => g.items.some((item) => !!item.containerId));
+  if (!hasAnyContainerItems) {
+    if (containerPollTimer) clearTimeout(containerPollTimer);
+    containerPollTimer = null;
+    if (Object.keys(containerStatuses.value).length) containerStatuses.value = {};
+    if (Object.keys(previousStatsMap.value).length) previousStatsMap.value = {};
+    return;
+  }
+
   const statusMap: Record<string, ContainerStatus> = {};
   const now = Date.now();
 
@@ -825,14 +840,26 @@ const fetchContainerStatuses = async () => {
 let containerPollTimer: ReturnType<typeof setTimeout> | null = null;
 const isMounted = ref(false);
 
+const handleContainerVisibilityChange = () => {
+  if (!isMounted.value) return;
+  if (document.visibilityState === "hidden") {
+    if (containerPollTimer) clearTimeout(containerPollTimer);
+    containerPollTimer = null;
+    return;
+  }
+  fetchContainerStatuses();
+};
+
 onMounted(() => {
   isMounted.value = true;
   fetchContainerStatuses();
+  document.addEventListener("visibilitychange", handleContainerVisibilityChange);
 });
 
 onUnmounted(() => {
   isMounted.value = false;
   if (containerPollTimer) clearTimeout(containerPollTimer);
+  document.removeEventListener("visibilitychange", handleContainerVisibilityChange);
 });
 
 const handleAuthAction = () => {
@@ -1104,7 +1131,7 @@ const formattedLocation = computed(() => {
 });
 
 const fetchIp = async (force = false) => {
-  const CACHE_KEY = "flatnas_ip_cache";
+  const CACHE_KEY = `flatnas_ip_cache:${networkScope}`;
   const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours in ms
 
   if (!force) {
@@ -1198,7 +1225,7 @@ const updateCache = () => {
   // Only cache if we have some meaningful data
   if (ipInfo.value.displayIp !== "检测中..." && ipInfo.value.baiduLatency !== "...") {
     localStorage.setItem(
-      "flatnas_ip_cache",
+      `flatnas_ip_cache:${networkScope}`,
       JSON.stringify({
         timestamp: Date.now(),
         data: ipInfo.value,
@@ -1214,17 +1241,40 @@ const onlineDuration = ref("00:00:00");
 const totalVisitors = ref(0);
 const todayVisitors = ref(0);
 let onlineTimer: ReturnType<typeof setInterval> | null = null;
+let onlineStartTime = 0;
+let onlineElapsedMs = 0;
+
+const updateOnlineDuration = () => {
+  const elapsed = onlineElapsedMs + (onlineStartTime ? Date.now() - onlineStartTime : 0);
+  const diff = Math.floor(elapsed / 1000);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  onlineDuration.value = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+};
 
 const startOnlineTimer = () => {
-  const startTime = Date.now();
   if (onlineTimer) clearInterval(onlineTimer);
+  onlineStartTime = Date.now();
+  updateOnlineDuration();
   onlineTimer = setInterval(() => {
-    const diff = Math.floor((Date.now() - startTime) / 1000);
-    const h = Math.floor(diff / 3600);
-    const m = Math.floor((diff % 3600) / 60);
-    const s = diff % 60;
-    onlineDuration.value = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }, 1000);
+    updateOnlineDuration();
+  }, 5000);
+};
+
+const stopOnlineTimer = () => {
+  if (onlineStartTime) {
+    onlineElapsedMs += Date.now() - onlineStartTime;
+    onlineStartTime = 0;
+  }
+  if (onlineTimer) clearInterval(onlineTimer);
+  onlineTimer = null;
+};
+
+const handleFooterVisibilityChange = () => {
+  if (!store.appConfig.showFooterStats) return;
+  if (document.visibilityState === "hidden") stopOnlineTimer();
+  else startOnlineTimer();
 };
 
 const recordVisit = async () => {
@@ -1244,10 +1294,13 @@ watch(
   () => store.appConfig.showFooterStats,
   (val) => {
     if (val) {
+      onlineElapsedMs = 0;
       startOnlineTimer();
+      document.addEventListener("visibilitychange", handleFooterVisibilityChange);
       recordVisit();
     } else {
-      if (onlineTimer) clearInterval(onlineTimer);
+      stopOnlineTimer();
+      document.removeEventListener("visibilitychange", handleFooterVisibilityChange);
     }
   },
   { immediate: true },

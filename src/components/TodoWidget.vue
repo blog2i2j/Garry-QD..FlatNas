@@ -16,18 +16,19 @@ const store = useMainStore();
 const newItem = ref("");
 const saveStatus = ref<"saved" | "saving" | "unsaved">("saved");
 
-// 自动保存逻辑
-const autoSave = useDebounceFn(async () => {
+const pushUpdate = useDebounceFn(() => {
   if (!store.isLogged) return;
-  saveStatus.value = "saving";
-  await store.saveWidget();
-
   store.socket.emit("todo:update", {
     token: store.token || localStorage.getItem("flat-nas-token"),
     widgetId: props.widget.id,
     content: props.widget.data,
   });
+}, 100);
 
+const persistSave = useDebounceFn(async () => {
+  if (!store.isLogged) return;
+  saveStatus.value = "saving";
+  await store.saveWidget();
   setTimeout(() => {
     saveStatus.value = "saved";
   }, 500);
@@ -54,7 +55,7 @@ onMounted(() => {
 
 const handleSave = () => {
   saveStatus.value = "unsaved";
-  autoSave();
+  persistSave();
 };
 
 const add = () => {
@@ -62,11 +63,13 @@ const add = () => {
   if (!props.widget.data) props.widget.data = [];
   props.widget.data.push({ id: Date.now().toString(), text: newItem.value, done: false });
   newItem.value = "";
+  pushUpdate();
   handleSave();
 };
 
 const remove = (index: number) => {
   props.widget.data.splice(index, 1);
+  pushUpdate();
   handleSave();
 };
 </script>

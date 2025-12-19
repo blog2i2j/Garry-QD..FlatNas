@@ -295,16 +295,34 @@ const handleAction = async (id: string, action: string) => {
   }
 };
 
+const startPolling = () => {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    fetchContainers();
+  }, 10000);
+};
+
+const stopPolling = () => {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "hidden") stopPolling();
+  else startPolling();
+};
+
 onMounted(() => {
   fetchContainers();
   fetchDockerInfo(true);
-  pollTimer = setInterval(() => {
-    fetchContainers();
-  }, 5000);
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
+  stopPolling();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 
 const getContainerLanUrl = (c: DockerContainer): string => {

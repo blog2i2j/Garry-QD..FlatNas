@@ -42,7 +42,25 @@ const isWide = computed(() => isMedium.value || isLarge.value);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const errorCount = ref(0);
-const pollInterval = ref(5000);
+const pollInterval = ref(10000);
+
+const startPolling = () => {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    fetchSystemStats();
+  }, pollInterval.value);
+};
+
+const stopPolling = () => {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "hidden") stopPolling();
+  else startPolling();
+};
 
 const fetchSystemStats = async () => {
   if (useMock.value) {
@@ -126,11 +144,13 @@ const fetchSystemStats = async () => {
 
 onMounted(() => {
   fetchSystemStats();
-  pollTimer = setInterval(fetchSystemStats, pollInterval.value);
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
 
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
+  stopPolling();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 </script>
 
