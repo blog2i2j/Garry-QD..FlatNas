@@ -644,6 +644,7 @@ onMounted(() => {
                 : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
             "
             :animation="150"
+            :forceFallback="true"
           >
             <div
               v-for="(img, index) in draggableList"

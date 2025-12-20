@@ -540,7 +540,8 @@
           "w": 1,
           "h": 1
         }
-      }
+      },
+      "opacity": 1
     },
     {
       "id": "w10",
@@ -567,7 +568,33 @@
       "id": "w8",
       "type": "todo",
       "enable": true,
-      "data": [],
+      "data": [
+        {
+          "id": "1766215408806",
+          "text": "给爸妈送祝福",
+          "done": false
+        },
+        {
+          "id": "1766215410763",
+          "text": "回家",
+          "done": false
+        },
+        {
+          "id": "1766215415901",
+          "text": "喝腊八粥",
+          "done": false
+        },
+        {
+          "id": "1766215422605",
+          "text": "吃水饺",
+          "done": false
+        },
+        {
+          "id": "1766215426625",
+          "text": "吃汤圆",
+          "done": false
+        }
+      ],
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -582,13 +609,14 @@
           "w": 1,
           "h": 2
         }
-      }
+      },
+      "opacity": 0.8
     },
     {
       "id": "w4",
       "type": "memo",
       "enable": true,
-      "data": "添加了容器的卡片管理\n侧边栏添加快捷分组\n优化了手机端在侧边栏的展现\n优化了侧边栏默认公开的BUG\n优化了图天气状态位置\n优化了快捷分组的拖动逻辑\n优化自动添加容器管理卡片的展现逻辑",
+      "data": "修复侧边栏在公开模式可以操作的BUG\n修复了部分浏览器无法正常下载大文件的BUG\n优化了日历在手机端展现\n加强了对苹果手机浏览器的支持\n加强了对鸿蒙手机端的支持\n修补了聚合搜索透明度调整失效的BUG\n优化了对safari端的支持\n增加对竖屏平板的支持\n增加对荣耀浏览器的支持\n增加对手机端 UC 夸克浏览器的支持\n",
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -672,7 +700,7 @@
       "rowSpan": 2,
       "isPublic": false,
       "data": {
-        "style": "month"
+        "style": "month-lunar"
       },
       "x": 3,
       "y": 0,
@@ -685,7 +713,9 @@
           "w": 1,
           "h": 2
         }
-      }
+      },
+      "opacity": 0.1,
+      "textColor": "#ffffff"
     },
     {
       "id": "w9",
@@ -708,7 +738,9 @@
       "id": "w5",
       "type": "search",
       "enable": true,
-      "isPublic": true
+      "isPublic": true,
+      "opacity": 1,
+      "textColor": "#050505"
     },
     {
       "id": "w7",
@@ -734,9 +766,9 @@
       "type": "countdown",
       "enable": true,
       "data": {
-        "targetDate": "2026-02-17T00:00",
-        "title": "春节",
-        "style": "neon"
+        "targetDate": "2025-12-21T00:00",
+        "title": "冬至",
+        "style": "simple"
       },
       "colSpan": 1,
       "rowSpan": 1,
@@ -798,7 +830,7 @@
     }
   ],
   "appConfig": {
-    "background": "/default-wallpaper.svg",
+    "background": "/backgrounds/Gemini_Generated_Image_hhrqephhrqephhrq.png",
     "mobileBackground": "/mobile_backgrounds/104933-1741661373383a.jpg",
     "enableMobileWallpaper": true,
     "fixedWallpaper": false,
@@ -813,7 +845,7 @@
     "backgroundMask": 0.1,
     "mobileBackgroundBlur": 0,
     "mobileBackgroundMask": 0,
-    "customTitle": "我的导航",
+    "customTitle": "FlatNas",
     "titleAlign": "left",
     "titleSize": 34,
     "titleColor": "#ffffff",
@@ -882,7 +914,14 @@
     "qweatherKeyId": "",
     "qweatherPrivateKey": "",
     "amapKey": "",
-    "customCss": "",
-    "gridVersion": 2
+    "customCss": "/* 利用 body 的伪元素生成雪花层，无需修改 HTML */\nbody::after {\n  content: \"\";\n  position: fixed;\n  top: 0;\n  left: 0;\n  width: 100vw;\n  height: 100vh;\n  /* 确保不遮挡页面点击 */\n  pointer-events: none;\n  z-index: 9999;\n  \n  /* 使用径向渐变绘制三层大小不一的雪花 */\n  background-image: \n    radial-gradient(circle at center, #fff 1px, transparent 2px),\n    radial-gradient(circle at center, #fff 1.5px, transparent 3px),\n    radial-gradient(circle at center, #fff 2px, transparent 4px);\n  \n  /* 每层雪花的密度（200px、400px、300px 一个循环） */\n  background-size: 200px 200px, 400px 400px, 300px 300px;\n  \n  /* 开启硬件加速，优化移动端/鸿蒙流畅度 */\n  will-change: transform;\n  \n  /* 绑定三个不同速度的动画 */\n  animation: snow-fall 12s linear infinite;\n}\n\n/* 下落动画 */\n@keyframes snow-fall {\n  0% {\n    /* 初始位置 */\n    background-position: 0 0, 0 0, 0 0;\n  }\n  100% {\n    /* 三层背景以不同速度下落，形成景深感（由远及近） */\n    background-position: 200px 600px, 400px 800px, 300px 400px;\n  }\n}\n\n/* 如果你的背景是浅色的，让雪花带一点点灰色阴影，防止看不清 */\n@media (prefers-color-scheme: light) {\n  body::after {\n    filter: drop-shadow(0 0 1px rgba(0,0,0,0.1));\n  }\n}",
+    "gridVersion": 2,
+    "pcWallpaperOrder": [
+      "Gemini_Generated_Image_hhrqephhrqephhrq.png",
+      "default-wallpaper.svg",
+      "52b9d654-aecc-472d-af00-30b5d7193b15.jpg",
+      "unnamed-(2)_01.gif",
+      "unnamed-2_02-1765141374406.gif"
+    ]
   }
 }

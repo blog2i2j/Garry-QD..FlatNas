@@ -1526,16 +1526,61 @@ app.post("/api/transfer/upload/complete", authenticateToken, express.json(), asy
   }
 });
 
+app.post("/api/transfer/download-token", authenticateToken, express.json(), async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const url = req.body?.url;
+    if (typeof url !== "string") return res.status(400).json({ success: false, error: "Bad url" });
+    if (!url.startsWith("/api/transfer/file/")) {
+      return res.status(400).json({ success: false, error: "Bad url" });
+    }
+
+    const filename = url.split("/").pop() || "";
+    if (!filename || filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      return res.status(400).json({ success: false, error: "Bad filename" });
+    }
+
+    const token = jwt.sign(
+      { username: req.user.username, scope: "transfer:download", filename },
+      SECRET_KEY,
+      { expiresIn: "60s" },
+    );
+
+    res.json({ success: true, token });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Serve Files
 app.get("/api/transfer/file/:filename", authenticateToken, async (req, res) => {
-  // Allow access if logged in. authenticateToken sets req.user
-  if (!req.user) return res.status(401).send("Unauthorized");
-
   const { filename } = req.params;
   // Security check
   if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
     return res.status(403).send("Invalid filename");
   }
+
+  if (!req.user) {
+    const urlToken = req.query.token;
+    if (typeof urlToken === "string" && urlToken) {
+      try {
+        const decoded = jwt.verify(urlToken, SECRET_KEY);
+        if (
+          decoded &&
+          typeof decoded === "object" &&
+          decoded.scope === "transfer:download" &&
+          decoded.filename === filename &&
+          typeof decoded.username === "string"
+        ) {
+          req.user = { username: decoded.username };
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (!req.user) return res.status(401).send("Unauthorized");
 
   const filePath = path.join(TRANSFER_UPLOADS, filename);
   try {

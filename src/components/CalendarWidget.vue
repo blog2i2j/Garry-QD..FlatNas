@@ -208,7 +208,7 @@ const isHovered = ref(false);
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
     :class="[
-      widget.data?.style !== 'day' ? 'text-gray-800' : 'text-white',
+      widget.textColor ? '' : widget.data?.style !== 'day' ? 'text-gray-700' : 'text-white',
       'rounded-2xl backdrop-blur border border-white/10',
     ]"
     :style="{
@@ -216,6 +216,7 @@ const isHovered = ref(false);
         widget.data?.style === 'day'
           ? `rgba(239, 68, 68, ${isHovered ? Math.min((widget.opacity ?? 0.2) + 0.1, 1) : (widget.opacity ?? 0.2)})`
           : `rgba(255, 255, 255, ${widget.opacity ?? 0.9})`,
+      color: widget.textColor || undefined,
     }"
   >
     <button
@@ -275,17 +276,17 @@ const isHovered = ref(false);
       </div>
     </div>
 
-    <div v-else class="w-full h-full flex flex-col p-2 md:p-3">
-      <div class="flex items-center justify-center gap-2 mb-2">
+    <div v-else class="w-full h-full flex flex-col p-2 md:p-3 min-h-0">
+      <div class="flex items-center justify-center gap-1 mb-1 leading-none">
         <button
           @click.stop="prevMonth"
-          class="p-1 hover:bg-gray-200 rounded text-gray-600 transition-colors"
+          class="p-0.5 md:p-1 hover:bg-gray-200 rounded text-gray-600 transition-colors"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            class="w-4 h-4"
+            class="w-3.5 h-3.5 md:w-4 md:h-4"
           >
             <path
               fill-rule="evenodd"
@@ -294,18 +295,18 @@ const isHovered = ref(false);
             />
           </svg>
         </button>
-        <span class="text-sm font-bold cursor-pointer select-none" @click="goToday">
+        <span class="text-xs md:text-sm font-bold cursor-pointer select-none" @click="goToday">
           {{ currentMonth.getFullYear() }}.{{ currentMonth.getMonth() + 1 }}
         </span>
         <button
           @click.stop="nextMonth"
-          class="p-1 hover:bg-gray-200 rounded text-gray-600 transition-colors"
+          class="p-0.5 md:p-1 hover:bg-gray-200 rounded text-gray-600 transition-colors"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            class="w-4 h-4"
+            class="w-3.5 h-3.5 md:w-4 md:h-4"
           >
             <path
               fill-rule="evenodd"
@@ -317,7 +318,7 @@ const isHovered = ref(false);
       </div>
 
       <div
-        class="grid grid-cols-7 gap-0.5 md:gap-1 text-center flex-1 text-[11px] md:text-[12px] content-start"
+        class="grid grid-cols-7 gap-0.5 md:gap-1 text-center text-[10px] md:text-[12px] leading-none"
       >
         <div
           v-for="d in ['日', '一', '二', '三', '四', '五', '六']"
@@ -326,19 +327,24 @@ const isHovered = ref(false);
         >
           {{ d }}
         </div>
+      </div>
+
+      <div
+        class="calendar-days-grid grid grid-cols-7 gap-0 md:gap-0.5 text-center flex-1 min-h-0 overflow-y-auto text-[10px] md:text-[12px] content-start"
+      >
         <div
           v-for="(d, i) in calendarDays"
           :key="i"
-          class="aspect-square flex items-center justify-center rounded-xl transition-all"
+          class="aspect-auto md:aspect-square flex items-center justify-center rounded-xl transition-all"
           :class="{
             'text-red-600 font-bold': d.today,
-            'hover:bg-red-100 text-gray-700': d.current && !d.today,
+            'hover:bg-red-100': d.current && !d.today,
             invisible: !d.current,
             'cursor-pointer': d.current,
           }"
         >
-          <div class="flex flex-col items-center justify-center leading-none h-full py-1">
-            <span v-if="d.day" class="text-base font-bold">{{
+          <div class="flex flex-col items-center justify-center leading-none py-0 md:py-0.5">
+            <span v-if="d.day" class="text-sm md:text-base font-bold">{{
               d.today ? "[" + d.day + "]" : d.day
             }}</span>
             <span
@@ -347,7 +353,7 @@ const isHovered = ref(false);
                 (widget.data?.style === 'month-memorial' &&
                   (d.origin === 'holiday' || d.origin === 'solarFest' || d.origin === 'lunarFest'))
               "
-              class="text-[10px] md:text-[11px] opacity-80 mt-0.5"
+              class="text-[9px] md:text-[11px] opacity-80 mt-0 whitespace-nowrap"
               :class="{ 'scale-90': d.lunar.length > 3 }"
               >{{ d.today ? "[" + d.lunar + "]" : d.lunar }}</span
             >
@@ -357,3 +363,29 @@ const isHovered = ref(false);
     </div>
   </div>
 </template>
+
+<style scoped>
+.calendar-days-grid {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.calendar-days-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.group:hover .calendar-days-grid {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+
+.group:hover .calendar-days-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.group:hover .calendar-days-grid::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.25);
+  border-radius: 9999px;
+}
+</style>

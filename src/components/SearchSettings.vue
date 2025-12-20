@@ -37,6 +37,7 @@ const removeSearchEngine = (key: string) => {
     <VueDraggable
       v-model="store.appConfig.searchEngines"
       :animation="300"
+      :forceFallback="true"
       handle=".drag-handle"
       class="space-y-3"
     >

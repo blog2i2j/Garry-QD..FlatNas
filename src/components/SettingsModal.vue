@@ -1513,14 +1513,17 @@ const onMouseUp = () => {
                       <template v-if="editingOpacityId === w.id">
                         <div class="w-full px-2" @click.stop>
                           <label class="text-[10px] text-gray-500 block mb-1"
-                            >透明度 {{ Math.round((w.opacity ?? 1) * 100) }}%</label
+                            >透明度
+                            {{
+                              Math.round((w.opacity ?? (w.type === "search" ? 0.9 : 1)) * 100)
+                            }}%</label
                           >
                           <input
                             type="range"
                             min="0.1"
                             max="1"
                             step="0.1"
-                            :value="w.opacity ?? 1"
+                            :value="w.opacity ?? (w.type === 'search' ? 0.9 : 1)"
                             @input="
                               (e) => {
                                 w.opacity = parseFloat((e.target as HTMLInputElement).value);
@@ -1534,8 +1537,15 @@ const onMouseUp = () => {
                             <div class="flex items-center gap-2">
                               <input
                                 type="color"
-                                :value="w.textColor || '#374151'"
-                                @input="(e) => (w.textColor = (e.target as HTMLInputElement).value)"
+                                :value="
+                                  w.textColor || (w.type === 'search' ? '#111827' : '#374151')
+                                "
+                                @input="
+                                  (e) => {
+                                    w.textColor = (e.target as HTMLInputElement).value;
+                                    store.saveData();
+                                  }
+                                "
                                 @change="store.saveData()"
                                 class="w-5 h-5 p-0 border-0 rounded-full cursor-pointer overflow-hidden shadow-sm"
                                 title="选择颜色"

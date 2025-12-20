@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
 import { io, type Socket } from "socket.io-client";
 import { useStorage } from "@vueuse/core";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "@/stores/main";
+import { useDevice } from "@/composables/useDevice";
 
 type TransferItem =
   | { id: string; type: "text"; timestamp: number; content: string }
@@ -28,6 +29,7 @@ type UploadQueueItem = {
 const props = defineProps<{ widget: WidgetConfig }>();
 const store = useMainStore();
 const socket = ref<Socket | null>(null);
+const { isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
 
 const activeTab = useStorage<"chat" | "files" | "photos">(
   `flatnas-transfer-tab-${props.widget.id}`,
@@ -52,6 +54,7 @@ const contextMenuTargetId = ref<string | null>(null);
 const queue = ref<UploadQueueItem[]>([]);
 const uploadingCount = ref(0);
 const MAX_CONCURRENCY = 2;
+const LARGE_DOWNLOAD_CONFIRM_BYTES = 50 * 1024 * 1024;
 
 const previewOpen = ref(false);
 const previewItem = ref<TransferItem | null>(null);
@@ -60,6 +63,27 @@ const blobUrlById = ref<Record<string, string>>({});
 const sortedChatItems = computed(() =>
   [...items.value].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)),
 );
+
+const CHAT_GROUP_MS = 30 * 60 * 1000;
+
+type ChatGroup = { key: string; timestamp: number; items: TransferItem[] };
+
+const groupedChatItems = computed<ChatGroup[]>(() => {
+  const list = sortedChatItems.value;
+  const groups: ChatGroup[] = [];
+  let lastTs = -1;
+  for (const it of list) {
+    const ts = Number(it.timestamp) || 0;
+    const last = groups[groups.length - 1];
+    if (!last || (lastTs >= 0 && ts - lastTs > CHAT_GROUP_MS)) {
+      groups.push({ key: it.id, timestamp: ts, items: [it] });
+    } else {
+      last.items.push(it);
+    }
+    lastTs = ts;
+  }
+  return groups;
+});
 
 const selectedIds = ref<Record<string, boolean>>({});
 const selectedCount = computed(() => Object.values(selectedIds.value).filter(Boolean).length);
@@ -94,6 +118,29 @@ const formatBytes = (bytes: number) => {
 const formatTime = (ts: number) => {
   try {
     return new Date(ts).toLocaleString();
+  } catch {
+    return "";
+  }
+};
+
+const formatGroupTime = (ts: number) => {
+  try {
+    const d = new Date(ts);
+    const now = new Date();
+    const isToday =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    if (isToday) {
+      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   } catch {
     return "";
   }
@@ -219,11 +266,105 @@ const onListContextMenu = (e: MouseEvent) => {
 };
 
 const onChatItemClick = (it: TransferItem) => {
+  if (skipNextChatClickId === it.id) {
+    skipNextChatClickId = null;
+    return;
+  }
   if (multiSelectMode.value) {
     toggleSelected(it.id);
     return;
   }
   if (it.type === "file") openPreview(it);
+};
+
+const hasTouch = computed(() => {
+  if (typeof navigator === "undefined") return false;
+  const n = navigator as Navigator & { msMaxTouchPoints?: number };
+  const maxPoints = Math.max(0, n.maxTouchPoints || 0, n.msMaxTouchPoints || 0);
+  if (maxPoints > 0) return true;
+  return typeof window !== "undefined" && "ontouchstart" in window;
+});
+const enableLongPressContextMenu = computed(() => hasTouch.value);
+let longPressTimer: number | null = null;
+let longPressStartX = 0;
+let longPressStartY = 0;
+let longPressTargetId: string | null = null;
+let skipNextChatClickId: string | null = null;
+let longPressSource: "touch" | "pointer" | null = null;
+
+const clearLongPress = () => {
+  if (longPressTimer) window.clearTimeout(longPressTimer);
+  longPressTimer = null;
+  longPressTargetId = null;
+  longPressSource = null;
+};
+
+const onChatItemTouchStart = (e: TouchEvent, id: string) => {
+  if (!store.isLogged) return;
+  if (!enableLongPressContextMenu.value) return;
+  if (contextMenuOpen.value) return;
+  if (longPressSource === "pointer") return;
+
+  const t = e.touches && e.touches[0];
+  if (!t) return;
+
+  clearLongPress();
+  longPressSource = "touch";
+  longPressStartX = t.clientX;
+  longPressStartY = t.clientY;
+  longPressTargetId = id;
+  longPressTimer = window.setTimeout(() => {
+    if (!longPressTargetId) return;
+    skipNextChatClickId = longPressTargetId;
+    openContextMenuAt(longPressStartX, longPressStartY, longPressTargetId);
+    clearLongPress();
+  }, 520);
+};
+
+const onChatItemTouchMove = (e: TouchEvent) => {
+  if (!longPressTimer) return;
+  if (longPressSource !== "touch") return;
+  const t = e.touches && e.touches[0];
+  if (!t) return;
+  const dx = t.clientX - longPressStartX;
+  const dy = t.clientY - longPressStartY;
+  if (dx * dx + dy * dy > 256) clearLongPress();
+};
+
+const onChatItemTouchEnd = () => {
+  clearLongPress();
+};
+
+const onChatItemPointerDown = (e: PointerEvent, id: string) => {
+  if (!store.isLogged) return;
+  if (!enableLongPressContextMenu.value) return;
+  if (contextMenuOpen.value) return;
+  if (e.pointerType !== "touch") return;
+
+  clearLongPress();
+  longPressSource = "pointer";
+  longPressStartX = e.clientX;
+  longPressStartY = e.clientY;
+  longPressTargetId = id;
+  longPressTimer = window.setTimeout(() => {
+    if (!longPressTargetId) return;
+    skipNextChatClickId = longPressTargetId;
+    openContextMenuAt(longPressStartX, longPressStartY, longPressTargetId);
+    clearLongPress();
+  }, 520);
+};
+
+const onChatItemPointerMove = (e: PointerEvent) => {
+  if (!longPressTimer) return;
+  if (longPressSource !== "pointer") return;
+  if (e.pointerType !== "touch") return;
+  const dx = e.clientX - longPressStartX;
+  const dy = e.clientY - longPressStartY;
+  if (dx * dx + dy * dy > 256) clearLongPress();
+};
+
+const onChatItemPointerUp = () => {
+  clearLongPress();
 };
 
 const clearSelection = () => {
@@ -467,6 +608,35 @@ const ensureBlobUrl = async (id: string, url: string) => {
 
 const downloadItem = async (item?: TransferItem | null) => {
   if (!item || item.type !== "file") return;
+  if (isMobile.value && item.file.size >= LARGE_DOWNLOAD_CONFIRM_BYTES) {
+    const ok = confirm(
+      `检测到文件较大（${formatBytes(item.file.size)}），可能耗时且占用较多流量/内存，是否继续下载？`,
+    );
+    if (!ok) return;
+  }
+
+  try {
+    const tokenRes = await fetch("/api/transfer/download-token", {
+      method: "POST",
+      headers: store.getHeaders(),
+      body: JSON.stringify({ url: item.file.url }),
+    });
+    const tokenData = await tokenRes.json().catch(() => ({}));
+    if (tokenRes.ok && tokenData.success && typeof tokenData.token === "string") {
+      const a = document.createElement("a");
+      a.href = `${item.file.url}?download=1&token=${encodeURIComponent(tokenData.token)}`;
+      a.download = item.file.name || "download";
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+  } catch {
+    // ignore and fallback
+  }
+
   const headers = authHeaderOnly();
   const res = await fetch(`${item.file.url}?download=1`, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -595,15 +765,13 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="px-3 py-2 flex items-center justify-between border-b border-white/10">
-      <div class="flex items-center">
-        <div class="flex flex-col leading-tight">
-          <div class="text-sm font-bold text-white">文件传输助手</div>
-          <div class="text-[11px] text-white/70">支持拖拽、多选、断点续传</div>
-        </div>
+    <div class="px-3 py-2 border-b border-white/10">
+      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-tight">
+        <div class="text-sm font-bold text-white">文件传输助手</div>
+        <div class="text-[11px] text-white/70">支持拖拽、多选、断点续传</div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 flex-wrap">
+      <div class="mt-2 flex items-center justify-between gap-2 flex-wrap">
         <div class="flex items-center gap-1 bg-white/10 rounded-xl p-1 border border-white/10">
           <button
             @click="activeTab = 'chat'"
@@ -880,52 +1048,81 @@ onBeforeUnmount(() => {
 
         <div
           v-else
-          class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3"
+          class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3 scrollbar-glass"
           @contextmenu.prevent.stop="onListContextMenu"
         >
           <template v-if="activeTab === 'chat'">
-            <div v-if="!sortedChatItems.length" class="text-center text-white/70 text-sm py-10">
+            <div v-if="!groupedChatItems.length" class="text-center text-white/70 text-sm py-10">
               <div class="text-3xl mb-2">💬</div>
               <div class="font-bold text-white">把文件和文字发到这里</div>
               <div class="text-xs text-white/60 mt-1">支持拖拽上传；支持复制粘贴图片/文件</div>
             </div>
 
             <div v-else class="space-y-2">
-              <div v-for="it in sortedChatItems" :key="it.id" class="flex">
-                <div
-                  v-if="it.type === 'text'"
-                  class="max-w-[90%] rounded-2xl px-3 py-2 bg-white/10 text-white text-sm border border-white/10 transition-shadow"
-                  :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
-                  :data-transfer-id="it.id"
-                  @click="onChatItemClick(it)"
-                  @contextmenu.prevent.stop="(e) => openContextMenuAt(e.clientX, e.clientY, it.id)"
-                >
-                  <div class="whitespace-pre-wrap break-words">{{ it.content }}</div>
-                  <div class="mt-1 text-[10px] text-white/50">{{ formatTime(it.timestamp) }}</div>
+              <div v-for="g in groupedChatItems" :key="g.key" class="space-y-1.5">
+                <div class="flex justify-center">
+                  <div
+                    class="px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-[10px] text-white/60"
+                  >
+                    {{ formatGroupTime(g.timestamp) }}
+                  </div>
                 </div>
 
-                <button
-                  v-else
-                  class="max-w-[90%] text-left rounded-2xl px-3 py-2 bg-white/10 hover:bg-white/15 transition-colors border border-white/10 transition-shadow"
-                  :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
-                  :data-transfer-id="it.id"
-                  @click="onChatItemClick(it)"
-                  @contextmenu.prevent.stop="(e) => openContextMenuAt(e.clientX, e.clientY, it.id)"
-                >
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10"
-                    >
-                      {{ String(it.file.type || "").startsWith("image/") ? "🖼️" : "📄" }}
-                    </div>
-                    <div class="min-w-0">
-                      <div class="text-sm font-bold text-white truncate">{{ it.file.name }}</div>
-                      <div class="text-[11px] text-white/60">
-                        {{ formatBytes(it.file.size) }} · {{ formatTime(it.timestamp) }}
+                <div v-for="it in g.items" :key="it.id" class="flex">
+                  <div
+                    v-if="it.type === 'text'"
+                    class="max-w-[90%] rounded-xl px-3 py-2 bg-white/10 text-white text-sm border border-white/10 transition-shadow select-none"
+                    :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
+                    :data-transfer-id="it.id"
+                    style="-webkit-touch-callout: none"
+                    @click="onChatItemClick(it)"
+                    @contextmenu.prevent.stop="
+                      (e) => openContextMenuAt(e.clientX, e.clientY, it.id)
+                    "
+                    @pointerdown="(e) => onChatItemPointerDown(e, it.id)"
+                    @pointermove="onChatItemPointerMove"
+                    @pointerup="onChatItemPointerUp"
+                    @pointercancel="onChatItemPointerUp"
+                    @touchstart="(e) => onChatItemTouchStart(e, it.id)"
+                    @touchmove="onChatItemTouchMove"
+                    @touchend="onChatItemTouchEnd"
+                    @touchcancel="onChatItemTouchEnd"
+                  >
+                    <div class="whitespace-pre-wrap break-words">{{ it.content }}</div>
+                  </div>
+
+                  <button
+                    v-else
+                    class="max-w-[90%] text-left rounded-xl px-3 py-2 bg-white/10 hover:bg-white/15 transition-colors border border-white/10 transition-shadow select-none"
+                    :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
+                    :data-transfer-id="it.id"
+                    style="-webkit-touch-callout: none"
+                    @click="onChatItemClick(it)"
+                    @contextmenu.prevent.stop="
+                      (e) => openContextMenuAt(e.clientX, e.clientY, it.id)
+                    "
+                    @pointerdown="(e) => onChatItemPointerDown(e, it.id)"
+                    @pointermove="onChatItemPointerMove"
+                    @pointerup="onChatItemPointerUp"
+                    @pointercancel="onChatItemPointerUp"
+                    @touchstart="(e) => onChatItemTouchStart(e, it.id)"
+                    @touchmove="onChatItemTouchMove"
+                    @touchend="onChatItemTouchEnd"
+                    @touchcancel="onChatItemTouchEnd"
+                  >
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10"
+                      >
+                        {{ String(it.file.type || "").startsWith("image/") ? "🖼️" : "📄" }}
+                      </div>
+                      <div class="min-w-0">
+                        <div class="text-sm font-bold text-white truncate">{{ it.file.name }}</div>
+                        <div class="text-[11px] text-white/60">{{ formatBytes(it.file.size) }}</div>
                       </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                </div>
               </div>
             </div>
           </template>
@@ -1053,9 +1250,6 @@ onBeforeUnmount(() => {
             >
               发送
             </button>
-          </div>
-          <div class="mt-2 text-[11px] text-white/60">
-            Tip：复制图片后直接粘贴；或把文件拖进上方区域
           </div>
         </div>
       </div>

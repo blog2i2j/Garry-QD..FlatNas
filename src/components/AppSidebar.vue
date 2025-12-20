@@ -24,7 +24,7 @@ const viewMode = ref<"bookmarks" | "groups">(store.appConfig.sidebarViewMode || 
 const toggleViewMode = () => {
   viewMode.value = viewMode.value === "bookmarks" ? "groups" : "bookmarks";
   store.appConfig.sidebarViewMode = viewMode.value;
-  store.saveData();
+  if (store.isLogged) store.saveData();
 };
 
 const scrollToGroup = (groupId: string) => {
@@ -45,11 +45,14 @@ const bookmarks = computed(() => {
 });
 
 const handleImportClick = () => {
+  if (!store.isLogged) return;
   fileInput.value?.click();
 };
 
 const handleFileUpload = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!store.isLogged) return;
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
   if (!file) return;
 
   const reader = new FileReader();
@@ -100,15 +103,17 @@ const handleFileUpload = (event: Event) => {
 
 const toggleCategory = (category: BookmarkCategory) => {
   category.collapsed = !category.collapsed;
-  store.saveData();
+  if (store.isLogged) store.saveData();
 };
 
 const handleDeleteBookmark = (category: BookmarkCategory, itemId: string) => {
+  if (!store.isLogged) return;
   category.children = category.children.filter((item) => item.id !== itemId);
   store.saveData();
 };
 
 const handleDeleteCategory = (categoryId: string) => {
+  if (!store.isLogged) return;
   for (const widget of store.widgets) {
     if (widget.type === "bookmarks" && widget.data) {
       const index = (widget.data as BookmarkCategory[]).findIndex((c) => c.id === categoryId);
@@ -144,6 +149,7 @@ const addInputRef = ref<HTMLInputElement | null>(null);
 const editInputRef = ref<HTMLInputElement | null>(null);
 
 const openAddModal = () => {
+  if (!store.isLogged) return;
   newBookmarkUrl.value = "";
   showAddModal.value = true;
   nextTick(() => {
@@ -195,6 +201,7 @@ const confirmEditBookmark = async () => {
 };
 
 const confirmAddBookmark = async () => {
+  if (!store.isLogged) return;
   const url = newBookmarkUrl.value;
   if (!url) return;
 
@@ -373,7 +380,7 @@ const menuItems = computed(() => {
         </svg>
       </button>
       <button
-        v-if="!collapsed && viewMode === 'bookmarks'"
+        v-if="store.isLogged && !collapsed && viewMode === 'bookmarks'"
         @click="openAddModal"
         class="p-1.5 rounded-lg transition-colors group relative"
         :class="store.appConfig.background ? 'hover:bg-white/10' : 'hover:bg-gray-100'"
@@ -449,6 +456,7 @@ const menuItems = computed(() => {
               <div class="flex items-center gap-2">
                 <!-- Delete Button -->
                 <button
+                  v-if="store.isLogged"
                   @click.stop="handleDeleteCategory(category.id)"
                   class="p-0.5 rounded-full opacity-0 group-hover/header:opacity-100 transition-opacity hover:bg-red-500/10 text-red-500"
                   title="删除分组"
@@ -616,10 +624,11 @@ const menuItems = computed(() => {
       <!-- Groups View -->
       <template v-else>
         <VueDraggable
-          v-if="store.groups.length > 0"
+          v-if="store.groups.length > 0 && store.isLogged"
           v-model="store.groups"
           class="space-y-1"
           :animation="150"
+          :forceFallback="true"
           handle=".drag-handle"
           @end="store.saveData()"
         >
@@ -663,6 +672,39 @@ const menuItems = computed(() => {
             </div>
           </button>
         </VueDraggable>
+        <div v-else-if="store.groups.length > 0" class="space-y-1">
+          <button
+            v-for="group in store.groups"
+            :key="group.id"
+            @click="scrollToGroup(group.id)"
+            class="w-full flex items-center p-2 rounded-lg transition-all group relative text-left"
+            :class="[
+              store.appConfig.background
+                ? 'hover:bg-white/10 text-white/90'
+                : 'hover:bg-gray-100 text-gray-600',
+              collapsed ? 'justify-center' : 'gap-2',
+            ]"
+          >
+            <div class="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+              <span class="text-xs font-bold opacity-70">•</span>
+            </div>
+            <span
+              class="font-medium whitespace-nowrap transition-all duration-300 origin-left flex-1 truncate text-sm"
+              :class="collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'"
+            >
+              {{ group.title }}
+            </span>
+            <div
+              v-if="collapsed"
+              class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg"
+            >
+              {{ group.title }}
+              <div
+                class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-gray-800"
+              ></div>
+            </div>
+          </button>
+        </div>
         <div v-else class="flex flex-col items-center justify-center h-full opacity-40 gap-2">
           <span class="text-xs">暂无分组</span>
         </div>
@@ -705,6 +747,7 @@ const menuItems = computed(() => {
 
         <!-- Import Button -->
         <button
+          v-if="store.isLogged"
           @click="handleImportClick"
           class="p-2 rounded-lg transition-all group relative"
           :class="[

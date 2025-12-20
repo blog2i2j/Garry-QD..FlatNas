@@ -11,7 +11,7 @@ import {
 } from "vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { GridLayout, GridItem } from "grid-layout-plus";
-import { useStorage } from "@vueuse/core";
+import { useStorage, useWindowSize } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
 import { useWallpaperRotation } from "../composables/useWallpaperRotation";
 import { useDevice } from "../composables/useDevice";
@@ -44,6 +44,8 @@ const SizeSelector = defineAsyncComponent(() => import("./SizeSelector.vue"));
 
 const store = useMainStore();
 useWallpaperRotation();
+const { width, height } = useWindowSize();
+const isHeaderRowLayout = computed(() => width.value >= 1024);
 
 const empireBackgroundUrl = `data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E`;
 
@@ -113,6 +115,43 @@ const effectiveEngine = computed({
 });
 const searchText = ref("");
 const searchInputRef = ref<HTMLInputElement | null>(null);
+
+const hexToRgb = (hex: string) => {
+  let h = hex.trim();
+  if (h.startsWith("#")) h = h.slice(1);
+  if (h.length === 3)
+    h = h
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  if (h.length !== 6) return null;
+  const n = Number.parseInt(h, 16);
+  if (Number.isNaN(n)) return null;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+};
+
+const rgbaFromHex = (hex: string, alpha: number) => {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const a = Math.max(0, Math.min(1, alpha));
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
+};
+
+const searchWidget = computed(() => {
+  const enabled = store.widgets.find((w) => w.type === "search" && w.enable !== false);
+  if (enabled) return enabled as WidgetConfig;
+  const any = store.widgets.find((w) => w.type === "search");
+  return any as WidgetConfig | undefined;
+});
+const searchTextColor = computed(() => searchWidget.value?.textColor || "#111827");
+const searchBgAlpha = computed(() => {
+  const raw = searchWidget.value?.opacity;
+  if (typeof raw !== "number") return 0.9;
+  return Math.max(0.1, Math.min(1, raw));
+});
+const searchPlaceholderColor = computed(
+  () => rgbaFromHex(searchTextColor.value, 0.55) || "rgba(107, 114, 128, 1)",
+);
 
 watch(
   () => store.appConfig.defaultSearchEngine,
@@ -202,12 +241,18 @@ const draggableWidgets = computed({
 const layoutData = ref<GridLayoutItem[]>([]);
 let skipNextLayoutSave = false;
 const { deviceKey, isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
+const isTabletPortrait = computed(() => deviceKey.value === "tablet" && height.value > width.value);
+const widgetColNum = computed(() => {
+  if (deviceKey.value === "mobile") return 1;
+  if (deviceKey.value === "tablet") return isTabletPortrait.value ? 2 : 4;
+  return store.isExpandedMode ? 8 : 4;
+});
 const rowHeight = computed(() =>
   deviceKey.value === "mobile" ? 120 : deviceKey.value === "tablet" ? 130 : 140,
 );
 
 watch(
-  () => [store.widgets, store.isExpandedMode, deviceKey.value],
+  () => [store.widgets, widgetColNum.value, deviceKey.value],
   () => {
     const visibleWidgets = store.widgets.filter(
       (w) =>
@@ -219,9 +264,7 @@ watch(
         !(deviceKey.value === "mobile" && w.hideOnMobile),
     );
 
-    let colNum = store.isExpandedMode ? 8 : 4;
-    if (deviceKey.value === "tablet") colNum = 4;
-    if (deviceKey.value === "mobile") colNum = 1;
+    const colNum = widgetColNum.value;
 
     const widgetsToLayout = visibleWidgets.map((w) => {
       const newW: WidgetConfig = { ...w };
@@ -252,6 +295,9 @@ watch(
         ) {
           newW.w = colNum;
         }
+      }
+      if (deviceKey.value === "tablet" && isTabletPortrait.value) {
+        if ((newW.w || 1) > colNum) newW.w = colNum;
       }
       return newW;
     });
@@ -345,7 +391,7 @@ const cycleWidgetSize = (widget: WidgetConfig) => {
 };
 
 const handleSizeSelect = (widget: GridLayoutItem, size: { colSpan: number; rowSpan: number }) => {
-  const maxCols = deviceKey.value === "mobile" ? 2 : 4;
+  const maxCols = deviceKey.value === "mobile" ? 2 : Math.min(4, widgetColNum.value);
   const maxRows = 4;
   const min = 1;
   const nextW = Math.min(Math.max(size.colSpan, min), maxCols);
@@ -497,7 +543,12 @@ const handleSave = (payload: { item: NavItem; groupId?: string }) => {
 // const deleteItem = (id: string) => {
 //   openDeleteConfirm(id)
 // }
+let skipNextCardClickId: string | null = null;
 const handleCardClick = (item: NavItem) => {
+  if (skipNextCardClickId === item.id) {
+    skipNextCardClickId = null;
+    return;
+  }
   if (isEditMode.value) return;
 
   // 逻辑优化：
@@ -897,24 +948,131 @@ const contextMenuItem = ref<NavItem | null>(null);
 const contextMenuGroupId = ref<string | undefined>(undefined);
 let ignoreNextNativeContextMenu = false;
 
-const openContextMenu = (e: MouseEvent, item: NavItem, groupId?: string) => {
+const openContextMenuAt = (x: number, y: number, item: NavItem, groupId?: string) => {
   if (!store.isLogged) return;
-
-  e.preventDefault();
   contextMenuItem.value = item;
   contextMenuGroupId.value = groupId;
 
   // Prevent menu from going off-screen (basic logic)
   const menuWidth = 150;
   const menuHeight = 100;
-  let x = e.clientX;
-  let y = e.clientY;
+  let finalX = x;
+  let finalY = y;
 
-  if (x + menuWidth > window.innerWidth) x -= menuWidth;
-  if (y + menuHeight > window.innerHeight) y -= menuHeight;
+  if (finalX + menuWidth > window.innerWidth) finalX -= menuWidth;
+  if (finalY + menuHeight > window.innerHeight) finalY -= menuHeight;
 
-  contextMenuPosition.value = { x, y };
+  contextMenuPosition.value = { x: finalX, y: finalY };
   showContextMenu.value = true;
+};
+
+const openContextMenu = (e: MouseEvent, item: NavItem, groupId?: string) => {
+  if (!store.isLogged) return;
+  e.preventDefault();
+  openContextMenuAt(e.clientX, e.clientY, item, groupId);
+};
+
+const hasTouch = computed(() => {
+  if (typeof navigator === "undefined") return false;
+  const n = navigator as Navigator & { msMaxTouchPoints?: number };
+  const maxPoints = Math.max(0, n.maxTouchPoints || 0, n.msMaxTouchPoints || 0);
+  if (maxPoints > 0) return true;
+  return typeof window !== "undefined" && "ontouchstart" in window;
+});
+const enableLongPressContextMenu = computed(() => hasTouch.value);
+let cardLongPressTimer: number | null = null;
+let cardLongPressStartX = 0;
+let cardLongPressStartY = 0;
+let cardLongPressItem: NavItem | null = null;
+let cardLongPressGroupId: string | undefined;
+let cardLongPressSource: "touch" | "pointer" | null = null;
+
+const clearCardLongPress = () => {
+  if (cardLongPressTimer) window.clearTimeout(cardLongPressTimer);
+  cardLongPressTimer = null;
+  cardLongPressItem = null;
+  cardLongPressGroupId = undefined;
+  cardLongPressSource = null;
+};
+
+const onCardTouchStart = (e: TouchEvent, item: NavItem, groupId?: string) => {
+  if (!store.isLogged) return;
+  if (!enableLongPressContextMenu.value) return;
+  if (showContextMenu.value) return;
+  if (cardLongPressSource === "pointer") return;
+
+  const t = e.touches && e.touches[0];
+  if (!t) return;
+
+  clearCardLongPress();
+  cardLongPressSource = "touch";
+  cardLongPressStartX = t.clientX;
+  cardLongPressStartY = t.clientY;
+  cardLongPressItem = item;
+  cardLongPressGroupId = groupId;
+  cardLongPressTimer = window.setTimeout(() => {
+    if (!cardLongPressItem) return;
+    skipNextCardClickId = cardLongPressItem.id;
+    openContextMenuAt(
+      cardLongPressStartX,
+      cardLongPressStartY,
+      cardLongPressItem,
+      cardLongPressGroupId,
+    );
+    clearCardLongPress();
+  }, 520);
+};
+
+const onCardTouchMove = (e: TouchEvent) => {
+  if (!cardLongPressTimer) return;
+  if (cardLongPressSource !== "touch") return;
+  const t = e.touches && e.touches[0];
+  if (!t) return;
+  const dx = t.clientX - cardLongPressStartX;
+  const dy = t.clientY - cardLongPressStartY;
+  if (dx * dx + dy * dy > 256) clearCardLongPress();
+};
+
+const onCardTouchEnd = () => {
+  clearCardLongPress();
+};
+
+const onCardPointerDown = (e: PointerEvent, item: NavItem, groupId?: string) => {
+  if (!store.isLogged) return;
+  if (!enableLongPressContextMenu.value) return;
+  if (showContextMenu.value) return;
+  if (e.pointerType !== "touch") return;
+
+  clearCardLongPress();
+  cardLongPressSource = "pointer";
+  cardLongPressStartX = e.clientX;
+  cardLongPressStartY = e.clientY;
+  cardLongPressItem = item;
+  cardLongPressGroupId = groupId;
+  cardLongPressTimer = window.setTimeout(() => {
+    if (!cardLongPressItem) return;
+    skipNextCardClickId = cardLongPressItem.id;
+    openContextMenuAt(
+      cardLongPressStartX,
+      cardLongPressStartY,
+      cardLongPressItem,
+      cardLongPressGroupId,
+    );
+    clearCardLongPress();
+  }, 520);
+};
+
+const onCardPointerMove = (e: PointerEvent) => {
+  if (!cardLongPressTimer) return;
+  if (cardLongPressSource !== "pointer") return;
+  if (e.pointerType !== "touch") return;
+  const dx = e.clientX - cardLongPressStartX;
+  const dy = e.clientY - cardLongPressStartY;
+  if (dx * dx + dy * dy > 256) clearCardLongPress();
+};
+
+const onCardPointerUp = () => {
+  clearCardLongPress();
 };
 
 const handleContextMenu = (e: MouseEvent, item: NavItem, groupId?: string) => {
@@ -935,6 +1093,14 @@ const handleContextMenuPointerDown = (e: MouseEvent, item: NavItem, groupId?: st
 
 const closeContextMenu = () => {
   showContextMenu.value = false;
+};
+
+const onDocPointerDownCapture = (e: PointerEvent) => {
+  if (!showContextMenu.value) return;
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest?.("[data-grid-context-menu]")) return;
+  closeContextMenu();
 };
 
 const handleMenuLanOpen = () => {
@@ -1004,12 +1170,12 @@ const confirmDelete = () => {
 };
 
 onMounted(() => {
-  document.addEventListener("click", closeContextMenu);
+  document.addEventListener("pointerdown", onDocPointerDownCapture, true);
   document.addEventListener("scroll", closeContextMenu, true);
 });
 
 onUnmounted(() => {
-  document.removeEventListener("click", closeContextMenu);
+  document.removeEventListener("pointerdown", onDocPointerDownCapture, true);
   document.removeEventListener("scroll", closeContextMenu, true);
 });
 
@@ -1313,7 +1479,7 @@ onMounted(() => {
 
 <template>
   <div
-    class="min-h-screen relative overflow-hidden flex flex-col"
+    class="min-h-dvh relative overflow-hidden flex flex-col pt-[env(safe-area-inset-top)]"
     :class="{ 'empire-theme': store.appConfig.empireMode }"
   >
     <!-- ✨ Global Background Layer -->
@@ -1380,14 +1546,30 @@ onMounted(() => {
     <AppSidebar
       v-if="isSidebarEnabled"
       v-model:collapsed="sidebarCollapsed"
-      class="fixed left-0 top-0 z-40"
+      class="fixed left-0 top-0 z-40 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)]"
       :class="isMobile && sidebarCollapsed ? 'h-auto' : 'h-full'"
-      :onOpenSettings="() => (showSettingsModal = true)"
-      :onOpenEdit="() => (isEditMode = !isEditMode)"
+      :onOpenSettings="
+        () => {
+          if (!store.isLogged) {
+            showLoginModal = true;
+            return;
+          }
+          showSettingsModal = true;
+        }
+      "
+      :onOpenEdit="
+        () => {
+          if (!store.isLogged) {
+            showLoginModal = true;
+            return;
+          }
+          isEditMode = !isEditMode;
+        }
+      "
     />
 
     <div
-      class="flex-1 w-full p-4 md:p-8 transition-all pb-8 md:pb-10 relative z-10"
+      class="flex-1 w-full p-4 md:p-8 transition-all pb-[calc(2rem+env(safe-area-inset-bottom))] md:pb-[calc(2.5rem+env(safe-area-inset-bottom))] relative z-10"
       :style="{
         backgroundColor: store.appConfig.background ? 'transparent' : '#f3f4f6',
         '--group-title-color': store.appConfig.groupTitleColor || '#ffffff',
@@ -1401,10 +1583,10 @@ onMounted(() => {
         class="mx-auto transition-all duration-300"
         :class="store.isExpandedMode ? 'max-w-[95%]' : 'max-w-7xl'"
       >
-        <div class="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 relative">
+        <div class="flex flex-col lg:flex-row lg:justify-between items-center mb-10 gap-6 relative">
           <div
             class="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 flex-shrink-0 z-30 transition-all duration-500"
-            :style="{ order: store.appConfig.titleAlign === 'right' ? 2 : 0 }"
+            :style="{ order: isHeaderRowLayout && store.appConfig.titleAlign === 'right' ? 2 : 0 }"
           >
             <h1
               class="font-bold transition-all duration-300 whitespace-nowrap"
@@ -1466,12 +1648,18 @@ onMounted(() => {
 
           <div
             v-if="checkVisible(store.widgets.find((w) => w.id === 'w5'))"
-            class="w-full md:absolute md:left-1/2 md:-translate-x-1/2 z-50 transition-all duration-300"
-            :class="store.isExpandedMode ? 'md:w-[32rem]' : 'md:w-64'"
+            class="w-full lg:absolute lg:left-1/2 lg:-translate-x-1/2 z-50 transition-all duration-300"
+            :class="store.isExpandedMode ? 'lg:w-[32rem]' : 'lg:w-64'"
           >
             <form
-              class="mx-auto shadow-lg hover:shadow-xl transition-shadow rounded-full bg-white/90 backdrop-blur-md border border-white/40 flex items-center p-1"
-              :style="{ width: '100%', height: '41px' }"
+              class="mx-auto shadow-lg hover:shadow-xl transition-shadow rounded-full bg-white/90 backdrop-blur-md border border-white/40 flex items-center p-1 flatnas-search-form"
+              :style="{
+                width: '100%',
+                height: '41px',
+                backgroundColor: `rgba(255, 255, 255, ${searchBgAlpha})`,
+                '--flatnas-search-text-color': searchTextColor,
+                '--flatnas-search-placeholder-color': searchPlaceholderColor,
+              }"
               @submit.prevent="doSearch"
               action="."
             >
@@ -1487,7 +1675,7 @@ onMounted(() => {
                 aria-label="搜索框"
                 autocomplete="off"
                 autofocus
-                class="h-full pl-6 pr-4 rounded-full bg-transparent border-0 text-gray-900 placeholder-gray-500 outline-none"
+                class="h-full pl-6 pr-4 rounded-full bg-transparent border-0 outline-none flatnas-search-input"
                 :style="{ width: 'calc(100% - 33.75%)' }"
                 :placeholder="
                   (engines.find((e) => e.key === effectiveEngine)?.label || '搜索') + ' 搜索...'
@@ -1497,7 +1685,7 @@ onMounted(() => {
                 <select
                   v-model="effectiveEngine"
                   aria-label="搜索引擎"
-                  class="h-[34px] px-3 py-0 bg-white rounded-full border border-gray-200 focus:border-blue-400 outline-none"
+                  class="h-[34px] px-3 py-0 bg-transparent rounded-full border border-gray-200 focus:border-blue-400 outline-none flatnas-search-select"
                   :style="{ width: 'calc(100%)', fontSize: '15px' }"
                   @click.stop
                 >
@@ -1509,7 +1697,7 @@ onMounted(() => {
 
           <div
             class="flex gap-3 flex-shrink-0 z-10 items-center transition-all duration-500 flatnas-handshake-signal"
-            :style="{ order: store.appConfig.titleAlign === 'right' ? 0 : 2 }"
+            :style="{ order: isHeaderRowLayout && store.appConfig.titleAlign === 'right' ? 0 : 2 }"
           >
             <MiniPlayer
               v-if="checkVisible(store.widgets.find((w) => w.type === 'player'))"
@@ -1548,7 +1736,7 @@ onMounted(() => {
         <GridLayout
           v-if="layoutData.length > 0"
           v-model:layout="layoutData"
-          :col-num="isMobile ? 1 : store.isExpandedMode ? 8 : 4"
+          :col-num="widgetColNum"
           :row-height="rowHeight"
           :is-draggable="isEditMode && deviceKey !== 'mobile' && !activeResizeWidgetId"
           :is-resizable="false"
@@ -1685,6 +1873,7 @@ onMounted(() => {
           handle=".group-handle"
           :move="checkMove"
           :animation="300"
+          :forceFallback="true"
           :disabled="!isEditMode"
           @end="() => store.saveData()"
           class="pb-20 flex flex-col"
@@ -1804,6 +1993,7 @@ onMounted(() => {
               @end="() => store.saveData()"
               group="apps"
               :animation="200"
+              :forceFallback="true"
               :disabled="!isEditMode || !!searchText"
               class="grid transition-all duration-300 min-h-[100px] rounded-xl"
               :class="
@@ -1821,6 +2011,14 @@ onMounted(() => {
                 @click="handleCardClick(item)"
                 @mousedown.right.prevent.stop="handleContextMenuPointerDown($event, item, group.id)"
                 @contextmenu.prevent.stop="handleContextMenu($event, item, group.id)"
+                @pointerdown="(e) => onCardPointerDown(e, item, group.id)"
+                @pointermove="onCardPointerMove"
+                @pointerup="onCardPointerUp"
+                @pointercancel="onCardPointerUp"
+                @touchstart="(e) => onCardTouchStart(e, item, group.id)"
+                @touchmove="onCardTouchMove"
+                @touchend="onCardTouchEnd"
+                @touchcancel="onCardTouchEnd"
                 class="flex items-center justify-center cursor-pointer transition-all select-none relative group overflow-hidden"
                 :class="[
                   isEditMode ? 'animate-pulse cursor-move ring-2 ring-blue-400' : '',
@@ -2116,8 +2314,10 @@ onMounted(() => {
 
     <!-- Footer -->
     <footer
-      class="w-full z-10 relative shrink-0 px-8 transition-all flex items-center"
-      :class="!store.appConfig.footerHeight ? 'py-6' : ''"
+      class="w-full z-10 relative shrink-0 px-8 transition-all flex items-center pb-[env(safe-area-inset-bottom)]"
+      :class="
+        !store.appConfig.footerHeight ? 'pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]' : ''
+      "
       :style="{
         height: store.appConfig.footerHeight ? store.appConfig.footerHeight + 'px' : 'auto',
         marginBottom: (store.appConfig.footerMarginBottom || 0) + 'px',
@@ -2227,6 +2427,7 @@ onMounted(() => {
     <div
       v-show="showContextMenu"
       ref="contextMenuRef"
+      data-grid-context-menu
       class="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[120px] overflow-hidden"
       :style="{ top: contextMenuPosition.y + 'px', left: contextMenuPosition.x + 'px' }"
       @click.stop
@@ -2336,6 +2537,13 @@ onMounted(() => {
 }
 .shadow-text {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.flatnas-search-input,
+.flatnas-search-select {
+  color: var(--flatnas-search-text-color, #111827);
+}
+.flatnas-search-input::placeholder {
+  color: var(--flatnas-search-placeholder-color, rgba(107, 114, 128, 1));
 }
 [contenteditable]:focus {
   background-color: rgba(255, 255, 255, 0.2);
