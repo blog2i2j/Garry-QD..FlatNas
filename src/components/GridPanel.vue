@@ -241,6 +241,7 @@ const draggableWidgets = computed({
 const layoutData = ref<GridLayoutItem[]>([]);
 let skipNextLayoutSave = false;
 const { deviceKey, isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
+const isHandheld = computed(() => deviceKey.value === "mobile" || deviceKey.value === "tablet");
 const isTabletPortrait = computed(() => deviceKey.value === "tablet" && height.value > width.value);
 const widgetColNum = computed(() => {
   if (deviceKey.value === "mobile") return 1;
@@ -310,26 +311,24 @@ watch(
 );
 
 const handleLayoutUpdated = (newLayout: GridLayoutItem[]) => {
-  // 移动端布局变化不保存，避免破坏桌面端配置
-  if (deviceKey.value === "mobile") return;
-
   // 如果是程序化更新导致的事件，跳过保存
   if (skipNextLayoutSave) {
     skipNextLayoutSave = false;
     return;
   }
 
+  const key = deviceKey.value as "desktop" | "tablet" | "mobile";
+
   // 如果布局与当前 store.widgets 相同，跳过保存
   let changed = false;
   for (const l of newLayout) {
     const w = store.widgets.find((sw) => sw.id === l.i);
-    if (
-      !w ||
-      w.x !== l.x ||
-      w.y !== l.y ||
-      (w.w ?? w.colSpan ?? 1) !== l.w ||
-      (w.h ?? w.rowSpan ?? 1) !== l.h
-    ) {
+    const spec = w?.layouts?.[key];
+    const curX = spec?.x ?? w?.x;
+    const curY = spec?.y ?? w?.y;
+    const curW = spec?.w ?? w?.w ?? w?.colSpan ?? 1;
+    const curH = spec?.h ?? w?.h ?? w?.rowSpan ?? 1;
+    if (!w || curX !== l.x || curY !== l.y || curW !== l.w || curH !== l.h) {
       changed = true;
       break;
     }
@@ -339,14 +338,7 @@ const handleLayoutUpdated = (newLayout: GridLayoutItem[]) => {
   newLayout.forEach((l) => {
     const w = store.widgets.find((sw) => sw.id === l.i);
     if (w) {
-      w.x = l.x;
-      w.y = l.y;
-      w.w = l.w;
-      w.h = l.h;
-      w.colSpan = l.w;
-      w.rowSpan = l.h;
       const layouts = w.layouts || {};
-      const key = deviceKey.value as "desktop" | "tablet" | "mobile";
       const spec: { x: number; y: number; w: number; h: number } = {
         x: l.x,
         y: l.y,
@@ -355,6 +347,15 @@ const handleLayoutUpdated = (newLayout: GridLayoutItem[]) => {
       };
       layouts[key] = spec;
       w.layouts = layouts;
+
+      if (key === "desktop") {
+        w.x = l.x;
+        w.y = l.y;
+        w.w = l.w;
+        w.h = l.h;
+        w.colSpan = l.w;
+        w.rowSpan = l.h;
+      }
     }
   });
   store.saveData();
@@ -388,6 +389,41 @@ const displayGroups = computed(() => {
 const cycleWidgetSize = (widget: WidgetConfig) => {
   // 统一为所有组件启用 4x4 尺寸选择器
   activeResizeWidgetId.value = activeResizeWidgetId.value === widget.id ? null : widget.id;
+};
+
+let widgetHandlePointerId: number | null = null;
+let widgetHandleStartX = 0;
+let widgetHandleStartY = 0;
+const suppressNextWidgetHandleClick = ref(false);
+
+const onWidgetHandlePointerDown = (e: PointerEvent) => {
+  if (!isHandheld.value) return;
+  widgetHandlePointerId = e.pointerId;
+  widgetHandleStartX = e.clientX;
+  widgetHandleStartY = e.clientY;
+  suppressNextWidgetHandleClick.value = false;
+};
+
+const onWidgetHandlePointerMove = (e: PointerEvent) => {
+  if (!isHandheld.value) return;
+  if (widgetHandlePointerId === null || e.pointerId !== widgetHandlePointerId) return;
+  const dx = e.clientX - widgetHandleStartX;
+  const dy = e.clientY - widgetHandleStartY;
+  if (dx * dx + dy * dy > 64) suppressNextWidgetHandleClick.value = true;
+};
+
+const onWidgetHandlePointerUp = (e: PointerEvent) => {
+  if (!isHandheld.value) return;
+  if (widgetHandlePointerId === null || e.pointerId !== widgetHandlePointerId) return;
+  widgetHandlePointerId = null;
+};
+
+const onWidgetHandleClick = (widget: WidgetConfig) => {
+  if (isHandheld.value && suppressNextWidgetHandleClick.value) {
+    suppressNextWidgetHandleClick.value = false;
+    return;
+  }
+  cycleWidgetSize(widget);
 };
 
 const handleSizeSelect = (widget: GridLayoutItem, size: { colSpan: number; rowSpan: number }) => {
@@ -1275,6 +1311,60 @@ const ipInfo = ref({
   clientIpSource: "",
 });
 
+const isIpv6 = computed(() => {
+  const ip = String(ipInfo.value.displayIp || "");
+  return ip.includes(":");
+});
+
+const hasClientIp = computed(() => {
+  const v = String(ipInfo.value.clientIp || "").trim();
+  return !!v;
+});
+
+const showClientIp = computed(() => {
+  if (!hasClientIp.value) return false;
+  const display = String(ipInfo.value.displayIp || "").trim();
+  const client = String(ipInfo.value.clientIp || "").trim();
+  if (!display || !client) return false;
+  return client !== display;
+});
+
+const ipTypeLabel = computed(() => (isIpv6.value ? "IPv6" : "IP"));
+
+const copiedToast = ref("");
+let copiedToastTimer: number | null = null;
+const copyToClipboard = async (text: string) => {
+  const value = String(text || "").trim();
+  if (!value) return;
+  if (value === "加载中..." || value === "检测中..." || value === "Error" || value === "获取失败")
+    return;
+  try {
+    await navigator.clipboard.writeText(value);
+    copiedToast.value = "已复制";
+  } catch {
+    try {
+      const el = document.createElement("textarea");
+      el.value = value;
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      el.style.top = "0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      copiedToast.value = "已复制";
+    } catch {
+      copiedToast.value = "复制失败";
+    }
+  }
+
+  if (copiedToastTimer) window.clearTimeout(copiedToastTimer);
+  copiedToastTimer = window.setTimeout(() => {
+    copiedToast.value = "";
+    copiedToastTimer = null;
+  }, 1200);
+};
+
 const formattedLocation = computed(() => {
   const loc = ipInfo.value.location;
   if (!loc) return "";
@@ -1738,7 +1828,7 @@ onMounted(() => {
           v-model:layout="layoutData"
           :col-num="widgetColNum"
           :row-height="rowHeight"
-          :is-draggable="isEditMode && deviceKey !== 'mobile' && !activeResizeWidgetId"
+          :is-draggable="isEditMode && !activeResizeWidgetId"
           :is-resizable="false"
           :vertical-compact="true"
           :use-css-transforms="true"
@@ -1757,6 +1847,8 @@ onMounted(() => {
             :w="widget.w"
             :h="widget.h"
             :i="widget.i"
+            :drag-allow-from="isHandheld && isEditMode ? '.widget-drag-handle' : undefined"
+            :drag-ignore-from="isHandheld && isEditMode ? 'a' : undefined"
             class="transition-all duration-300 relative"
             :class="[
               isEditMode
@@ -1779,8 +1871,12 @@ onMounted(() => {
             </button>
             <button
               v-if="isEditMode"
-              @click.stop="cycleWidgetSize(widget)"
-              class="absolute bottom-2 right-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-lg z-50 hover:bg-blue-600 hover:scale-110 transition-all"
+              @click.stop="onWidgetHandleClick(widget)"
+              @pointerdown="onWidgetHandlePointerDown"
+              @pointermove="onWidgetHandlePointerMove"
+              @pointerup="onWidgetHandlePointerUp"
+              @pointercancel="onWidgetHandlePointerUp"
+              class="widget-drag-handle absolute bottom-2 right-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-lg z-50 hover:bg-blue-600 hover:scale-110 transition-all touch-none"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -1817,10 +1913,32 @@ onMounted(() => {
                 {{ formattedLocation }}
               </div>
               <div class="flex items-center justify-center gap-2 w-full flex-1">
-                <span class="text-[14px] opacity-70 uppercase">IP</span>
-                <span class="text-2xl font-mono font-medium sm:font-bold leading-tight">{{
-                  ipInfo.displayIp
-                }}</span>
+                <span class="text-[14px] opacity-70 uppercase">{{ ipTypeLabel }}</span>
+                <button
+                  class="max-w-full font-mono font-medium sm:font-bold leading-tight text-center select-text break-all hover:opacity-90 transition-opacity"
+                  :class="isIpv6 ? 'text-[18px] sm:text-xl' : 'text-2xl'"
+                  type="button"
+                  :title="isIpv6 ? '点击复制完整 IPv6' : '点击复制 IP'"
+                  @click.stop="copyToClipboard(ipInfo.displayIp)"
+                >
+                  {{ ipInfo.displayIp }}
+                </button>
+              </div>
+
+              <div
+                v-if="showClientIp"
+                class="flex items-center justify-center gap-2 w-full -mt-1"
+                :title="`客户端IP来源: ${ipInfo.clientIpSource || '-'}`"
+              >
+                <span class="text-[11px] opacity-70 uppercase">CLIENT</span>
+                <button
+                  class="max-w-full text-[12px] font-mono font-medium opacity-90 select-text break-all hover:opacity-100 transition-opacity"
+                  type="button"
+                  title="点击复制客户端 IP"
+                  @click.stop="copyToClipboard(ipInfo.clientIp)"
+                >
+                  {{ ipInfo.clientIp }}
+                </button>
               </div>
 
               <div class="flex items-center justify-center gap-2 w-full flex-1">
@@ -1836,6 +1954,10 @@ onMounted(() => {
                 >
                   刷新
                 </button>
+              </div>
+
+              <div v-if="copiedToast" class="text-[11px] opacity-80 -mt-1">
+                {{ copiedToast }}
               </div>
             </div>
             <CountdownWidget v-else-if="widget.type === 'countdown'" :widget="widget" />

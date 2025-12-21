@@ -2361,7 +2361,7 @@ const onMouseUp = () => {
                   </div>
                   <div class="bg-white p-3 rounded-lg border border-blue-100">
                     <div class="text-xs text-gray-500 mb-1">公网 IP</div>
-                    <div class="font-bold text-gray-800">
+                    <div class="font-bold text-gray-800 font-mono break-all">
                       {{ store.luckyStunData.data.ip || "-" }}
                     </div>
                   </div>

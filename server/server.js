@@ -64,6 +64,7 @@ const TRANSFER_ROOT = path.join(DOC_DIR, "transfer");
 const TRANSFER_INDEX = path.join(TRANSFER_ROOT, "index.json");
 const TRANSFER_UPLOADS = path.join(TRANSFER_ROOT, "uploads");
 const TRANSFER_CHUNKS = path.join(TRANSFER_ROOT, "chunks");
+const ICON_CACHE_DIR = path.join(DATA_DIR, "icon-cache");
 
 // Helper to ensure directory exists safely
 async function ensureDir(dirPath) {
@@ -145,6 +146,7 @@ async function ensureInit() {
   await ensureDir(TRANSFER_ROOT);
   await ensureDir(TRANSFER_UPLOADS);
   await ensureDir(TRANSFER_CHUNKS);
+  await ensureDir(ICON_CACHE_DIR);
 
   // Load System Config
   try {
@@ -476,10 +478,85 @@ app.get("/api/docker/info", authenticateToken, async (req, res) => {
 // Proxy for AliYun Icons to avoid CORS
 app.get("/api/ali-icons", async (req, res) => {
   try {
-    const response = await fetch("https://icon-manager.1851365c.er.aliyun-esa.net/icons.json");
-    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
-    const data = await response.json();
-    res.json(data);
+    const sources = [
+      "https://icon-manager.1851365c.er.aliyun-esa.net",
+      "https://icon-manager2.1851365c.er.aliyun-esa.net",
+      "http://icon-manager3.1851365c.er.aliyun-esa.net",
+    ];
+
+    const fetchWithTimeout = async (url) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok)
+          throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+        return await response.json();
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    const normalizeIcon = (icon, baseUrl) => {
+      const rawUrl = typeof icon?.url === "string" ? icon.url.trim() : "";
+      const rawDownloadUrl = typeof icon?.downloadUrl === "string" ? icon.downloadUrl.trim() : "";
+
+      let downloadUrl = rawDownloadUrl;
+      if (!downloadUrl) {
+        if (/^https?:\/\//i.test(rawUrl) || rawUrl.startsWith("//") || rawUrl.startsWith("data:")) {
+          downloadUrl = rawUrl;
+        } else if (rawUrl) {
+          try {
+            downloadUrl = new URL(rawUrl, baseUrl).href;
+          } catch {
+            downloadUrl = "";
+          }
+        }
+      } else {
+        if (
+          !/^https?:\/\//i.test(downloadUrl) &&
+          !downloadUrl.startsWith("//") &&
+          !downloadUrl.startsWith("data:")
+        ) {
+          try {
+            downloadUrl = new URL(downloadUrl, baseUrl).href;
+          } catch {
+            downloadUrl = "";
+          }
+        }
+      }
+
+      return { ...icon, downloadUrl };
+    };
+
+    const results = await Promise.allSettled(
+      sources.map(async (baseUrl) => {
+        const data = await fetchWithTimeout(`${baseUrl}/icons.json`);
+        if (!Array.isArray(data)) throw new Error(`Invalid icons.json: ${baseUrl}`);
+        return data.map((icon) => normalizeIcon(icon, baseUrl));
+      }),
+    );
+
+    const merged = [];
+    const seen = new Set();
+
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      for (const icon of r.value) {
+        const key =
+          (typeof icon?.downloadUrl === "string" && icon.downloadUrl) ||
+          `${icon?.name || ""}|${icon?.url || ""}|${icon?.filename || ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(icon);
+      }
+    }
+
+    if (merged.length === 0) {
+      return res.status(502).json({ error: "Failed to fetch icons from all sources" });
+    }
+
+    res.json(merged);
   } catch (error) {
     console.error("[Proxy Error] Failed to fetch AliYun icons:", error);
     res.status(500).json({ error: "Failed to fetch icons" });
@@ -1059,15 +1136,25 @@ app.post("/api/data", authenticateToken, async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
   const username = req.user.username;
   try {
-    const data = req.body;
+    const data = req.body && typeof req.body === "object" ? { ...req.body } : null;
     if (!data || typeof data !== "object") {
       return res.status(400).json({ error: "Invalid JSON data" });
     }
 
-    // Preserve password
-    if (cachedUsersData[username] && cachedUsersData[username].password) {
-      data.password = cachedUsersData[username].password;
+    let existingPassword = "";
+    if (cachedUsersData[username] && typeof cachedUsersData[username].password === "string") {
+      existingPassword = cachedUsersData[username].password;
+    } else {
+      try {
+        const json = await fs.readFile(getUserFile(username), "utf-8");
+        const parsed = JSON.parse(json);
+        if (parsed && typeof parsed.password === "string") existingPassword = parsed.password;
+      } catch {
+        existingPassword = "";
+      }
     }
+    if ("password" in data) delete data.password;
+    if (existingPassword) data.password = existingPassword;
 
     // Ensure groups exist if items are present (legacy format support)
     if (!data.groups && data.items) {
@@ -1969,37 +2056,34 @@ app.get("/api/weather", async (req, res) => {
   }
 });
 
-// Import (Legacy/Admin only?)
-// For now, allow logged in user to import to their profile
 app.post("/api/data/import", authenticateToken, async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
   const username = req.user.username;
   try {
-    const body = req.body;
-    const current = cachedUsersData[username] || {};
-    const finalData = { ...body, password: current.password };
-    cachedUsersData[username] = finalData;
-    await atomicWrite(getUserFile(username), JSON.stringify(finalData, null, 2));
-    res.json({ success: true });
-  } catch {
-    res.status(500).json({ error: "Failed to import" });
-  }
-});
-
-// Import Data (Deprecated but kept for compatibility, now handled by /api/data)
-app.post("/api/data/import", authenticateToken, async (req, res) => {
-  // Redirect logic to /api/data handler internally or just reuse logic
-  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-  const username = req.user.username;
-  try {
-    const data = req.body;
+    const data = req.body && typeof req.body === "object" ? { ...req.body } : null;
     if (!data || typeof data !== "object") {
       return res.status(400).json({ error: "Invalid JSON data" });
     }
-    // Preserve password
-    if (cachedUsersData[username] && cachedUsersData[username].password) {
-      data.password = cachedUsersData[username].password;
+
+    let existingPassword = "";
+    if (cachedUsersData[username] && typeof cachedUsersData[username].password === "string") {
+      existingPassword = cachedUsersData[username].password;
+    } else {
+      try {
+        const json = await fs.readFile(getUserFile(username), "utf-8");
+        const parsed = JSON.parse(json);
+        if (parsed && typeof parsed.password === "string") existingPassword = parsed.password;
+      } catch {
+        existingPassword = "";
+      }
     }
+    if ("password" in data) delete data.password;
+    if (existingPassword) data.password = existingPassword;
+
+    if (!data.groups && data.items) {
+      data.groups = [{ id: Date.now().toString(), title: "默认分组", items: data.items }];
+    }
+
     cachedUsersData[username] = data;
     await atomicWrite(getUserFile(username), JSON.stringify(data, null, 2));
     res.json({ success: true });
@@ -2067,6 +2151,7 @@ app.get("/api/hot/news", async (req, res) => {
 app.use("/music", express.static(MUSIC_DIR));
 app.use("/backgrounds", express.static(BACKGROUNDS_DIR));
 app.use("/mobile_backgrounds", express.static(MOBILE_BACKGROUNDS_DIR));
+app.use("/icon-cache", express.static(ICON_CACHE_DIR));
 
 // Get backgrounds list
 app.get("/api/backgrounds", async (req, res) => {
@@ -2457,6 +2542,150 @@ app.get("/api/get-icon-base64", async (req, res) => {
   } catch (error) {
     console.error("Fetch icon base64 error:", error);
     res.status(500).json({ error: "Failed to process icon" });
+  }
+});
+
+const ICON_CACHE_MAX_BYTES = 1024 * 1024;
+
+const readStreamToBuffer = async (stream, maxBytes) => {
+  if (!stream) return Buffer.alloc(0);
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const buf = Buffer.from(value);
+    total += buf.length;
+    if (total > maxBytes) throw new Error("Icon too large");
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks, total);
+};
+
+const inferExtFromType = (contentType) => {
+  const ct = String(contentType || "")
+    .toLowerCase()
+    .split(";")[0]
+    .trim();
+  if (ct === "image/svg+xml") return "svg";
+  if (ct === "image/x-icon" || ct === "image/vnd.microsoft.icon") return "ico";
+  if (ct === "image/png") return "png";
+  if (ct === "image/jpeg") return "jpg";
+  if (ct === "image/webp") return "webp";
+  if (ct === "image/gif") return "gif";
+  return "";
+};
+
+const inferExtFromUrl = (url) => {
+  try {
+    const pathname = new URL(url).pathname || "";
+    const ext = path.extname(pathname).toLowerCase().replace(".", "");
+    if (["svg", "ico", "png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
+      return ext === "jpeg" ? "jpg" : ext;
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+};
+
+const parseDataUrl = (dataUrl) => {
+  const m = String(dataUrl || "").match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+  if (!m) return null;
+  const mime = (m[1] || "application/octet-stream").trim();
+  const isBase64 = Boolean(m[2]);
+  const payload = m[3] || "";
+  try {
+    const buffer = isBase64
+      ? Buffer.from(payload, "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf8");
+    return { buffer, mime };
+  } catch {
+    return null;
+  }
+};
+
+app.post("/api/icon-cache", async (req, res) => {
+  const url = req.body && typeof req.body.url === "string" ? req.body.url.trim() : "";
+  const dataUrl = req.body && typeof req.body.dataUrl === "string" ? req.body.dataUrl.trim() : "";
+
+  if (!url && !dataUrl)
+    return res.status(400).json({ success: false, error: "url or dataUrl is required" });
+
+  try {
+    let buffer;
+    let contentType = "";
+    let extFromType = "";
+    let extFromUrl = "";
+
+    if (dataUrl) {
+      const parsed = parseDataUrl(dataUrl);
+      if (!parsed) return res.status(400).json({ success: false, error: "Invalid dataUrl" });
+      buffer = parsed.buffer;
+      contentType = parsed.mime;
+      extFromType = inferExtFromType(contentType);
+    } else {
+      if (!/^https?:\/\//i.test(url)) {
+        return res.status(400).json({ success: false, error: "Only http/https url is allowed" });
+      }
+
+      const doFetch = async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        try {
+          return await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            },
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
+
+      let response;
+      try {
+        response = await doFetch();
+      } catch {
+        await new Promise((r) => setTimeout(r, 200));
+        response = await doFetch();
+      }
+
+      if (!response.ok) {
+        return res.status(404).json({ success: false, error: "Failed to fetch icon" });
+      }
+
+      contentType = response.headers.get("content-type") || "";
+      extFromType = inferExtFromType(contentType);
+      extFromUrl = inferExtFromUrl(url);
+      buffer = await readStreamToBuffer(response.body, ICON_CACHE_MAX_BYTES);
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ success: false, error: "Empty icon" });
+    }
+    if (buffer.length > ICON_CACHE_MAX_BYTES) {
+      return res.status(413).json({ success: false, error: "Icon too large" });
+    }
+
+    const ext = extFromType || extFromUrl || "png";
+    const hash = crypto.createHash("sha256").update(buffer).digest("hex");
+    const filename = `${hash.slice(0, 32)}.${ext}`;
+    const filePath = path.join(ICON_CACHE_DIR, filename);
+
+    try {
+      await fs.access(filePath);
+    } catch {
+      await fs.writeFile(filePath, buffer);
+    }
+
+    res.json({ success: true, path: `/icon-cache/${filename}`, bytes: buffer.length, contentType });
+  } catch (error) {
+    console.error("[IconCache] Failed:", error);
+    res.status(500).json({ success: false, error: "Failed to cache icon" });
   }
 });
 

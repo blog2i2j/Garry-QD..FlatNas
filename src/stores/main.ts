@@ -72,7 +72,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.38";
+  const currentVersion = "1.0.39";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 

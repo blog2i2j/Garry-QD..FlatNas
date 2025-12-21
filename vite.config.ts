@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => ({
         target: "http://127.0.0.1:3000",
         changeOrigin: true,
       },
+      "/icon-cache": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+      },
       // ✨ CGI 代理
       "^.*\\.cgi.*": {
         target: "http://127.0.0.1:3000",

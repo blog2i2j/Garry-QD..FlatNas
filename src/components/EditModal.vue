@@ -144,7 +144,71 @@ const fetchSimpleIconsData = async () => {
   }
 };
 
-const ALI_ICON_BASE_URL = "https://icon-manager.1851365c.er.aliyun-esa.net";
+const ALI_ICON_BASE_URLS = [
+  "https://icon-manager.1851365c.er.aliyun-esa.net",
+  "https://icon-manager2.1851365c.er.aliyun-esa.net",
+  "http://icon-manager3.1851365c.er.aliyun-esa.net",
+] as const;
+
+const normalizeAliIcons = (icons: AliIcon[], baseUrl: string): AliIcon[] => {
+  return icons.map((icon) => {
+    const url = typeof icon.url === "string" ? icon.url.trim() : "";
+    const downloadUrl = typeof icon.downloadUrl === "string" ? icon.downloadUrl.trim() : "";
+
+    if (downloadUrl) {
+      if (
+        /^https?:\/\//i.test(downloadUrl) ||
+        downloadUrl.startsWith("//") ||
+        downloadUrl.startsWith("data:")
+      ) {
+        return { ...icon, downloadUrl };
+      }
+      try {
+        return { ...icon, downloadUrl: new URL(downloadUrl, baseUrl).href };
+      } catch {
+        return { ...icon, downloadUrl: "" };
+      }
+    }
+
+    if (/^https?:\/\//i.test(url) || url.startsWith("//") || url.startsWith("data:")) {
+      return { ...icon, downloadUrl: url };
+    }
+
+    try {
+      return { ...icon, downloadUrl: new URL(url || "", baseUrl).href };
+    } catch {
+      return { ...icon, downloadUrl: "" };
+    }
+  });
+};
+
+const resolveAliIconUrl = (icon: AliIcon): string => {
+  const downloadUrl = typeof icon.downloadUrl === "string" ? icon.downloadUrl.trim() : "";
+  if (downloadUrl) {
+    if (
+      /^https?:\/\//i.test(downloadUrl) ||
+      downloadUrl.startsWith("//") ||
+      downloadUrl.startsWith("data:")
+    ) {
+      return downloadUrl;
+    }
+    try {
+      return new URL(downloadUrl, ALI_ICON_BASE_URLS[0]).href;
+    } catch {
+      return "";
+    }
+  }
+
+  const url = typeof icon.url === "string" ? icon.url.trim() : "";
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("//") || url.startsWith("data:")) return url;
+
+  try {
+    return new URL(url, ALI_ICON_BASE_URLS[0]).href;
+  } catch {
+    return "";
+  }
+};
 
 // 获取 Ali Icons 数据
 const fetchAliIconsData = async () => {
@@ -153,7 +217,8 @@ const fetchAliIconsData = async () => {
     // 优先尝试使用本地代理，解决 CORS 问题
     const res = await fetch("/api/ali-icons");
     if (res.ok) {
-      aliIconsData.value = await res.json();
+      const data = await res.json();
+      aliIconsData.value = Array.isArray(data) ? data : null;
     } else {
       throw new Error("Proxy failed");
     }
@@ -161,10 +226,30 @@ const fetchAliIconsData = async () => {
     console.warn("Proxy fetch failed, trying direct fetch...", e);
     // 降级尝试直接请求 (如果后端挂了但前端能通外网)
     try {
-      const res = await fetch(`${ALI_ICON_BASE_URL}/icons.json`);
-      if (res.ok) {
-        aliIconsData.value = await res.json();
+      const results = await Promise.allSettled(
+        ALI_ICON_BASE_URLS.map(async (baseUrl) => {
+          const res = await fetch(`${baseUrl}/icons.json`);
+          if (!res.ok) throw new Error(`Fetch failed: ${baseUrl}`);
+          const data = await res.json();
+          if (!Array.isArray(data)) throw new Error(`Invalid icons.json: ${baseUrl}`);
+          return normalizeAliIcons(data as AliIcon[], baseUrl);
+        }),
+      );
+
+      const merged: AliIcon[] = [];
+      const seen = new Set<string>();
+
+      for (const r of results) {
+        if (r.status !== "fulfilled") continue;
+        for (const icon of r.value) {
+          const key = icon.downloadUrl || `${icon.name}|${icon.url}|${icon.filename}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(icon);
+        }
       }
+
+      aliIconsData.value = merged.length > 0 ? merged : null;
     } catch (directErr) {
       console.error("Failed to fetch ali-icons data", directErr);
     }
@@ -323,7 +408,7 @@ const autoAdaptIcon = async () => {
       });
 
       const aliResults = aliFuse.search(searchTerm);
-      const aliMatches = aliResults.map((result) => `${ALI_ICON_BASE_URL}${result.item.url}`);
+      const aliMatches = aliResults.map((result) => resolveAliIconUrl(result.item)).filter(Boolean);
 
       console.log(`[Search] Phase 3 found ${aliMatches.length} matches`);
 
@@ -413,7 +498,7 @@ const searchAliIcons = async (searchTerm: string) => {
       });
 
       const aliResults = aliFuse.search(searchTerm);
-      const aliMatches = aliResults.map((result) => `${ALI_ICON_BASE_URL}${result.item.url}`);
+      const aliMatches = aliResults.map((result) => resolveAliIconUrl(result.item)).filter(Boolean);
 
       console.log(`[Search] Found ${aliMatches.length} matches`);
 
@@ -629,17 +714,60 @@ const onImgLoad = () => {
   isImgError.value = false;
 };
 
+const saveIconToLocal = ref(true);
+const isSaving = ref(false);
+
+const cacheIconToLocal = async (icon: string): Promise<string | null> => {
+  const trimmed = icon.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/icon-cache/")) return trimmed;
+
+  const payload = trimmed.startsWith("data:")
+    ? { dataUrl: trimmed }
+    : /^https?:\/\//i.test(trimmed)
+      ? { url: trimmed }
+      : null;
+
+  if (!payload) return null;
+
+  try {
+    const res = await fetch("/api/icon-cache", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.success && typeof data.path === "string" && data.path) return data.path;
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
 // 提交保存
-const submit = () => {
+const submit = async () => {
   if (!form.value.title && !form.value.url) return alert("标题和链接总得写一个吧！");
 
-  // ✨✨✨ 关键修改：将 groupId 一并传回，否则主页不知道加到哪个组 ✨✨✨
-  emit("save", {
-    item: { ...form.value, id: props.data?.id },
-    groupId: props.groupId,
-  });
+  isSaving.value = true;
+  try {
+    if (iconType.value === "image" && saveIconToLocal.value) {
+      const icon = (form.value.icon || "").trim();
+      if (icon && !icon.startsWith("/icon-cache/")) {
+        const cached = await cacheIconToLocal(icon);
+        if (cached) form.value.icon = cached;
+      }
+    }
 
-  close();
+    emit("save", {
+      item: { ...form.value, id: props.data?.id },
+      groupId: props.groupId,
+    });
+
+    close();
+  } finally {
+    isSaving.value = false;
+  }
 };
 </script>
 
@@ -803,6 +931,18 @@ const submit = () => {
                   </button>
                 </div>
               </div>
+
+              <label
+                v-if="iconType === 'image'"
+                class="flex items-center gap-2 text-xs text-gray-600 mb-2 select-none"
+              >
+                <input
+                  v-model="saveIconToLocal"
+                  type="checkbox"
+                  class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>保存到本地缓存（推荐，配置更小）</span>
+              </label>
 
               <div class="flex justify-start items-center gap-2">
                 <button
@@ -996,9 +1136,10 @@ const submit = () => {
         </button>
         <button
           @click="submit"
+          :disabled="isSaving"
           class="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95"
         >
-          {{ data ? "保存修改" : "确认添加" }}
+          {{ isSaving ? "保存中..." : data ? "保存修改" : "确认添加" }}
         </button>
       </div>
     </div>
