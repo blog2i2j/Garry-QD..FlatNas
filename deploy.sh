@@ -12,7 +12,9 @@ REPO_URL="https://github.com/Garry-QD/FlatNas.git"
 NODE_MAJOR=20
 SERVICE_NAME="flatnas"
 NGINX_CONF="/etc/nginx/sites-available/flatnas"
-CURRENT_USER=$(whoami)
+SWAP_FILE="/swapfile"
+GIT_REMOTE_NAME="origin"
+GIT_DEFAULT_BRANCH="main"
 
 # Colors
 RED='\033[0;31m'
@@ -34,6 +36,109 @@ warn() {
     echo -e "${YELLOW}[WARN] $1${NC}"
 }
 
+get_origin_default_branch() {
+    cd "$APP_DIR"
+    branch=$(git symbolic-ref -q --short refs/remotes/${GIT_REMOTE_NAME}/HEAD 2>/dev/null | sed "s@^${GIT_REMOTE_NAME}/@@")
+    if [ -n "$branch" ]; then
+        echo "$branch"
+        return 0
+    fi
+    echo "${GIT_DEFAULT_BRANCH}"
+}
+
+backup_persistent_data() {
+    BACKUP_DIR="/tmp/flatnas-backup-$(date +%s)"
+    mkdir -p "$BACKUP_DIR"
+
+    if [ -d "${APP_DIR}/server/data" ]; then
+        cp -a "${APP_DIR}/server/data" "$BACKUP_DIR/"
+    fi
+    if [ -d "${APP_DIR}/server/doc" ]; then
+        cp -a "${APP_DIR}/server/doc" "$BACKUP_DIR/"
+    fi
+    if [ -d "${APP_DIR}/server/music" ]; then
+        cp -a "${APP_DIR}/server/music" "$BACKUP_DIR/"
+    fi
+    if [ -d "${APP_DIR}/server/PC" ]; then
+        cp -a "${APP_DIR}/server/PC" "$BACKUP_DIR/"
+    fi
+    if [ -d "${APP_DIR}/server/APP" ]; then
+        cp -a "${APP_DIR}/server/APP" "$BACKUP_DIR/"
+    fi
+    if [ -d "${APP_DIR}/server/cgi-bin" ]; then
+        cp -a "${APP_DIR}/server/cgi-bin" "$BACKUP_DIR/"
+    fi
+    if [ -f "${APP_DIR}/server/default.json" ]; then
+        cp -a "${APP_DIR}/server/default.json" "$BACKUP_DIR/default.json.bak"
+    fi
+}
+
+restore_persistent_data() {
+    if [ -z "$BACKUP_DIR" ] || [ ! -d "$BACKUP_DIR" ]; then
+        return 0
+    fi
+
+    mkdir -p "${APP_DIR}/server"
+
+    if [ -d "${BACKUP_DIR}/data" ]; then
+        rm -rf "${APP_DIR}/server/data"
+        cp -a "${BACKUP_DIR}/data" "${APP_DIR}/server/"
+    fi
+    if [ -d "${BACKUP_DIR}/doc" ]; then
+        rm -rf "${APP_DIR}/server/doc"
+        cp -a "${BACKUP_DIR}/doc" "${APP_DIR}/server/"
+    fi
+    if [ -d "${BACKUP_DIR}/music" ]; then
+        rm -rf "${APP_DIR}/server/music"
+        cp -a "${BACKUP_DIR}/music" "${APP_DIR}/server/"
+    fi
+    if [ -d "${BACKUP_DIR}/PC" ]; then
+        rm -rf "${APP_DIR}/server/PC"
+        cp -a "${BACKUP_DIR}/PC" "${APP_DIR}/server/"
+    fi
+    if [ -d "${BACKUP_DIR}/APP" ]; then
+        rm -rf "${APP_DIR}/server/APP"
+        cp -a "${BACKUP_DIR}/APP" "${APP_DIR}/server/"
+    fi
+    if [ -d "${BACKUP_DIR}/cgi-bin" ]; then
+        rm -rf "${APP_DIR}/server/cgi-bin"
+        cp -a "${BACKUP_DIR}/cgi-bin" "${APP_DIR}/server/"
+    fi
+}
+
+safe_git_update() {
+    cd "$APP_DIR"
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        error "${APP_DIR} is not a git repository."
+    fi
+
+    log "Backing up persistent data..."
+    backup_persistent_data
+
+    log "Fetching latest code..."
+    git fetch "${GIT_REMOTE_NAME}" --prune
+
+    git merge --abort 2>/dev/null || true
+    git rebase --abort 2>/dev/null || true
+
+    TARGET_BRANCH=$(get_origin_default_branch)
+    if git show-ref --verify --quiet "refs/remotes/${GIT_REMOTE_NAME}/${TARGET_BRANCH}"; then
+        log "Resetting code to ${GIT_REMOTE_NAME}/${TARGET_BRANCH}..."
+        git reset --hard "${GIT_REMOTE_NAME}/${TARGET_BRANCH}"
+    else
+        log "Resetting code to ${GIT_REMOTE_NAME}/${GIT_DEFAULT_BRANCH}..."
+        git reset --hard "${GIT_REMOTE_NAME}/${GIT_DEFAULT_BRANCH}"
+    fi
+
+    # Fix permissions
+    chmod +x deploy.sh
+
+    git clean -fd
+
+    log "Restoring persistent data..."
+    restore_persistent_data
+}
+
 # 1. System Environment Check
 check_system() {
     log "Checking system environment..."
@@ -48,16 +153,67 @@ check_system() {
     log "System check passed: Debian detected."
 }
 
+# 1.1 Check and Add Swap
+check_and_add_swap() {
+    log "Checking memory and swap..."
+    
+    # Check physical memory size (in MB)
+    MEM_TOTAL=$(free -m | awk '/^Mem:/{print $2}')
+    
+    # If memory is less than 2048MB (2GB)
+    if [ "$MEM_TOTAL" -lt 2048 ]; then
+        log "Low memory detected (${MEM_TOTAL}MB). Checking swap..."
+        
+        # Check current swap size
+        SWAP_TOTAL=$(free -m | awk '/^Swap:/{print $2}')
+        
+        if [ "$SWAP_TOTAL" -lt 1024 ]; then
+            ROOT_FREE_MB=$(df -Pm / | awk 'NR==2 {print $4}')
+            SWAP_MB=2048
+            if [ -n "$ROOT_FREE_MB" ] && [ "$ROOT_FREE_MB" -lt 3072 ]; then
+                SWAP_MB=1024
+            fi
+
+            log "Swap is insufficient. Creating ${SWAP_MB}MB swap file..."
+            
+            # Create swap file
+            if [ -f "${SWAP_FILE}" ]; then
+                swapoff "${SWAP_FILE}" 2>/dev/null || true
+                rm -f "${SWAP_FILE}"
+            fi
+
+            if ! fallocate -l ${SWAP_MB}M "${SWAP_FILE}" 2>/dev/null; then
+                dd if=/dev/zero of="${SWAP_FILE}" bs=1M count="${SWAP_MB}"
+            fi
+            
+            chmod 600 "${SWAP_FILE}"
+            mkswap "${SWAP_FILE}" >/dev/null
+            swapon "${SWAP_FILE}"
+            
+            # Make it permanent if not already in fstab
+            if ! grep -q "${SWAP_FILE}" /etc/fstab; then
+                echo "${SWAP_FILE} none swap sw 0 0" >> /etc/fstab
+            fi
+            
+            log "Swap created and enabled successfully."
+        else
+            log "Swap size is sufficient (${SWAP_TOTAL}MB)."
+        fi
+    else
+        log "Memory is sufficient (${MEM_TOTAL}MB)."
+    fi
+}
+
 # 2. Install Dependencies
 install_dependencies() {
     log "Updating system and installing dependencies..."
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl git gnupg2 ca-certificates lsb-release
+    apt-get install -y -qq curl git gnupg2 ca-certificates lsb-release build-essential python3
 
     # Install Node.js
-    if ! command -v node &> /dev/null; then
-        log "Installing Node.js ${NODE_MAJOR}..."
+    if ! command -v node &> /dev/null || [ $(node -v | cut -d'.' -f1 | cut -c2-) -lt $NODE_MAJOR ]; then
+        log "Installing or Updating Node.js to ${NODE_MAJOR}..."
         mkdir -p /etc/apt/keyrings
         curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
         echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
@@ -89,24 +245,30 @@ deploy_app() {
         log "Cloning repository..."
         git clone "$REPO_URL" "$APP_DIR"
     else
-        log "Directory exists. Pulling latest changes..."
-        cd "$APP_DIR"
-        # Stash local changes to config files if any, to avoid conflict
-        git stash
-        # Use rebase to avoid "divergent branches" error and keep history linear
-        git pull --rebase
-        git stash pop || true
+        log "Directory exists. Updating code safely (keep data)..."
+        safe_git_update
     fi
 
-    cd "$APP_DIR"
+    cd "$APP_DIR" || error "Failed to enter directory ${APP_DIR}"
+
+    export NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}"
+    export npm_config_audit=false
+    export npm_config_fund=false
+    export npm_config_progress=false
+    export npm_config_loglevel=error
+    export npm_config_jobs=1
 
     # Install project dependencies
     log "Installing npm dependencies..."
-    npm install
+    npm install --no-audit --no-fund
 
     # Build Frontend
     log "Building frontend..."
-    npm run build
+    if [ ! -d "dist" ] || [ ! -f "dist/index.html" ]; then
+        NODE_OPTIONS="--max-old-space-size=1024" npm run build-only
+    else
+        log "Frontend build already exists, skipping..."
+    fi
 
     # Prepare backend directories
     log "Preparing backend directories..."
@@ -123,6 +285,11 @@ deploy_app() {
 setup_service() {
     log "Configuring Systemd service..."
     
+    NODE_BIN=$(which node)
+    if [ -z "$NODE_BIN" ]; then
+        error "Node.js binary not found. Installation might have failed."
+    fi
+
     cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
 Description=FlatNas Server
@@ -132,10 +299,10 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=${APP_DIR}
-ExecStart=$(which node) server/server.js
+ExecStart=${NODE_BIN} server/server.js
 Restart=on-failure
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=NODE_OPTIONS=--max-old-space-size=256
 
 [Install]
 WantedBy=multi-user.target
@@ -218,28 +385,62 @@ EOF
     systemctl reload nginx
 }
 
-# 6. GitHub Integration (Push functionality)
-push_to_github() {
-    cd "$APP_DIR"
-    log "Pushing changes to GitHub..."
-    
-    # Check if user has configured git
-    if [ -z "$(git config --global user.email)" ]; then
-        warn "Git user not configured. Please configure git user.email and user.name manually."
-        return
+view_config() {
+    check_system
+
+    IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$IP_ADDR" ]; then
+        IP_ADDR=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | head -n 1 | cut -d/ -f1)
     fi
 
-    git add .
-    echo "Enter commit message: "
-    read commit_msg
-    if [ -z "$commit_msg" ]; then
-        commit_msg="Auto update from deploy script"
+    if command -v curl >/dev/null 2>&1; then
+        PUBLIC_IP=$(curl -fsS --max-time 3 ifconfig.me 2>/dev/null || true)
     fi
-    
-    git commit -m "$commit_msg"
-    
-    # This requires SSH key or credential helper to be set up on the server
-    git push origin main
+    if [ -z "$PUBLIC_IP" ]; then
+        PUBLIC_IP="Unknown"
+    fi
+
+    AUTH_MODE="single"
+    SYSTEM_JSON="${APP_DIR}/server/data/system.json"
+    if [ -f "$SYSTEM_JSON" ] && command -v python3 >/dev/null 2>&1; then
+        AUTH_MODE=$(python3 - <<PY 2>/dev/null || echo "single"
+import json
+with open("${SYSTEM_JSON}", "r", encoding="utf-8") as f:
+    print(json.load(f).get("authMode", "single"))
+PY
+)
+    fi
+
+    echo -e "${GREEN}=============================================${NC}"
+    echo -e "${GREEN}            FlatNas 配置查看                ${NC}"
+    echo -e "${GREEN}=============================================${NC}"
+    echo "应用目录: ${APP_DIR}"
+    echo "Nginx 配置: ${NGINX_CONF}"
+    echo "数据目录: ${APP_DIR}/server/data"
+    echo "文件传输: ${APP_DIR}/server/doc/transfer"
+    echo "音乐目录: ${APP_DIR}/server/music"
+    echo
+    echo "服务状态:"
+    echo "  flatnas: $(systemctl is-active ${SERVICE_NAME} 2>/dev/null || echo unknown) / $(systemctl is-enabled ${SERVICE_NAME} 2>/dev/null || echo unknown)"
+    echo "  nginx:   $(systemctl is-active nginx 2>/dev/null || echo unknown) / $(systemctl is-enabled nginx 2>/dev/null || echo unknown)"
+    echo
+    echo "登录入口:"
+    if [ -n "$IP_ADDR" ]; then
+        echo "  内网:  http://${IP_ADDR}"
+    fi
+    echo "  外网:  http://${PUBLIC_IP}"
+    echo
+    echo "账号信息:"
+    if [ "$AUTH_MODE" = "multi" ]; then
+        echo "  模式: 多用户"
+        echo "  默认管理员: admin / admin"
+        echo "  说明: 多用户模式可在网页端注册新用户"
+    else
+        echo "  模式: 单用户"
+        echo "  默认密码: admin"
+        echo "  说明: 单用户模式登录时只需输入密码"
+    fi
+    echo -e "${GREEN}=============================================${NC}"
 }
 
 # 7. Uninstall FlatNas
@@ -262,8 +463,10 @@ uninstall_app() {
         log "Removing Nginx configuration..."
         rm -f ${NGINX_CONF}
         rm -f /etc/nginx/sites-enabled/flatnas
-        nginx -t
-        systemctl reload nginx
+        if command -v nginx &> /dev/null; then
+            nginx -t
+            systemctl reload nginx
+        fi
     else
         warn "Nginx configuration not found."
     fi
@@ -291,22 +494,27 @@ show_help() {
     echo "Usage: ./deploy.sh [OPTION]"
     echo "Options:"
     echo "  install    - Full installation and deployment"
-    echo "  uninstall  - Remove FlatNas service and files"
     echo "  update     - Pull latest code and rebuild"
-    echo "  push       - Commit and push local changes to GitHub"
+    echo "  uninstall  - Remove FlatNas service and files"
+    echo "  config     - Show current deployment config and login entry"
     echo "  help       - Show this help message"
 }
 
 # Function to handle installation logic
 do_install() {
     check_system
+    check_and_add_swap
     install_dependencies
     deploy_app
     setup_service
     setup_nginx
     
-    IP_ADDR=$(hostname -I | awk '{print $1}')
-    PUBLIC_IP=$(curl -s ifconfig.me || echo "Unknown")
+    IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$IP_ADDR" ]; then
+        IP_ADDR=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | head -n 1 | cut -d/ -f1)
+    fi
+
+    PUBLIC_IP=$(curl -fsS --max-time 3 ifconfig.me 2>/dev/null || echo "Unknown")
     
     log "==============================================="
     log "   FlatNas Deployment Successful!   "
@@ -317,23 +525,30 @@ do_install() {
     log "==============================================="
 }
 
+do_update() {
+    check_system
+    check_and_add_swap
+    install_dependencies
+    deploy_app
+    setup_service
+    setup_nginx
+    log "Update Complete!"
+}
+
 if [ -n "$1" ]; then
     case "$1" in
         install)
             do_install
             ;;
         update)
-            check_system
-            deploy_app
-            setup_service
-            log "Update Complete!"
-            ;;
-        push)
-            push_to_github
+            do_update
             ;;
         uninstall)
             check_system
             uninstall_app
+            ;;
+        config)
+            view_config
             ;;
         *)
             show_help
@@ -341,39 +556,44 @@ if [ -n "$1" ]; then
     esac
 else
     # Interactive Menu
-    clear
-    echo -e "${GREEN}=============================================${NC}"
-    echo -e "${GREEN}      FlatNas One-Click Deployment           ${NC}"
-    echo -e "${GREEN}=============================================${NC}"
-    echo "1. Install安装 / Redeploy FlatNas"
-    echo "2. Uninstall卸载 FlatNas"
-    echo "3. Update更新 FlatNas (Keep Data)"
-    echo "0. Exit"
-    echo -e "${GREEN}=============================================${NC}"
-    read -p "Please enter your choice [0-4]: " choice
-    
-    case $choice in
-        1)
-            do_install
-            ;;
-        2)
-            check_system
-            uninstall_app
-            ;;
-        3)
-            check_system
-            deploy_app
-            setup_service
-            log "Update Complete!"
-            ;;
-        4)
-            push_to_github
-            ;;
-        0)
-            exit 0
-            ;;
-        *)
-            error "Invalid choice."
-            ;;
-    esac
+    while true; do
+        clear
+        echo -e "${GREEN}=============================================${NC}"
+        echo -e "${GREEN}      FlatNas 一键部署（交互式）            ${NC}"
+        echo -e "${GREEN}=============================================${NC}"
+        echo "1. 安装 / 重新部署"
+        echo "2. 更新（保留数据）"
+        echo "3. 卸载"
+        echo "4. 查看配置（含登录入口）"
+        echo "0. 退出"
+        echo -e "${GREEN}=============================================${NC}"
+        read -p "请输入选项 [0-4]: " choice
+
+        case $choice in
+            1)
+                do_install
+                read -p "按回车返回菜单..." _
+                ;;
+            2)
+                do_update
+                read -p "按回车返回菜单..." _
+                ;;
+            3)
+                check_system
+                uninstall_app
+                read -p "按回车返回菜单..." _
+                ;;
+            4)
+                view_config
+                read -p "按回车返回菜单..." _
+                ;;
+            0)
+                exit 0
+                ;;
+            *)
+                echo -e "${YELLOW}无效选项：${choice}${NC}"
+                read -p "按回车重试..." _
+                ;;
+        esac
+    done
 fi
