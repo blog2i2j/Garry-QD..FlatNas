@@ -386,7 +386,7 @@ onMounted(() => {
       >
         <!-- Header -->
         <div
-          class="px-4 py-3 md:px-6 md:py-4 border-b border-gray-100 flex justify-between items-center bg-white"
+          class="px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:px-6 md:py-4 border-b border-gray-100 flex justify-between items-center bg-white"
         >
           <div class="flex items-center gap-4">
             <h3 class="text-lg font-bold text-gray-800">

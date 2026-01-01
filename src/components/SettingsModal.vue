@@ -65,6 +65,7 @@ const handleWallpaperSelect = (payload: { url: string; type: string } | string) 
 const activeTab = ref("style");
 const dockerWidget = computed(() => store.widgets.find((w) => w.type === "docker"));
 const systemStatusWidget = computed(() => store.widgets.find((w) => w.type === "system-status"));
+const musicWidget = computed(() => store.widgets.find((w) => w.type === "music"));
 const sortedWidgets = computed(() => {
   const list = [...store.widgets];
   const playerIndex = list.findIndex((w) => w.type === "player");
@@ -91,6 +92,172 @@ onMounted(() => {
 
 const testWeatherResult = ref<{ success: boolean; message: string } | null>(null);
 const isTestingWeather = ref(false);
+
+const testMusicAuthResult = ref<{ success: boolean; message: string } | null>(null);
+const isTestingMusicAuth = ref(false);
+
+const selectedMusicSize = ref({ cols: 1, rows: 1 });
+
+watch(
+  () => [musicWidget.value?.colSpan, musicWidget.value?.rowSpan],
+  ([cols, rows]) => {
+    if (cols && rows) {
+      selectedMusicSize.value = { cols: Number(cols), rows: Number(rows) };
+    }
+  },
+  { immediate: true },
+);
+
+const setMusicSize = (cols: number, rows: number) => {
+  const index = store.widgets.findIndex((w) => w.type === "music");
+  if (index !== -1) {
+    const oldWidget = store.widgets[index];
+    if (!oldWidget) return;
+
+    const newLayouts = oldWidget.layouts ? JSON.parse(JSON.stringify(oldWidget.layouts)) : {};
+
+    // Update desktop layout if it exists to ensure GridPanel picks up the change
+    if (newLayouts.desktop) {
+      newLayouts.desktop.w = cols;
+      newLayouts.desktop.h = rows;
+    }
+
+    store.widgets[index] = {
+      ...oldWidget,
+      id: oldWidget.id || "",
+      type: oldWidget.type || "music",
+      enable: oldWidget.enable ?? true,
+      colSpan: cols,
+      rowSpan: rows,
+      w: cols,
+      h: rows,
+      layouts: newLayouts,
+    };
+    store.widgets = [...store.widgets]; // Force reactivity for GridPanel watcher
+    store.saveData();
+  }
+};
+
+const getApiBase = (url?: string) => {
+  let base = url || "/api";
+  base = base.replace(/\/$/, "");
+  if (!/\/api(\/v\d+)?$/.test(base)) base += "/api";
+  return base;
+};
+
+const testMusicAuth = async () => {
+  if (!musicWidget.value) return;
+
+  const username = musicWidget.value.data.username;
+  const password = musicWidget.value.data.password;
+
+  if (!username || !password) {
+    testMusicAuthResult.value = { success: false, message: "请输入用户名和密码" };
+    return;
+  }
+
+  isTestingMusicAuth.value = true;
+  testMusicAuthResult.value = null;
+
+  try {
+    const apiBase = getApiBase(musicWidget.value.data.apiUrl);
+    const res = await fetch(`${apiBase}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: username, password }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.token) {
+        musicWidget.value.data.token = data.token;
+
+        // Fetch User Profile
+        try {
+          const profileRes = await fetch(`${apiBase}/auth/profile`, {
+            headers: { Authorization: `Bearer ${data.token}` },
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            musicWidget.value.data.userProfile = profile;
+          }
+        } catch (e) {
+          console.error("Failed to fetch profile", e);
+        }
+
+        store.saveData();
+        testMusicAuthResult.value = { success: true, message: "登录成功" };
+      } else {
+        testMusicAuthResult.value = { success: false, message: "登录失败：未获取到 Token" };
+      }
+    } else {
+      const errText = await res.text();
+      testMusicAuthResult.value = {
+        success: false,
+        message: `登录失败 (${res.status}): ${errText}`,
+      };
+    }
+  } catch (e: unknown) {
+    console.error("Auth test error:", e);
+    testMusicAuthResult.value = { success: false, message: `请求错误: ${(e as Error).message}` };
+  } finally {
+    isTestingMusicAuth.value = false;
+  }
+};
+
+const isUpdatingProfile = ref(false);
+const showRenameModal = ref(false);
+const newDisplayName = ref("");
+
+const openRenameModal = () => {
+  if (!musicWidget.value || !musicWidget.value.data?.token) return;
+  newDisplayName.value =
+    musicWidget.value.data.userProfile?.displayName || musicWidget.value.data.username || "";
+  showRenameModal.value = true;
+};
+
+const updateDisplayName = async () => {
+  if (!musicWidget.value || !musicWidget.value.data?.token) return;
+  const nextName = newDisplayName.value.trim();
+  if (!nextName) return;
+
+  isUpdatingProfile.value = true;
+  try {
+    const apiBase = getApiBase(musicWidget.value.data.apiUrl);
+    const res = await fetch(`${apiBase}/auth/myprofile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${musicWidget.value.data.token}`,
+      },
+      body: JSON.stringify({ displayName: nextName }),
+    });
+
+    if (res.ok) {
+      const updated = await res.json();
+      // Update local profile
+      if (!musicWidget.value.data.userProfile) musicWidget.value.data.userProfile = updated;
+      musicWidget.value.data.userProfile.displayName = updated.displayName || nextName;
+      store.saveData();
+      // alert("昵称修改成功");
+      showRenameModal.value = false;
+    } else {
+      alert("修改失败: " + (await res.text()));
+    }
+  } catch (e: unknown) {
+    alert("请求错误: " + (e as Error).message);
+  } finally {
+    isUpdatingProfile.value = false;
+  }
+};
+
+const getMusicAvatarUrl = (path?: string) => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const apiBase = getApiBase(musicWidget.value?.data?.apiUrl);
+  // If it's a relative path like /static/..., prepend API base
+  return path.startsWith("/") ? `${apiBase}${path}` : `${apiBase}/${path}`;
+};
 
 const testQWeather = async () => {
   isTestingWeather.value = true;
@@ -541,6 +708,7 @@ const isUnknownWidget = (type: string) => {
     "countdown",
     "system-status",
     "file-transfer",
+    "music",
   ];
 
   return !knownTypes.includes(type);
@@ -615,6 +783,20 @@ const addCustomCssWidget = () => {
       html: '<div class="my-custom-component">\n  <h3>自定义组件</h3>\n  <p>点击右上角编辑按钮修改内容</p>\n</div>',
       css: ".my-custom-component {\n  padding: 10px;\n  background: linear-gradient(to right, #e0eafc, #cfdef3);\n  border-radius: 8px;\n  text-align: center;\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n}\n.my-custom-component h3 {\n  margin: 0 0 5px 0;\n  color: #333;\n}",
     },
+    colSpan: 1,
+    rowSpan: 1,
+    isPublic: true,
+  });
+  store.saveData();
+};
+
+const addMusicWidget = () => {
+  const newId = "music-" + Date.now();
+  store.widgets.push({
+    id: newId,
+    type: "music",
+    enable: true,
+    data: { title: "道理鱼音乐", apiUrl: "", username: "", password: "" },
     colSpan: 1,
     rowSpan: 1,
     isPublic: true,
@@ -1571,8 +1753,18 @@ const onMouseUp = () => {
                   <template v-else>
                     <div
                       class="flex flex-col items-center gap-2 flex-1 justify-center scale-100 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors w-full"
-                      @click="editingOpacityId = w.id"
-                      title="点击调整样式"
+                      @click="
+                        w.type === 'music'
+                          ? (activeTab = 'lucky-stun')
+                          : w.type === 'system-status'
+                            ? (activeTab = 'docker')
+                            : (editingOpacityId = w.id)
+                      "
+                      :title="
+                        w.type === 'music' || w.type === 'system-status'
+                          ? '点击进入设置'
+                          : '点击调整样式'
+                      "
                     >
                       <template v-if="editingOpacityId === w.id">
                         <div class="w-full px-2" @click.stop>
@@ -1639,43 +1831,50 @@ const onMouseUp = () => {
                         <div
                           class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
                         >
-                          {{
-                            w.type === "clock"
-                              ? "⏰"
-                              : w.type === "weather"
-                                ? "🌦️"
-                                : w.type === "clockweather"
-                                  ? "🕒🌦️"
-                                  : w.type === "calendar"
-                                    ? "📅"
-                                    : w.type === "memo"
-                                      ? "📝"
-                                      : w.type === "search"
-                                        ? "🔍"
-                                        : w.type === "quote"
-                                          ? "💬"
-                                          : w.type === "bookmarks"
-                                            ? "📑"
-                                            : w.type === "file-transfer"
-                                              ? "📤"
-                                              : w.type === "todo"
-                                                ? "✅"
-                                                : w.type === "calculator"
-                                                  ? "🧮"
-                                                  : w.type === "ip"
-                                                    ? "🌐"
-                                                    : w.type === "player"
-                                                      ? "🎵"
-                                                      : w.type === "hot"
-                                                        ? "🔥"
-                                                        : w.type === "rss"
-                                                          ? "📡"
-                                                          : w.type === "sidebar"
-                                                            ? "⬅️"
-                                                            : w.type === "custom-css"
-                                                              ? "🎨"
-                                                              : "🖥️"
-                          }}
+                          <img
+                            v-if="w.type === 'music'"
+                            src="/daoliyu.png"
+                            class="w-6 h-6 object-contain"
+                          />
+                          <template v-else>
+                            {{
+                              w.type === "clock"
+                                ? "⏰"
+                                : w.type === "weather"
+                                  ? "🌦️"
+                                  : w.type === "clockweather"
+                                    ? "🕒🌦️"
+                                    : w.type === "calendar"
+                                      ? "📅"
+                                      : w.type === "memo"
+                                        ? "📝"
+                                        : w.type === "search"
+                                          ? "🔍"
+                                          : w.type === "quote"
+                                            ? "💬"
+                                            : w.type === "bookmarks"
+                                              ? "📑"
+                                              : w.type === "file-transfer"
+                                                ? "📤"
+                                                : w.type === "todo"
+                                                  ? "✅"
+                                                  : w.type === "calculator"
+                                                    ? "🧮"
+                                                    : w.type === "ip"
+                                                      ? "🌐"
+                                                      : w.type === "player"
+                                                        ? "🎵"
+                                                        : w.type === "hot"
+                                                          ? "🔥"
+                                                          : w.type === "rss"
+                                                            ? "📡"
+                                                            : w.type === "sidebar"
+                                                              ? "⬅️"
+                                                              : w.type === "custom-css"
+                                                                ? "🎨"
+                                                                : "🖥️"
+                            }}
+                          </template>
                         </div>
                         <span
                           class="font-bold text-gray-700 text-sm leading-snug text-center truncate w-full px-1"
@@ -1723,7 +1922,9 @@ const onMouseUp = () => {
                                                                     ? "Docker 管理"
                                                                     : w.type === "custom-css"
                                                                       ? "自定义组件"
-                                                                      : `未知组件 (${w.type})`
+                                                                      : w.type === "music"
+                                                                        ? "道理鱼音乐"
+                                                                        : `未知组件 (${w.type})`
                           }}
                         </span>
                       </template>
@@ -2231,6 +2432,195 @@ const onMouseUp = () => {
               <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3">
                 开放中心
               </h4>
+            </div>
+
+            <!-- Music Widget Settings -->
+            <div class="bg-pink-50 border border-pink-100 rounded-xl p-4 mb-6">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-lg font-bold text-gray-800">道理鱼音乐设置</h4>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    :checked="!!musicWidget"
+                    @change="
+                      (e) => {
+                        if ((e.target as HTMLInputElement).checked) addMusicWidget();
+                        else if (musicWidget) {
+                          removeWidget(musicWidget.id);
+                        }
+                      }
+                    "
+                    class="sr-only peer"
+                  />
+                  <div
+                    class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500"
+                  ></div>
+                </label>
+              </div>
+
+              <div v-if="musicWidget && musicWidget.data" class="space-y-3 animate-fade-in">
+                <div>
+                  <label class="block text-xs font-bold text-gray-600 mb-1">API 地址</label>
+                  <input
+                    v-model="musicWidget.data.apiUrl"
+                    @change="store.saveData()"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                    placeholder="例如：http://192.168.1.10:3000"
+                  />
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">用户名</label>
+                    <input
+                      v-model="musicWidget.data.username"
+                      @change="store.saveData()"
+                      type="text"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                      placeholder="用户名"
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">密码</label>
+                    <input
+                      v-model="musicWidget.data.password"
+                      @change="store.saveData()"
+                      type="password"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                      placeholder="密码"
+                      autocomplete="new-password"
+                    />
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 mt-2">
+                  <button
+                    @click="testMusicAuth"
+                    class="px-3 py-1.5 bg-pink-500 hover:bg-pink-600 text-white text-xs rounded transition-colors flex items-center gap-1"
+                    :disabled="isTestingMusicAuth"
+                  >
+                    <span v-if="isTestingMusicAuth" class="animate-spin">⏳</span>
+                    {{ isTestingMusicAuth ? "登录中..." : "登录 & 测试连接" }}
+                  </button>
+                  <span
+                    v-if="testMusicAuthResult"
+                    class="text-xs"
+                    :class="testMusicAuthResult.success ? 'text-green-600' : 'text-red-600'"
+                  >
+                    {{ testMusicAuthResult.message }}
+                  </span>
+                  <span class="text-[15px] text-gray-400"
+                    >TIPS:道理鱼歌词不准管我FlatNas什么事</span
+                  >
+                </div>
+
+                <div
+                  v-if="musicWidget.data.token"
+                  class="bg-green-50 border border-green-100 rounded-lg p-3"
+                >
+                  <div class="flex items-center gap-3">
+                    <img
+                      v-if="musicWidget.data.userProfile?.avatar"
+                      :src="getMusicAvatarUrl(musicWidget.data.userProfile.avatar)"
+                      class="w-10 h-10 rounded-full object-cover border border-green-200 bg-white"
+                      alt="Avatar"
+                    />
+                    <div
+                      v-else
+                      class="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-bold text-sm"
+                    >
+                      {{
+                        (
+                          musicWidget.data.userProfile?.displayName ||
+                          musicWidget.data.username ||
+                          "U"
+                        )
+                          .charAt(0)
+                          .toUpperCase()
+                      }}
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-bold text-gray-800 truncate">
+                          {{
+                            musicWidget.data.userProfile?.displayName || musicWidget.data.username
+                          }}
+                        </span>
+                        <button
+                          @click="openRenameModal"
+                          class="text-[10px] text-blue-500 hover:underline shrink-0"
+                          :disabled="isUpdatingProfile"
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                      <div class="text-[10px] text-gray-500 truncate">
+                        {{
+                          musicWidget.data.userProfile?.id
+                            ? `ID: ${musicWidget.data.userProfile.id}`
+                            : "未获取到资料"
+                        }}
+                      </div>
+                    </div>
+
+                    <button
+                      @click="
+                        () => {
+                          if (musicWidget && musicWidget.data) {
+                            musicWidget.data.token = '';
+                            musicWidget.data.userProfile = null;
+                            store.saveData();
+                            testMusicAuthResult = null;
+                          }
+                        }
+                      "
+                      class="px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors"
+                    >
+                      登出
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-gray-600 mb-2">组件尺寸</label>
+                  <div class="flex items-center gap-4">
+                    <div class="flex gap-3">
+                      <label class="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="music-size"
+                          :checked="selectedMusicSize.cols === 1 && selectedMusicSize.rows === 1"
+                          @change="selectedMusicSize = { cols: 1, rows: 1 }"
+                          class="text-pink-500"
+                        />
+                        <span class="text-sm">迷你 (1x1)</span>
+                      </label>
+                      <label class="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="music-size"
+                          :checked="selectedMusicSize.cols === 2 && selectedMusicSize.rows === 3"
+                          @change="selectedMusicSize = { cols: 2, rows: 3 }"
+                          class="text-pink-500"
+                        />
+                        <span class="text-sm">标准 (2x3)</span>
+                      </label>
+                    </div>
+                    <button
+                      v-if="
+                        musicWidget.colSpan !== selectedMusicSize.cols ||
+                        musicWidget.rowSpan !== selectedMusicSize.rows
+                      "
+                      @click="setMusicSize(selectedMusicSize.cols, selectedMusicSize.rows)"
+                      class="px-3 py-1 bg-pink-500 text-white text-xs rounded hover:bg-pink-600 transition-colors animate-fade-in"
+                    >
+                      确定
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Custom CSS Section -->
@@ -2801,11 +3191,11 @@ document.querySelector('.card-item').addEventListener('click', () => {
           </div>
           <div
             v-if="activeTab === 'about'"
-            class="min-h-full flex flex-col items-center justify-center"
+            class="min-h-full flex flex-row items-start justify-between p-8 gap-8 -mt-4"
           >
-            <div class="max-w-md w-full text-center space-y-5">
-              <h4 class="text-2xl font-bold text-gray-800 mb-2">关于 FlatNas</h4>
-              <div class="flex items-center justify-center gap-2">
+            <div class="flex-[0.618] text-left space-y-4 self-center">
+              <h4 class="text-2xl font-bold text-gray-800 mb-1">关于 FlatNas</h4>
+              <div class="flex items-center justify-start gap-2">
                 <span class="text-2xl text-gray-400 font-mono">v{{ store.currentVersion }}</span>
                 <span
                   v-if="store.hasUpdate && store.isLogged"
@@ -2816,7 +3206,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
               </div>
               <div class="text-xs text-gray-500">QQ群:613835409</div>
               <div class="text-xs text-gray-500">
-                官网：
+                官网与介绍：
                 <a
                   href="https://flatnas.top/"
                   target="_blank"
@@ -2826,7 +3216,14 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </a>
               </div>
               <div class="text-xs text-gray-500">
-                图标库：
+                飞牛百科：
+                <a href="http://qdnas.icu/" target="_blank" class="text-blue-500 hover:underline">
+                  http://qdnas.icu/
+                </a>
+              </div>
+
+              <div class="text-xs text-gray-500">
+                图标库主站：
                 <a
                   href="https://nasicon.top/"
                   target="_blank"
@@ -2836,12 +3233,26 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </a>
               </div>
               <div class="text-xs text-gray-500">
-                飞牛知识馆：
-                <a href="http://qdnas.icu/" target="_blank" class="text-blue-500 hover:underline">
-                  http://qdnas.icu/
+                图标库二站：
+                <a
+                  href="https://2.nasicon.top/"
+                  target="_blank"
+                  class="text-blue-500 hover:underline"
+                >
+                  https://2.nasicon.top/
                 </a>
               </div>
-              <div class="flex items-center justify-center gap-6">
+              <div class="text-xs text-gray-500">
+                图标库三站：
+                <a
+                  href="https://4.nasicon.top/"
+                  target="_blank"
+                  class="text-blue-500 hover:underline"
+                >
+                  https://4.nasicon.top/
+                </a>
+              </div>
+              <div class="flex items-center justify-start gap-6">
                 <a
                   href="https://github.com/Garry-QD/FlatNas"
                   target="_blank"
@@ -2865,7 +3276,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <path
                       fill-rule="evenodd"
                       clip-rule="evenodd"
-                      d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.811 17.914l-.943-.896c-.342-.325-.92-.332-1.19-.026l-2.72 3.067a.772.772 0 0 1-1.05.09l-6.55-5.314a.775.775 0 0 1 .1-1.267l6.894-4.003a.775.775 0 0 1 1.03.22l2.214 3.285a.775.775 0 0 0 1.19.12l1.024-.967a.775.775 0 0 0 .08-1.02l-3.65-5.504a.775.775 0 0 0-1.17-.14l-8.78 7.32a.775.775 0 0 0-.15 1.08l7.87 6.38a.775.775 0 0 0 1.05-.09l3.58-4.034a.775.775 0 0 0 .02-1.08z"
+                      d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.811 17.914l-.943-.896c-.342-.325-.92-.332-1.19-.026l-2.72 3.067a.772.772 0 0 1-1.05.09l-6.55-5.314a.775.775 0 0 1 .1-1.267l6.894-4.003a.775.775 0 0 1  1.03.22l2.214 3.285a.775.775 0 0 0 1.19.12l1.024-.967a.775.775 0 0 0 .08-1.02l-3.65-5.504a.775.775 0 0 0-1.17-.14l-8.78 7.32a.775.775 0 0 0-.15 1.08l7.87 6.38a.775.775 0 0 0 1.05-.09l3.58-4.034a.775.775 0 0 0 .02-1.08z"
                     />
                   </svg>
                 </a>
@@ -2881,6 +3292,28 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     class="w-6 h-6 object-contain scale-110"
                   />
                 </a>
+              </div>
+            </div>
+
+            <div class="flex-[0.382] flex flex-col items-center gap-4">
+              <div class="text-sm font-bold text-gray-700">☕ 投喂作者</div>
+              <div class="flex flex-col gap-4">
+                <div class="flex flex-col items-center gap-2">
+                  <img
+                    src="/alipay.jpg"
+                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain"
+                    alt="支付宝"
+                  />
+                  <span class="text-[10px] text-gray-500">支付宝</span>
+                </div>
+                <div class="flex flex-col items-center gap-2">
+                  <img
+                    src="/wechat.jpg"
+                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain"
+                    alt="微信"
+                  />
+                  <span class="text-[10px] text-gray-500">微信</span>
+                </div>
               </div>
             </div>
           </div>
@@ -2956,6 +3389,40 @@ document.querySelector('.card-item').addEventListener('click', () => {
           class="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-bold hover:bg-red-600 transition-colors"
         >
           删除
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-if="showRenameModal"
+    class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+  >
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-4 border border-gray-100">
+      <div class="text-base font-bold text-gray-800">修改昵称</div>
+      <div class="text-xs text-gray-500 mt-1">将同步更新到道理鱼音乐账户资料</div>
+
+      <input
+        v-model="newDisplayName"
+        type="text"
+        class="mt-3 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+        placeholder="请输入新的昵称"
+        @keyup.enter="updateDisplayName"
+      />
+
+      <div class="mt-4 flex justify-end gap-2">
+        <button
+          @click="showRenameModal = false"
+          class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm transition-colors"
+        >
+          取消
+        </button>
+        <button
+          @click="updateDisplayName"
+          :disabled="isUpdatingProfile"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {{ isUpdatingProfile ? "保存中..." : "保存" }}
         </button>
       </div>
     </div>

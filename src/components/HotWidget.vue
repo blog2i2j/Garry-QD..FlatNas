@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "../stores/main";
+import { VueDraggable } from "vue-draggable-plus";
 
 const store = useMainStore();
 defineProps<{ widget: WidgetConfig }>();
@@ -12,16 +13,60 @@ interface HotItem {
   hot: string | number;
 }
 
+interface TabConfig {
+  id: "weibo" | "news" | "zhihu" | "bilibili";
+  label: string;
+  icon: string;
+  activeClass: string;
+  barClass: string;
+  indexClass: string;
+}
+
+const tabs = ref<TabConfig[]>([
+  {
+    id: "weibo",
+    label: "微博",
+    icon: "🔥",
+    activeClass: "text-red-600 bg-red-50/50",
+    barClass: "bg-red-500",
+    indexClass: "text-red-500 bg-red-50",
+  },
+  {
+    id: "news",
+    label: "中新网",
+    icon: "🗞️",
+    activeClass: "text-blue-600 bg-blue-50/50",
+    barClass: "bg-blue-500",
+    indexClass: "text-blue-500 bg-blue-50",
+  },
+  {
+    id: "zhihu",
+    label: "知乎",
+    icon: "🧠",
+    activeClass: "text-blue-500 bg-blue-50/50",
+    barClass: "bg-blue-500",
+    indexClass: "text-blue-500 bg-blue-50",
+  },
+  {
+    id: "bilibili",
+    label: "B站",
+    icon: "📺",
+    activeClass: "text-pink-500 bg-pink-50/50",
+    barClass: "bg-pink-500",
+    indexClass: "text-pink-500 bg-pink-50",
+  },
+]);
+
 // 缓存不同 Tab 的数据，避免来回切换时重复请求
 const cache = ref<Record<string, { data: HotItem[]; ts: number }>>({});
 const CACHE_TTL = 60 * 1000; // 缓存 1 分钟
 
-const activeTab = ref<"weibo" | "news" | "huxiu">("weibo");
+const activeTab = ref<"weibo" | "news" | "zhihu" | "bilibili">("weibo");
 const list = ref<HotItem[]>([]);
 const loading = ref(false);
 
 // 获取数据 (带缓存优化)
-const fetchHot = async (type: "weibo" | "news" | "huxiu", force = false) => {
+const fetchHot = async (type: "weibo" | "news" | "zhihu" | "bilibili", force = false) => {
   activeTab.value = type;
 
   // 检查缓存
@@ -89,31 +134,31 @@ const handleScrollIsolation = (e: WheelEvent) => {
     class="w-full h-full backdrop-blur border border-white/40 rounded-2xl flex flex-col overflow-hidden shadow-sm hover:shadow-md transition-all group"
     :style="{ backgroundColor: `rgba(255, 255, 255, ${widget.opacity ?? 0.8})` }"
   >
-    <div class="flex border-b border-gray-100 bg-white/50 select-none">
+    <VueDraggable
+      v-model="tabs"
+      class="flex border-b border-gray-100 bg-white/50 select-none"
+      :animation="150"
+    >
       <button
-        v-for="tab in ['weibo', 'news', 'huxiu'] as const"
-        :key="tab"
-        @click="fetchHot(tab)"
-        class="flex-1 py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative overflow-hidden"
+        v-for="tab in tabs"
+        :key="tab.id"
+        @click="fetchHot(tab.id)"
+        class="flex-1 py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative overflow-hidden cursor-move"
         :class="
-          activeTab === tab
-            ? tab === 'weibo'
-              ? 'text-red-600 bg-red-50/50'
-              : tab === 'news'
-                ? 'text-blue-600 bg-blue-50/50'
-                : 'text-orange-600 bg-orange-50/50'
+          activeTab === tab.id
+            ? tab.activeClass
             : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
         "
       >
-        <span class="text-sm">{{ tab === "weibo" ? "🔥" : tab === "news" ? "🗞️" : "🐯" }}</span>
-        <span>{{ tab === "weibo" ? "微博" : tab === "news" ? "中新网" : "虎嗅" }}</span>
+        <span class="text-sm">{{ tab.icon }}</span>
+        <span>{{ tab.label }}</span>
         <div
-          v-if="activeTab === tab"
+          v-if="activeTab === tab.id"
           class="absolute bottom-0 left-0 right-0 h-0.5"
-          :class="tab === 'weibo' ? 'bg-red-500' : tab === 'news' ? 'bg-blue-500' : 'bg-orange-500'"
+          :class="tab.barClass"
         ></div>
       </button>
-    </div>
+    </VueDraggable>
 
     <div class="flex-1 overflow-hidden relative">
       <div class="h-full overflow-y-auto custom-scrollbar p-0" @wheel="handleScrollIsolation">
@@ -135,11 +180,7 @@ const handleScrollIsolation = (e: WheelEvent) => {
               class="text-xs font-bold min-w-[1.25rem] h-5 flex items-center justify-center rounded mt-0.5 transition-colors"
               :class="
                 index < 3
-                  ? activeTab === 'weibo'
-                    ? 'text-red-500 bg-red-50'
-                    : activeTab === 'news'
-                      ? 'text-blue-500 bg-blue-50'
-                      : 'text-orange-500 bg-orange-50'
+                  ? tabs.find((t) => t.id === activeTab)?.indexClass
                   : 'text-gray-400 bg-gray-100'
               "
             >
@@ -151,6 +192,7 @@ const handleScrollIsolation = (e: WheelEvent) => {
               >
                 {{ item.title }}
               </div>
+              <div v-if="item.hot" class="text-xs text-gray-400 mt-0.5">{{ item.hot }}</div>
             </div>
           </a>
         </div>

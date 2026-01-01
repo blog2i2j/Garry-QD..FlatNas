@@ -53,6 +53,7 @@ export const useMainStore = defineStore("main", () => {
   const isLogged = ref(!!token.value);
   const password = ref(""); // Only used for password change, not auth
   const isExpandedMode = ref(false);
+  const activeMusicPlayer = ref<"mini-player" | "music-widget" | null>(null);
 
   const getHeaders = () => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -72,7 +73,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.41";
+  const currentVersion = "1.0.42";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -802,6 +803,7 @@ export const useMainStore = defineStore("main", () => {
     username, // Export username
     getHeaders,
     isExpandedMode,
+    activeMusicPlayer,
     rssFeeds,
     rssCategories,
     init,

@@ -568,33 +568,7 @@
       "id": "w8",
       "type": "todo",
       "enable": true,
-      "data": [
-        {
-          "id": "1766215408806",
-          "text": "给爸妈送祝福",
-          "done": false
-        },
-        {
-          "id": "1766215410763",
-          "text": "回家",
-          "done": false
-        },
-        {
-          "id": "1766215415901",
-          "text": "喝腊八粥",
-          "done": false
-        },
-        {
-          "id": "1766215422605",
-          "text": "吃水饺",
-          "done": false
-        },
-        {
-          "id": "1766215426625",
-          "text": "吃汤圆",
-          "done": false
-        }
-      ],
+      "data": [],
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -616,7 +590,7 @@
       "id": "w4",
       "type": "memo",
       "enable": true,
-      "data": "添加文字内容可以自由框选\n增加http://和https://的超链接跳转\n每日一言关闭手机后依然会在手机端展现\n添加可调色纯色背景\n添加返回首页快捷键\n增加了滚动隔离，升级体验\n变动了倒计时的编辑按钮的层级\n添加自定义JS（可与自定义CSS协作）",
+      "data": "优化容器卡片\n增加全网热度榜自定义接口\n添加道理鱼音乐插件支持\n部分单开组件添加快捷跳转\n优化壁纸库在大刘海手机的展开方式\n优化到倒计时输入框",
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -766,8 +740,8 @@
       "type": "countdown",
       "enable": true,
       "data": {
-        "targetDate": "2025-12-21T00:00",
-        "title": "冬至",
+        "targetDate": "2026-02-16T00:00",
+        "title": "除夕",
         "style": "simple"
       },
       "colSpan": 1,
@@ -821,6 +795,21 @@
       "hideOnMobile": true
     },
     {
+      "id": "music-1767286391471",
+      "type": "music",
+      "enable": false,
+      "data": {
+        "title": "道理鱼音乐",
+        "apiUrl": "",
+        "username": "",
+        "password": ""
+      },
+      "colSpan": 1,
+      "rowSpan": 1,
+      "isPublic": false,
+      "hideOnMobile": true
+    },
+    {
       "id": "docker",
       "type": "docker",
       "enable": false,
@@ -830,7 +819,7 @@
     }
   ],
   "appConfig": {
-    "background": "/backgrounds/Gemini_Generated_Image_hhrqephhrqephhrq.png",
+    "background": "https://bing.biturl.top/?resolution=1920&format=image&index=0&mkt=zh-CN",
     "mobileBackground": "/mobile_backgrounds/104933-1741661373383a.jpg",
     "solidBackgroundColor": "",
     "enableMobileWallpaper": true,

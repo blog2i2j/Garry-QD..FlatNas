@@ -15,6 +15,17 @@ const marqueeEnabled = ref(false);
 const marqueeDuration = ref("3s");
 const marqueeTo = ref("0px");
 
+// 🎶 同步全局播放状态
+watch(
+  () => store.activeMusicPlayer,
+  (val) => {
+    if (val !== "mini-player" && isPlaying.value) {
+      if (audioRef.value) audioRef.value.pause();
+      isPlaying.value = false;
+    }
+  },
+);
+
 // 📜 播放历史管理
 const history = ref<string[]>([]);
 const historyIndex = ref(-1);
@@ -96,6 +107,7 @@ const playAudio = () => {
         promise
           .then(() => {
             isPlaying.value = true;
+            store.activeMusicPlayer = "mini-player";
           })
           .catch((e) => {
             console.error("[MiniPlayer] Play failed:", e);
@@ -126,6 +138,7 @@ const toggleMusic = async () => {
       if (player.error) player.load();
       await player.play();
       isPlaying.value = true;
+      store.activeMusicPlayer = "mini-player";
     } catch (e) {
       console.error("[MiniPlayer] Toggle play failed:", e);
       player.load(); // 失败尝试重载
