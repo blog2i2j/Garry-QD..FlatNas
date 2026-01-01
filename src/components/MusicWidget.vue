@@ -269,7 +269,9 @@ const playAll = async () => {
     }
 
     // 2. Play first track locally (triggers apiPlay via event if synced)
-    await playTrack(tracks.value[0]);
+    if (tracks.value.length > 0 && tracks.value[0]) {
+      await playTrack(tracks.value[0]);
+    }
 
     if (syncPlayerState.value) fetchPlayerState();
   } catch (e) {
@@ -342,6 +344,16 @@ const apiVolume = async (vol: number) => {
     console.error(e);
   }
 };
+
+interface RawItem {
+  id: string;
+  name?: string;
+  title?: string;
+  artist?: string;
+  coverUrl?: string;
+  cover?: string;
+  [key: string]: unknown;
+}
 
 const normalizeList = (data: unknown) => {
   if (Array.isArray(data)) return data;
@@ -560,11 +572,14 @@ const fetchPlaylists = async () => {
     if (res.ok) {
       const data = await res.json();
       const list = normalizeList(data);
-      playlists.value = list.map((item: any) => ({
-        id: item.id,
-        name: item.name || item.title || "未命名歌单",
-        coverUrl: resolveUrl(item.coverUrl || item.cover),
-      }));
+      playlists.value = list.map((item: unknown) => {
+        const i = item as RawItem;
+        return {
+          id: i.id,
+          name: i.name || i.title || "未命名歌单",
+          coverUrl: resolveUrl(i.coverUrl || i.cover),
+        };
+      });
     }
   } catch (e) {
     console.error("Fetch playlists failed", e);
@@ -577,11 +592,14 @@ const fetchArtists = async () => {
     if (res.ok) {
       const data = await res.json();
       const list = normalizeList(data);
-      artists.value = list.map((item: any) => ({
-        id: item.id,
-        name: item.name || item.artist || "Unknown Artist",
-        coverUrl: resolveUrl(item.coverUrl || item.cover),
-      }));
+      artists.value = list.map((item: unknown) => {
+        const i = item as RawItem;
+        return {
+          id: i.id,
+          name: i.name || i.artist || "Unknown Artist",
+          coverUrl: resolveUrl(i.coverUrl || i.cover),
+        };
+      });
     }
   } catch (e) {
     console.error("Fetch artists failed", e);
@@ -594,12 +612,15 @@ const fetchAlbums = async () => {
     if (res.ok) {
       const data = await res.json();
       const list = normalizeList(data);
-      albums.value = list.map((item: any) => ({
-        id: item.id,
-        title: item.title || item.name || "Unknown Album",
-        artist: item.artist,
-        coverUrl: resolveUrl(item.coverUrl || item.cover),
-      }));
+      albums.value = list.map((item: unknown) => {
+        const i = item as RawItem;
+        return {
+          id: i.id,
+          title: i.title || i.name || "Unknown Album",
+          artist: i.artist as string | undefined,
+          coverUrl: resolveUrl(i.coverUrl || i.cover),
+        };
+      });
     }
   } catch (e) {
     console.error("Fetch albums failed", e);
@@ -2012,14 +2033,14 @@ watch(syncPlayerState, (enabled) => {
                 >
                   <!-- Current Lyric -->
                   <div class="text-sm font-bold text-white text-center drop-shadow-md">
-                    {{ parsedLyrics[activeLyricIndex].text }}
+                    {{ parsedLyrics[activeLyricIndex]?.text }}
                   </div>
                   <!-- Next Lyric Preview -->
                   <div
                     v-if="parsedLyrics[activeLyricIndex + 1]"
                     class="text-[11px] text-white/40 text-center line-clamp-1 italic"
                   >
-                    {{ parsedLyrics[activeLyricIndex + 1].text }}
+                    {{ parsedLyrics[activeLyricIndex + 1]?.text }}
                   </div>
                 </div>
                 <div v-else class="flex flex-col items-center gap-1">
@@ -2054,14 +2075,14 @@ watch(syncPlayerState, (enabled) => {
               >
                 <!-- Current Lyric -->
                 <div class="text-sm font-bold text-white text-center drop-shadow-md">
-                  {{ parsedLyrics[activeLyricIndex].text }}
+                  {{ parsedLyrics[activeLyricIndex]?.text }}
                 </div>
                 <!-- Next Lyric Preview -->
                 <div
                   v-if="parsedLyrics[activeLyricIndex + 1]"
                   class="text-[11px] text-white/40 text-center line-clamp-1 italic"
                 >
-                  {{ parsedLyrics[activeLyricIndex + 1].text }}
+                  {{ parsedLyrics[activeLyricIndex + 1]?.text }}
                 </div>
               </div>
               <div v-else class="flex flex-col items-center gap-1">
@@ -2138,14 +2159,14 @@ watch(syncPlayerState, (enabled) => {
               >
                 <!-- Current Lyric -->
                 <div class="text-sm font-bold text-white text-center drop-shadow-md">
-                  {{ parsedLyrics[activeLyricIndex].text }}
+                  {{ parsedLyrics[activeLyricIndex]?.text }}
                 </div>
                 <!-- Next Lyric Preview -->
                 <div
                   v-if="parsedLyrics[activeLyricIndex + 1]"
                   class="text-[11px] text-white/40 text-center line-clamp-1 italic"
                 >
-                  {{ parsedLyrics[activeLyricIndex + 1].text }}
+                  {{ parsedLyrics[activeLyricIndex + 1]?.text }}
                 </div>
               </div>
               <div v-else class="flex flex-col items-center gap-1">

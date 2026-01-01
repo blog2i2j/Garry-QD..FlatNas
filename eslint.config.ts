@@ -19,6 +19,7 @@ export default defineConfigWithVueTs(
           ignores: ['Sidebar'],
         },
       ],
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
 
