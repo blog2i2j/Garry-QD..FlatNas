@@ -15,6 +15,11 @@ type DockerStats = {
   memPercent: number;
 };
 
+type InspectLite = {
+  networkMode: string;
+  ports: number[];
+};
+
 type DockerContainer = {
   Id: string;
   Names: string[];
@@ -226,6 +231,7 @@ const fetchContainers = async () => {
     const data = await res.json();
     if (data.success) {
       containers.value = (data.data || []) as DockerContainer[];
+      prefetchInspectForContainers(containers.value);
       errorCount.value = 0;
       error.value = "";
     } else {
@@ -325,20 +331,86 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
 
+const inspectCache = ref<Record<string, { ts: number; data: InspectLite }>>({});
+const INSPECT_TTL = 60_000;
+const inflightInspect = new Set<string>();
+
+const normalizeContainerName = (s: string) =>
+  String(s || "")
+    .replace(/^\//, "")
+    .trim();
+
+const fetchInspectLite = async (id: string): Promise<InspectLite | null> => {
+  const cached = inspectCache.value[id];
+  const now = Date.now();
+  if (cached && now - cached.ts < INSPECT_TTL) return cached.data;
+  if (inflightInspect.has(id)) return cached ? cached.data : null;
+  inflightInspect.add(id);
+  try {
+    const headers = store.getHeaders();
+    const res = await fetch(`/api/docker/container/${encodeURIComponent(id)}/inspect-lite`, {
+      headers,
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload || !payload.success) return cached ? cached.data : null;
+    const data = payload.data as InspectLite;
+    if (!data || typeof data.networkMode !== "string" || !Array.isArray(data.ports)) {
+      return cached ? cached.data : null;
+    }
+    inspectCache.value = { ...inspectCache.value, [id]: { ts: now, data } };
+    return data;
+  } catch {
+    return cached ? cached.data : null;
+  } finally {
+    inflightInspect.delete(id);
+  }
+};
+
+const getPublishedPorts = (c: DockerContainer): number[] =>
+  (c.Ports || [])
+    .map((p) => p.PublicPort)
+    .filter((x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0 && x <= 65535);
+
+const getDetectedPorts = (c: DockerContainer): number[] => {
+  const published = getPublishedPorts(c);
+  if (published.length > 0) return published;
+  const cached = inspectCache.value[c.Id]?.data;
+  if (!cached) return [];
+  if (cached.networkMode !== "host") return [];
+  return (cached.ports || [])
+    .filter((p) => typeof p === "number" && Number.isFinite(p) && p > 0 && p <= 65535)
+    .slice(0, 1);
+};
+
+const getPreferredPort = (c: DockerContainer): number | null => {
+  const ports = getDetectedPorts(c);
+  const p = ports.length ? ports[0] : undefined;
+  return typeof p === "number" ? p : null;
+};
+
+const prefetchInspectForContainers = (list: DockerContainer[]) => {
+  if (useMock.value) return;
+  list
+    .filter((c) => c && c.Id && getPublishedPorts(c).length === 0)
+    .forEach((c) => {
+      void fetchInspectLite(c.Id);
+    });
+};
+
 const getContainerLanUrl = (c: DockerContainer): string => {
-  const port = c.Ports.find((p) => p.PublicPort);
+  const port = getPreferredPort(c);
   if (!port) return "";
   const lanHost =
     (props.widget?.data && typeof props.widget.data.lanHost === "string"
       ? props.widget.data.lanHost.trim()
       : "") || "";
   const host = lanHost || window.location.hostname;
-  const scheme = port.PublicPort === 443 ? "https" : "http";
-  return `${scheme}://${host}:${port.PublicPort}`;
+  const scheme = port === 443 ? "https" : "http";
+  return `${scheme}://${host}:${port}`;
 };
 
 const getContainerPublicUrl = (c: DockerContainer): string => {
-  const port = c.Ports.find((p) => p.PublicPort);
+  const port = getPreferredPort(c);
   if (!port) return "";
 
   const map =
@@ -355,13 +427,13 @@ const getContainerPublicUrl = (c: DockerContainer): string => {
 
   if (external) {
     const hasProtocol = /^https?:\/\//i.test(external);
-    const scheme = port.PublicPort === 443 ? "https" : "http";
+    const scheme = port === 443 ? "https" : "http";
     return hasProtocol ? external : `${scheme}://${external}`;
   }
 
   const host = window.location.hostname;
-  const scheme = port.PublicPort === 443 ? "https" : "http";
-  return `${scheme}://${host}:${port.PublicPort}`;
+  const scheme = port === 443 ? "https" : "http";
+  return `${scheme}://${host}:${port}`;
 };
 
 const openContainerUrl = (c: DockerContainer) => {
@@ -395,48 +467,63 @@ const addToHome = (c: DockerContainer) => {
 
   if (!dockerGroup) return; // Should not happen
 
-  let lanUrl = getContainerLanUrl(c);
-  let publicUrl = getContainerPublicUrl(c);
+  const addImpl = async () => {
+    let lanUrl = getContainerLanUrl(c);
+    let publicUrl = getContainerPublicUrl(c);
 
-  if (!lanUrl && !publicUrl) {
-    const port = prompt("未检测到端口映射（可能是 Host 网络模式），请手动输入端口号 (例如 8080):");
-    if (!port) return;
+    if (!lanUrl && !publicUrl) {
+      await fetchInspectLite(c.Id);
+      lanUrl = getContainerLanUrl(c);
+      publicUrl = getContainerPublicUrl(c);
+    }
 
-    const lanHost =
-      (props.widget?.data && typeof props.widget.data.lanHost === "string"
-        ? props.widget.data.lanHost.trim()
-        : "") || "";
-    const host = lanHost || window.location.hostname;
-    lanUrl = `http://${host}:${port}`;
-    publicUrl = `http://${window.location.hostname}:${port}`; // Use same host for public initially or let user edit later
-  }
+    if (!lanUrl && !publicUrl) {
+      const port = prompt("未检测到端口映射/暴露端口，请手动输入端口号 (例如 8080):")?.trim();
+      if (!port) return;
+      const portNum = parseInt(port, 10);
+      if (!Number.isFinite(portNum) || portNum <= 0 || portNum > 65535) return;
+      const lanHost =
+        (props.widget?.data && typeof props.widget.data.lanHost === "string"
+          ? props.widget.data.lanHost.trim()
+          : "") || "";
+      const host = lanHost || window.location.hostname;
+      lanUrl = `http://${host}:${portNum}`;
+      publicUrl = `http://${window.location.hostname}:${portNum}`;
+    }
 
-  const title = (c.Names?.[0] || "Container").replace(/^\//, "");
+    const title = normalizeContainerName(c.Names?.[0] || "Container");
 
-  // Check if already exists in this group
-  const exists = dockerGroup.items.some((item) => item.containerId === c.Id);
-  if (exists) {
-    alert(`容器 "${title}" 已存在于 Docker 分组中`);
-    return;
-  }
+    const exists = dockerGroup.items.some((item) => {
+      if (item.containerId && item.containerId === c.Id) return true;
+      const n = normalizeContainerName(item.containerName || "");
+      if (n && n === title) return true;
+      return false;
+    });
+    if (exists) {
+      alert(`容器 "${title}" 已存在于 Docker 分组中`);
+      return;
+    }
 
-  const newItem = {
-    id: Date.now().toString(),
-    title: title,
-    url: publicUrl,
-    lanUrl: lanUrl,
-    icon: "", // We can try to fetch icon later or let user set it
-    isPublic: true,
-    openInNewTab: true,
-    containerId: c.Id,
-    containerName: c.Names?.[0] || "",
-    allowRestart: true,
-    allowStop: true,
-    description: "Docker Container", // Optional description
+    const newItem = {
+      id: Date.now().toString(),
+      title: title,
+      url: publicUrl,
+      lanUrl: lanUrl,
+      icon: "", // We can try to fetch icon later or let user set it
+      isPublic: true,
+      openInNewTab: true,
+      containerId: c.Id,
+      containerName: title,
+      allowRestart: true,
+      allowStop: true,
+      description: "Docker Container", // Optional description
+    };
+
+    store.addItem(newItem, dockerGroup.id);
+    alert(`已将 "${title}" 添加到 Docker 分组`);
   };
 
-  store.addItem(newItem, dockerGroup.id);
-  alert(`已将 "${title}" 添加到 Docker 分组`);
+  void addImpl();
 };
 
 const editingPublicId = ref<string | null>(null);
@@ -600,18 +687,16 @@ const getStatusColor = (state: string) => {
             </div>
             <div class="flex flex-col items-end shrink-0 ml-2">
               <span class="text-[10px] text-gray-400">{{ c.Status }}</span>
-              <div class="flex gap-1 mt-0.5" v-if="c.Ports && c.Ports.length">
+              <div class="flex gap-1 mt-0.5" v-if="getDetectedPorts(c).length">
                 <span
-                  v-for="(p, i) in c.Ports.filter((p) => p.PublicPort).slice(0, 1)"
+                  v-for="(p, i) in getDetectedPorts(c).slice(0, 1)"
                   :key="i"
                   class="text-[9px] bg-blue-50 text-blue-500 px-1 rounded border border-blue-100"
                 >
-                  {{ p.PublicPort }}
+                  {{ p }}
                 </span>
-                <span
-                  v-if="c.Ports.filter((p) => p.PublicPort).length > 1"
-                  class="text-[9px] text-gray-400"
-                  >+{{ c.Ports.filter((p) => p.PublicPort).length - 1 }}</span
+                <span v-if="getDetectedPorts(c).length > 1" class="text-[9px] text-gray-400"
+                  >+{{ getDetectedPorts(c).length - 1 }}</span
                 >
               </div>
             </div>
@@ -653,7 +738,7 @@ const getStatusColor = (state: string) => {
           >
             <div class="flex items-center gap-2 mr-auto whitespace-nowrap">
               <button
-                v-if="c.State === 'running' && c.Ports.some((p) => p.PublicPort)"
+                v-if="c.State === 'running' && getPreferredPort(c)"
                 @click="openContainerUrl(c)"
                 class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="内网打开"
@@ -673,7 +758,7 @@ const getStatusColor = (state: string) => {
                 <span>内网打开</span>
               </button>
               <button
-                v-if="c.State === 'running' && c.Ports.some((p) => p.PublicPort)"
+                v-if="c.State === 'running' && getPreferredPort(c)"
                 @click="openContainerPublicUrl(c)"
                 class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="外网打开"

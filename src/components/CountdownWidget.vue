@@ -36,6 +36,20 @@ const openConfig = () => {
   showConfig.value = true;
 };
 
+// Handle overlay click behavior to prevent closing when selecting text inside
+const isOverlayMouseDown = ref(false);
+const onOverlayMouseDown = (e: MouseEvent) => {
+  if (e.target === e.currentTarget) {
+    isOverlayMouseDown.value = true;
+  }
+};
+const onOverlayMouseUp = (e: MouseEvent) => {
+  if (isOverlayMouseDown.value && e.target === e.currentTarget) {
+    saveConfig();
+  }
+  isOverlayMouseDown.value = false;
+};
+
 const saveConfig = () => {
   const w = store.widgets.find((item) => item.id === props.widget.id);
   if (w) {
@@ -130,10 +144,12 @@ const formatNum = (num: number) => num.toString().padStart(2, "0");
       <div
         v-if="showConfig"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-        @click.self="saveConfig"
+        @mousedown="onOverlayMouseDown"
+        @mouseup="onOverlayMouseUp"
       >
         <div
           class="bg-white text-gray-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col animate-fade-in-up"
+          @mousedown.stop
         >
           <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
             <div class="font-bold text-lg">倒计时设置</div>

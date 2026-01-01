@@ -25,6 +25,7 @@ const BookmarkWidget = defineAsyncComponent(() => import("./BookmarkWidget.vue")
 const MemoWidget = defineAsyncComponent(() => import("./MemoWidget.vue"));
 const TodoWidget = defineAsyncComponent(() => import("./TodoWidget.vue"));
 const CalculatorWidget = defineAsyncComponent(() => import("./CalculatorWidget.vue"));
+const MusicWidget = defineAsyncComponent(() => import("./MusicWidget.vue"));
 const MiniPlayer = defineAsyncComponent(() => import("./MiniPlayer.vue"));
 const HotWidget = defineAsyncComponent(() => import("./HotWidget.vue"));
 const ClockWeatherWidget = defineAsyncComponent(() => import("./ClockWeatherWidget.vue"));
@@ -1907,6 +1908,7 @@ onMounted(() => {
             <CalendarWidget v-else-if="widget.type === 'calendar'" :widget="widget" />
             <MemoWidget v-else-if="widget.type === 'memo'" :widget="widget" />
             <TodoWidget v-else-if="widget.type === 'todo'" :widget="widget" />
+            <MusicWidget v-else-if="widget.type === 'music'" :widget="widget" />
             <CalculatorWidget v-else-if="widget.type === 'calculator'" />
             <div
               v-else-if="widget.type === 'ip'"

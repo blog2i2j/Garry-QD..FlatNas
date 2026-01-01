@@ -25,34 +25,235 @@ watch(
 watch(
   () => store.appConfig.customCss,
   (newCss) => {
-    let style = document.getElementById("custom-css");
+    const raw = String(newCss || "");
+    const build = (input: string) => {
+      const src = String(input || "");
+      const re = /\/\*\s*@(?<tag>[a-zA-Z_-]+)\s*\*\/([\s\S]*?)\/\*\s*@end\s*\*\//g;
+      const blocks: Array<{ tag: string; body: string }> = [];
+      const base = src.replace(re, (...args) => {
+        const groups = args[args.length - 1] as { tag?: string } | undefined;
+        const tag = String(groups?.tag || "").toLowerCase();
+        const body = String(args[1] || "");
+        if (tag) blocks.push({ tag, body });
+        return "";
+      });
+
+      const extra = blocks
+        .map((b) => {
+          const body = String(b.body || "").trim();
+          if (!body) return "";
+          if (b.tag === "mobile") return `@media (max-width: 768px) {\n${body}\n}`;
+          if (b.tag === "desktop") return `@media (min-width: 769px) {\n${body}\n}`;
+          if (b.tag === "dark") return `@media (prefers-color-scheme: dark) {\n${body}\n}`;
+          if (b.tag === "light") return `@media (prefers-color-scheme: light) {\n${body}\n}`;
+          return body;
+        })
+        .filter(Boolean)
+        .join("\n\n");
+
+      return [base.trim(), extra.trim()].filter(Boolean).join("\n\n");
+    };
+
+    const css = build(raw);
+    let style = document.getElementById("custom-css") as HTMLStyleElement | null;
     if (!style) {
       style = document.createElement("style");
       style.id = "custom-css";
       document.head.appendChild(style);
     }
-    style.innerHTML = newCss || "";
+    style.textContent = css;
   },
   { immediate: true },
 );
 
+type CustomHooks = {
+  init?: (ctx: CustomCtx) => void | Promise<void>;
+  update?: (ctx: CustomCtx) => void | Promise<void>;
+  destroy?: (ctx: CustomCtx) => void | Promise<void>;
+};
+
+type CustomCtx = {
+  store: ReturnType<typeof useMainStore>;
+  root: HTMLElement | null;
+  query: (selector: string) => Element | null;
+  queryAll: (selector: string) => Element[];
+  onCleanup: (fn: () => void) => void;
+  on: (type: string, handler: (ev: CustomEvent) => void) => () => void;
+  emit: (type: string, detail?: unknown) => void;
+};
+
+const customJsRuntime = (() => {
+  const scriptId = "custom-js-injection";
+  const cleanupFns: Array<() => void> = [];
+  let hooks: CustomHooks | null = null;
+  let observer: MutationObserver | null = null;
+  let updateTimer: number | null = null;
+  let pendingRegister: CustomHooks | null = null;
+  let currentNonce = 0;
+
+  const getRoot = () => (document.getElementById("app") as HTMLElement | null) || null;
+  const clearUpdateTimer = () => {
+    if (updateTimer) window.clearTimeout(updateTimer);
+    updateTimer = null;
+  };
+
+  const ctx: CustomCtx = {
+    store,
+    get root() {
+      return getRoot();
+    },
+    query(selector: string) {
+      return getRoot()?.querySelector(selector) || null;
+    },
+    queryAll(selector: string) {
+      return Array.from(getRoot()?.querySelectorAll(selector) || []);
+    },
+    onCleanup(fn: () => void) {
+      if (typeof fn === "function") cleanupFns.push(fn);
+    },
+    on(type: string, handler: (ev: CustomEvent) => void) {
+      const t = `flatnas:${type}`;
+      const wrapped = (e: Event) => handler(e as CustomEvent);
+      window.addEventListener(t, wrapped as EventListener);
+      const off = () => window.removeEventListener(t, wrapped as EventListener);
+      cleanupFns.push(off);
+      return off;
+    },
+    emit(type: string, detail?: unknown) {
+      window.dispatchEvent(new CustomEvent(`flatnas:${type}`, { detail }));
+    },
+  };
+
+  const removeScript = () => {
+    const existing = document.getElementById(scriptId);
+    if (existing) existing.remove();
+  };
+
+  const doDestroy = async () => {
+    clearUpdateTimer();
+    if (observer) observer.disconnect();
+    observer = null;
+    try {
+      await hooks?.destroy?.(ctx);
+    } catch (e) {
+      console.error("Custom JS destroy failed:", e);
+    }
+    hooks = null;
+    while (cleanupFns.length) {
+      const fn = cleanupFns.pop();
+      try {
+        fn?.();
+      } catch {}
+    }
+    removeScript();
+  };
+
+  const scheduleUpdate = () => {
+    clearUpdateTimer();
+    updateTimer = window.setTimeout(async () => {
+      updateTimer = null;
+      try {
+        await hooks?.update?.(ctx);
+      } catch (e) {
+        console.error("Custom JS update failed:", e);
+      }
+    }, 120);
+  };
+
+  const ensureObserver = () => {
+    if (observer) return;
+    observer = new MutationObserver(() => {
+      if (!hooks?.update) return;
+      scheduleUpdate();
+    });
+    observer.observe(getRoot() || document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+    cleanupFns.push(() => observer?.disconnect());
+  };
+
+  const setRegister = () => {
+    const w = window as unknown as Record<string, unknown>;
+    if (typeof w.FlatNasCustomRegister === "function") return;
+    w.FlatNasCustomRegister = (h: unknown) => {
+      if (!h || typeof h !== "object") return;
+      pendingRegister = h as CustomHooks;
+    };
+  };
+
+  const adoptHooks = async (h: CustomHooks | null) => {
+    hooks = h;
+    if (!hooks) return;
+    try {
+      await hooks.init?.(ctx);
+    } catch (e) {
+      console.error("Custom JS init failed:", e);
+    }
+    ensureObserver();
+    scheduleUpdate();
+  };
+
+  const apply = async (code: string, agreed: boolean) => {
+    currentNonce++;
+    const nonce = currentNonce;
+    await doDestroy();
+    setRegister();
+    pendingRegister = null;
+
+    (window as unknown as Record<string, unknown>).FlatNasCustomCtx = ctx;
+
+    const src = String(code || "").trim();
+    if (!agreed || !src) return;
+
+    const looksModule =
+      /^\s*\/\/\s*@module\b/m.test(src) ||
+      /(^|\n)\s*import\s.+from\s+["'][^"']+["']/m.test(src) ||
+      /(^|\n)\s*export\s+/m.test(src);
+
+    const script = document.createElement("script");
+    script.id = scriptId;
+    if (looksModule) script.type = "module";
+
+    const suffix = "\n;globalThis.FlatNasCustomRegister?.(globalThis.FlatNasCustom);";
+    if (looksModule) {
+      script.textContent = `${src}${suffix}`;
+    } else {
+      const needsWrapper = /(^|[^\w$])await\b/.test(src);
+      if (needsWrapper) {
+        const wrapped = `;(async () => {\ntry {\n${src}\n} catch (e) {\nconsole.error('Custom JS execution failed:', e);\n}\n})();`;
+        script.textContent = `${wrapped}${suffix}`;
+      } else {
+        script.textContent = `${src}${suffix}`;
+      }
+    }
+
+    const adoptFromWindow = () => {
+      const w = window as unknown as Record<string, unknown>;
+      const fallback = (w.FlatNasCustom as CustomHooks | undefined) || null;
+      const next = (pendingRegister || fallback) as CustomHooks | null;
+      pendingRegister = null;
+      if (nonce !== currentNonce) return;
+      void adoptHooks(next);
+    };
+
+    script.onload = adoptFromWindow;
+    script.onerror = (e) => {
+      console.error("Custom JS script failed:", e);
+    };
+
+    document.body.appendChild(script);
+    window.setTimeout(adoptFromWindow, 0);
+  };
+
+  return { apply, destroy: doDestroy };
+})();
+
 watch(
   [() => store.appConfig.customJs, () => store.appConfig.customJsDisclaimerAgreed],
   ([newJs, agreed]) => {
-    const scriptId = "custom-js-injection";
-    let script = document.getElementById(scriptId);
-    if (script) script.remove();
-
-    if (agreed && newJs) {
-      try {
-        script = document.createElement("script");
-        script.id = scriptId;
-        script.textContent = newJs;
-        document.body.appendChild(script);
-      } catch (e) {
-        console.error("Custom JS Injection Failed:", e);
-      }
-    }
+    void customJsRuntime.apply(String(newJs || ""), Boolean(agreed));
   },
   { immediate: true },
 );

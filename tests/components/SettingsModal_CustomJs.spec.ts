@@ -88,8 +88,6 @@ describe("SettingsModal Custom JS Logic", () => {
     const openCenterBtn = buttons.find((b) => b.text().includes("开放中心"));
     await openCenterBtn?.trigger("click");
 
-    // Find checkbox and check it
-    const checkbox = wrapper.find('input[type="checkbox"]'); // There might be multiple checkboxes, need to be specific
     // The disclaimer checkbox is inside the warning box.
     // Let's find the specific label text "我已阅读并同意"
     const labels = wrapper.findAll("label");

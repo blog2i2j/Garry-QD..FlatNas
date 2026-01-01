@@ -1,12 +1,12 @@
 import express from "express";
 import { createServer } from "http";
 
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
 
 import { Server } from "socket.io";
@@ -103,7 +103,77 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const HOT_CACHE = { weibo: { ts: 0, data: [] }, news: { ts: 0, data: [] }, rss: new Map() };
+const HOT_CACHE = {
+  weibo: { ts: 0, data: [] },
+  news: { ts: 0, data: [] },
+  huxiu: { ts: 0, data: [] },
+  custom: new Map(),
+  rss: new Map(),
+};
+
+const safeJsonParse = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
+const getByPath = (obj, pathStr) => {
+  const p = String(pathStr || "").trim();
+  if (!p) return undefined;
+  const tokens = [];
+  const re = /[^.[\]]+|\[(\d+)\]/g;
+  let m;
+  while ((m = re.exec(p))) {
+    if (m[1] != null) tokens.push(Number(m[1]));
+    else tokens.push(m[0]);
+  }
+  let cur = obj;
+  for (const t of tokens) {
+    if (cur == null) return undefined;
+    cur = cur[t];
+  }
+  return cur;
+};
+
+const toPlainHeaders = (raw) => {
+  if (!raw) return {};
+  if (typeof raw === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (!k) continue;
+      out[String(k)] = typeof v === "string" ? v : String(v);
+    }
+    return out;
+  }
+  if (typeof raw !== "string") return {};
+  const parsed = safeJsonParse(raw);
+  if (!parsed || typeof parsed !== "object") return {};
+  const out = {};
+  for (const [k, v] of Object.entries(parsed)) {
+    if (!k) continue;
+    out[String(k)] = typeof v === "string" ? v : String(v);
+  }
+  return out;
+};
+
+const readStreamToText = async (stream, maxBytes, encoding = "utf-8") => {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const decoder = new TextDecoder(encoding);
+  let total = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) throw new Error("Response too large");
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  return text;
+};
 
 // In-memory cache for all users: { username: data }
 const cachedUsersData = {};
@@ -470,6 +540,60 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
     console.error("Docker List Error:", error);
     // Return empty list instead of 500 if docker is not available, so frontend doesn't break
     res.json({ success: false, error: "Docker not available: " + error.message, data: [] });
+  }
+});
+
+app.get("/api/docker/container/:id/inspect-lite", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+
+    const networkMode =
+      (info && info.HostConfig && typeof info.HostConfig.NetworkMode === "string"
+        ? info.HostConfig.NetworkMode
+        : "") || "";
+
+    const exposedObj = (info && info.Config && info.Config.ExposedPorts) || {};
+    const exposedPorts = Object.keys(exposedObj)
+      .map((k) => {
+        const v = parseInt(String(k).split("/")[0] || "", 10);
+        return Number.isFinite(v) ? v : null;
+      })
+      .filter((x) => typeof x === "number" && x > 0 && x <= 65535);
+
+    const env =
+      (info && info.Config && Array.isArray(info.Config.Env) ? info.Config.Env : []) || [];
+    const envPortKeys = new Set([
+      "PORT",
+      "HTTP_PORT",
+      "HTTPS_PORT",
+      "SERVER_PORT",
+      "LISTEN_PORT",
+      "WEB_PORT",
+    ]);
+    const envPorts = env
+      .map((kv) => {
+        const s = typeof kv === "string" ? kv : "";
+        const idx = s.indexOf("=");
+        if (idx <= 0) return null;
+        const key = s.slice(0, idx).trim().toUpperCase();
+        const val = s.slice(idx + 1).trim();
+        if (!envPortKeys.has(key)) return null;
+        const p = parseInt(val, 10);
+        if (!Number.isFinite(p) || p <= 0 || p > 65535) return null;
+        return p;
+      })
+      .filter((x) => typeof x === "number");
+
+    const merged = Array.from(new Set([...(exposedPorts || []), ...(envPorts || [])]))
+      .filter((p) => typeof p === "number" && p > 0 && p <= 65535)
+      .sort((a, b) => a - b);
+
+    res.json({ success: true, data: { networkMode, ports: merged } });
+  } catch (error) {
+    console.error("Docker Inspect Error:", error);
+    res.status(500).json({ success: false, error: error.message || "inspect_failed" });
   }
 });
 
@@ -2774,16 +2898,126 @@ io.on("connection", (socket) => {
   });
 
   // Hot Search Fetch
-  socket.on("hot:fetch", async ({ type, force }) => {
+  socket.on("hot:fetch", async (payload) => {
     try {
+      const type = payload && typeof payload.type === "string" ? payload.type : "";
+      const force = Boolean(payload && payload.force);
+
+      if (type === "custom") {
+        const cfg =
+          payload && payload.custom && typeof payload.custom === "object" ? payload.custom : {};
+
+        const url = typeof cfg.url === "string" ? cfg.url.trim() : "";
+        if (!/^https?:\/\//i.test(url)) throw new Error("Invalid URL");
+
+        const method = typeof cfg.method === "string" ? cfg.method.toUpperCase().trim() : "GET";
+        const headers = {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          ...toPlainHeaders(cfg.headers),
+        };
+
+        const listPath = typeof cfg.listPath === "string" ? cfg.listPath.trim() : "";
+        const titlePath = typeof cfg.titlePath === "string" ? cfg.titlePath.trim() : "";
+        const urlPath = typeof cfg.urlPath === "string" ? cfg.urlPath.trim() : "";
+        const hotPath = typeof cfg.hotPath === "string" ? cfg.hotPath.trim() : "";
+        const urlPrefix = typeof cfg.urlPrefix === "string" ? cfg.urlPrefix.trim() : "";
+
+        const cacheKey = `${method}|${url}|${listPath}|${titlePath}|${urlPath}|${hotPath}|${urlPrefix}`;
+        const cached = HOT_CACHE.custom.get(cacheKey);
+        if (
+          !force &&
+          cached &&
+          cached.data &&
+          cached.data.length &&
+          Date.now() - cached.ts < CACHE_TTL_MS
+        ) {
+          socket.emit("hot:data", { type, data: cached.data });
+          return;
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        let r;
+        try {
+          const init = {
+            method: method === "POST" ? "POST" : "GET",
+            headers,
+            signal: controller.signal,
+          };
+          if (init.method === "POST") {
+            const bodyText = typeof cfg.body === "string" ? cfg.body.trim() : "";
+            if (bodyText) {
+              init.body = bodyText;
+              const hasContentType = Object.keys(headers).some(
+                (k) => k.toLowerCase() === "content-type",
+              );
+              if (!hasContentType) headers["Content-Type"] = "application/json";
+            }
+          }
+          r = await fetch(url, init);
+        } finally {
+          clearTimeout(timeout);
+        }
+
+        if (!r || !r.ok) throw new Error("Fetch failed");
+        const contentType = String(r.headers.get("content-type") || "").toLowerCase();
+        const encoding = contentType.includes("charset=gbk") ? "gbk" : "utf-8";
+        const rawText = await readStreamToText(r.body, 1024 * 1024, encoding);
+        const json = safeJsonParse(rawText);
+        if (!json || typeof json !== "object") throw new Error("Invalid JSON");
+
+        const listRaw = listPath ? getByPath(json, listPath) : undefined;
+        const arr = Array.isArray(listRaw)
+          ? listRaw
+          : Array.isArray(json.data)
+            ? json.data
+            : Array.isArray(json.items)
+              ? json.items
+              : Array.isArray(json.list)
+                ? json.list
+                : [];
+
+        const items = arr
+          .slice(0, 50)
+          .map((x) => {
+            const title =
+              (titlePath ? getByPath(x, titlePath) : undefined) ??
+              (x && typeof x === "object" ? (x.title ?? x.word ?? x.name) : undefined);
+            const link =
+              (urlPath ? getByPath(x, urlPath) : undefined) ??
+              (x && typeof x === "object" ? (x.url ?? x.link ?? x.href) : undefined);
+            const hot =
+              (hotPath ? getByPath(x, hotPath) : undefined) ??
+              (x && typeof x === "object" ? (x.hot ?? x.num ?? x.rank) : undefined);
+
+            const titleStr = title == null ? "" : String(title).trim();
+            let linkStr = link == null ? "" : String(link).trim();
+            if (linkStr && urlPrefix && !/^https?:\/\//i.test(linkStr)) {
+              if (linkStr.startsWith("/")) linkStr = urlPrefix.replace(/\/$/, "") + linkStr;
+              else linkStr = urlPrefix.replace(/\/$/, "") + "/" + linkStr;
+            }
+
+            return {
+              title: titleStr,
+              url: linkStr || "#",
+              hot: hot == null ? "" : hot,
+            };
+          })
+          .filter((x) => x.title);
+
+        HOT_CACHE.custom.set(cacheKey, { ts: Date.now(), data: items });
+        socket.emit("hot:data", { type, data: items });
+        return;
+      }
+
       // Check cache first
-      if (
-        !force &&
-        HOT_CACHE[type] &&
-        HOT_CACHE[type].data.length &&
-        Date.now() - HOT_CACHE[type].ts < CACHE_TTL_MS
-      ) {
-        socket.emit("hot:data", { type, data: HOT_CACHE[type].data });
+      const entry = HOT_CACHE[type];
+      if (!force && entry && Array.isArray(entry.data) && entry.data.length) {
+        if (Date.now() - entry.ts < CACHE_TTL_MS) {
+          socket.emit("hot:data", { type, data: entry.data });
+          return;
+        }
         return;
       }
 
@@ -2805,14 +3039,22 @@ io.on("connection", (socket) => {
           .slice(0, 50)
           .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));
         HOT_CACHE.news = { ts: Date.now(), data: items };
+      } else if (type === "huxiu") {
+        const feed = await rssParser.parseURL("https://www.huxiu.com/rss/0.xml");
+        items = (feed.items || [])
+          .slice(0, 50)
+          .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));
+        HOT_CACHE.huxiu = { ts: Date.now(), data: items };
       }
 
       socket.emit("hot:data", { type, data: items });
     } catch (err) {
+      const type = payload && typeof payload.type === "string" ? payload.type : "";
       console.error(`Hot Socket Error [${type}]:`, err.message);
       // Fallback to cache if available
-      if (HOT_CACHE[type] && HOT_CACHE[type].data.length) {
-        socket.emit("hot:data", { type, data: HOT_CACHE[type].data });
+      const entry = HOT_CACHE[type];
+      if (entry && Array.isArray(entry.data) && entry.data.length) {
+        socket.emit("hot:data", { type, data: entry.data });
       } else {
         socket.emit("hot:error", { type, error: err.message });
       }
