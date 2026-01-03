@@ -126,6 +126,15 @@ const handleScrollIsolation = (e: WheelEvent) => {
     e.stopPropagation();
   }
 };
+
+const tabsRef = ref<HTMLDivElement | null>(null);
+
+const handleHorizontalScroll = (e: WheelEvent) => {
+  if (!tabsRef.value) return;
+  if (e.deltaY !== 0) {
+    tabsRef.value.scrollLeft += e.deltaY;
+  }
+};
 </script>
 
 <template>
@@ -134,7 +143,11 @@ const handleScrollIsolation = (e: WheelEvent) => {
     :style="{ backgroundColor: `rgba(255, 255, 255, ${widget?.opacity ?? 0.8})` }"
   >
     <!-- Header / Tabs -->
-    <div class="flex border-b border-gray-100 bg-white/50 select-none overflow-x-auto no-scrollbar">
+    <div
+      ref="tabsRef"
+      @wheel.prevent="handleHorizontalScroll"
+      class="flex border-b border-gray-100 bg-white/50 select-none overflow-x-auto custom-scrollbar"
+    >
       <div v-if="enabledFeeds.length === 0" class="w-full py-2.5 text-xs text-gray-400 text-center">
         暂无订阅源
       </div>
@@ -219,6 +232,7 @@ const handleScrollIsolation = (e: WheelEvent) => {
 <style scoped>
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;

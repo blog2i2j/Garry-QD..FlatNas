@@ -567,7 +567,7 @@
     {
       "id": "w8",
       "type": "todo",
-      "enable": true,
+      "enable": false,
       "data": [],
       "colSpan": 1,
       "rowSpan": 2,
@@ -584,13 +584,14 @@
           "h": 2
         }
       },
-      "opacity": 0.8
+      "opacity": 0.8,
+      "hideOnMobile": true
     },
     {
       "id": "w4",
       "type": "memo",
       "enable": true,
-      "data": "优化容器卡片\n增加全网热度榜自定义接口\n添加道理鱼音乐插件支持\n部分单开组件添加快捷跳转\n优化壁纸库在大刘海手机的展开方式\n优化到倒计时输入框",
+      "data": "优化 道理鱼 音乐插件\nRSS添加订阅滚动条\n文件传输助手默认显示最新信息\n修复了data直接读取的BUG\n优化了1*2尺寸下文件传输助手的展现效果\n浏览器插件增加一键发送文字到备忘录和文件传输助手\n浏览器插件增加一键发送图片到文件传输助手\n",
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -764,22 +765,22 @@
     {
       "id": "file-transfer",
       "type": "file-transfer",
-      "enable": false,
+      "enable": true,
       "colSpan": 1,
-      "rowSpan": 3,
+      "rowSpan": 2,
       "isPublic": false,
       "hideOnMobile": true,
       "w": 1,
-      "h": 3,
+      "h": 2,
       "layouts": {
         "desktop": {
-          "x": 0,
+          "x": 1,
           "y": 0,
           "w": 1,
-          "h": 3
+          "h": 2
         }
       },
-      "x": 0,
+      "x": 1,
       "y": 0
     },
     {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from "vue";
 import { useMainStore } from "@/stores/main";
+import { useDebounceFn } from "@vueuse/core";
 import type { WidgetConfig } from "@/types";
 
 interface LyricLine {
@@ -109,6 +110,8 @@ watch(
 );
 
 const audioRef = ref<HTMLAudioElement | null>(null);
+const localAudioRef = ref<HTMLAudioElement | null>(null);
+const useGlobalAudio = ref(false);
 const loading = ref(false);
 const error = ref("");
 
@@ -811,7 +814,7 @@ const revokeAudioObjectUrl = () => {
   audioObjectUrlTrackId.value = null;
 };
 
-const loadViaBlob = async (trackId: string) => {
+const loadViaBlob = async (trackId: string, startTime = 0, autoPlay = true) => {
   if (!audioRef.value) return;
 
   const urls = [
@@ -872,12 +875,16 @@ const loadViaBlob = async (trackId: string) => {
   audioObjectUrl.value = URL.createObjectURL(blob);
   audioObjectUrlTrackId.value = trackId;
   audioRef.value.src = audioObjectUrl.value;
+  audioRef.value.currentTime = startTime;
 
-  try {
-    await audioRef.value.play();
-    error.value = ""; // Clear error on success
-  } catch (e) {
-    throw new Error(`Playback failed: ${(e as Error).name} - ${(e as Error).message}`);
+  if (autoPlay) {
+    try {
+      await audioRef.value.play();
+      error.value = ""; // Clear error on success
+    } catch (e) {
+      playerState.value.isPlaying = false;
+      throw new Error(`Playback failed: ${(e as Error).name} - ${(e as Error).message}`);
+    }
   }
 };
 
@@ -1073,23 +1080,32 @@ const handleMissingTrack = async (track: Track) => {
   await fetchTracks();
 };
 
-const playTrack = async (track: Track) => {
-  if (playerState.value.currentTrackId === track.id) {
+const playTrack = async (
+  track: Track,
+  options: { startTime?: number; autoPlay?: boolean } = {},
+) => {
+  const { startTime = 0, autoPlay = true } = options;
+
+  if (playerState.value.currentTrackId === track.id && !startTime) {
     togglePlay();
     return;
   }
 
   playerState.value.currentTrackId = track.id;
-  playerState.value.isPlaying = true;
+  playerState.value.isPlaying = autoPlay;
   store.activeMusicPlayer = "music-widget";
 
   if (audioRef.value) {
+    // If we are about to load a new blob, and the current src is a blob (even from previous instance), revoke it to prevent leaks
+    if (audioRef.value.src && audioRef.value.src.startsWith("blob:")) {
+      URL.revokeObjectURL(audioRef.value.src);
+    }
     revokeAudioObjectUrl();
 
     // Directly use loadViaBlob because we know the API requires Auth Headers
     // and <audio> tag cannot send headers.
     try {
-      await loadViaBlob(track.id);
+      await loadViaBlob(track.id, startTime, autoPlay);
     } catch (e) {
       console.error("Play error", e);
       const msg = (e as Error).message;
@@ -1184,6 +1200,87 @@ const prevTrack = () => {
   const track = tracks.value[prevIdx];
   if (track) playTrack(track);
   if (syncPlayerState.value) void apiPrev();
+};
+
+// --- Storage Logic ---
+const STORAGE_KEY = "flatnas_music_player_state";
+
+const savePlaybackState = useDebounceFn(() => {
+  const state = {
+    libraryMode: libraryMode.value,
+    currentPlaylistId: currentPlaylistId.value,
+    currentArtistId: currentArtistId.value,
+    currentAlbumId: currentAlbumId.value,
+    playerState: {
+      volume: playerState.value.volume,
+      playbackMode: playerState.value.playbackMode,
+      currentTrackId: playerState.value.currentTrackId,
+      currentTime: playerState.value.currentTime,
+      isPlaying: playerState.value.isPlaying, // We try to save this to auto-resume
+    },
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}, 1000);
+
+// Immediate save for non-time updates
+const savePlaybackStateImmediate = () => {
+  const state = {
+    libraryMode: libraryMode.value,
+    currentPlaylistId: currentPlaylistId.value,
+    currentArtistId: currentArtistId.value,
+    currentAlbumId: currentAlbumId.value,
+    playerState: {
+      volume: playerState.value.volume,
+      playbackMode: playerState.value.playbackMode,
+      currentTrackId: playerState.value.currentTrackId,
+      currentTime: playerState.value.currentTime,
+      isPlaying: playerState.value.isPlaying,
+    },
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+};
+
+const restorePlaybackState = async () => {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  try {
+    const saved = JSON.parse(raw);
+
+    // Restore context
+    libraryMode.value = saved.libraryMode || "songs";
+    currentPlaylistId.value = saved.currentPlaylistId || null;
+    currentArtistId.value = saved.currentArtistId || null;
+    currentAlbumId.value = saved.currentAlbumId || null;
+
+    // Restore player config
+    if (saved.playerState) {
+      playerState.value.volume = saved.playerState.volume ?? 0.7;
+      playerState.value.playbackMode = saved.playerState.playbackMode || "sequence";
+
+      // If we have a track ID, we need to load tracks first then play
+      if (saved.playerState.currentTrackId) {
+        // Fetch tracks based on restored context
+        await fetchTracks();
+
+        const track = tracks.value.find((t) => t.id === saved.playerState.currentTrackId);
+        if (track) {
+          // Play from saved time
+          // If it was playing, try to autoplay. If paused, just load.
+          await playTrack(track, {
+            startTime: saved.playerState.currentTime || 0,
+            autoPlay: saved.playerState.isPlaying,
+          });
+
+          // Force time update in UI just in case
+          playerState.value.currentTime = saved.playerState.currentTime || 0;
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to restore playback state", e);
+  }
+  return false;
 };
 
 // --- Audio Events ---
@@ -1321,6 +1418,25 @@ const stopPolling = () => {
 };
 
 onMounted(() => {
+  const globalEl = document.getElementById("flatnas-global-audio") as HTMLAudioElement | null;
+  if (globalEl) {
+    useGlobalAudio.value = true;
+    audioRef.value = globalEl;
+    globalEl.addEventListener("timeupdate", onTimeUpdate);
+    globalEl.addEventListener("ended", onEnded);
+    globalEl.addEventListener("play", onAudioPlay);
+    globalEl.addEventListener("pause", onAudioPause);
+    globalEl.addEventListener("progress", onProgress);
+    globalEl.addEventListener("error", onAudioError);
+    if (!globalEl.paused) {
+      playerState.value.isPlaying = true;
+      playerState.value.currentTime = globalEl.currentTime;
+      store.activeMusicPlayer = "music-widget";
+    }
+  } else {
+    audioRef.value = localAudioRef.value;
+  }
+
   fetchTracks();
   fetchPlaylists();
   if (syncPlayerState.value) {
@@ -1332,14 +1448,66 @@ onMounted(() => {
     if (!syncPlayerState.value) void playAllSongs();
   }
 
+  // Restore state logic
+  if (!useGlobalAudio.value && !syncPlayerState.value) {
+    // Only restore if not using global audio and not syncing with server
+    restorePlaybackState().then((restored) => {
+      if (!restored) {
+        // Default behavior if no restore
+        if (!isMiniSmall.value && !isTallMini.value) {
+          // Already called fetchTracks above, but might need to ensure something selected?
+          // Actually fetchTracks is enough to show list.
+        }
+      }
+    });
+  }
+
   // 点击外部关闭音量面板
   window.addEventListener("click", onGlobalClick);
   window.addEventListener("pointerup", onGlobalPointerUp);
 });
 
+// Watchers for State Saving
+watch(
+  () => playerState.value.currentTime,
+  () => {
+    savePlaybackState();
+  },
+);
+
+watch(
+  [
+    () => playerState.value.currentTrackId,
+    () => playerState.value.volume,
+    () => playerState.value.playbackMode,
+    () => playerState.value.isPlaying,
+    libraryMode,
+    currentPlaylistId,
+    currentArtistId,
+    currentAlbumId,
+  ],
+  () => {
+    savePlaybackStateImmediate();
+  },
+);
+
 onUnmounted(() => {
   stopPolling();
-  revokeAudioObjectUrl();
+  if (useGlobalAudio.value) {
+    // If using global audio, do NOT revoke object URL to allow persistent playback.
+    // Also remove listeners from global element to avoid leaks/errors
+    const globalEl = audioRef.value;
+    if (globalEl) {
+      globalEl.removeEventListener("timeupdate", onTimeUpdate);
+      globalEl.removeEventListener("ended", onEnded);
+      globalEl.removeEventListener("play", onAudioPlay);
+      globalEl.removeEventListener("pause", onAudioPause);
+      globalEl.removeEventListener("progress", onProgress);
+      globalEl.removeEventListener("error", onAudioError);
+    }
+  } else {
+    revokeAudioObjectUrl();
+  }
   window.removeEventListener("click", onGlobalClick);
   window.removeEventListener("pointerup", onGlobalPointerUp);
 });
@@ -1369,7 +1537,7 @@ watch(syncPlayerState, (enabled) => {
 
     <!-- Audio Element (Hidden) -->
     <audio
-      ref="audioRef"
+      ref="localAudioRef"
       @timeupdate="onTimeUpdate"
       @ended="onEnded"
       @play="onAudioPlay"
@@ -1737,7 +1905,7 @@ watch(syncPlayerState, (enabled) => {
           <!-- Library Selection -->
           <div class="px-3 py-1.5 border-b border-white/10 bg-white/5 flex flex-col gap-1.5">
             <!-- Mode Selector -->
-            <div class="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+            <div class="flex gap-1 overflow-x-auto custom-scrollbar pb-0.5">
               <button
                 v-for="mode in ['songs', 'artists', 'albums']"
                 :key="mode"

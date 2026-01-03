@@ -299,6 +299,9 @@ onMounted(() => {
       </svg>
     </button>
   </Transition>
+
+  <!-- Global Audio Element for persistent playback across groups -->
+  <audio id="flatnas-global-audio" style="display: none;" crossorigin="anonymous"></audio>
 </template>
 
 <style>

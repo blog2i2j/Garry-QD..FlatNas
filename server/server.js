@@ -324,16 +324,15 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(" ")[1];
 
   if (token == null) {
-    req.user = null; // No user
-    return next();
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) {
-      req.user = null; // Invalid token
-    } else {
-      req.user = user;
+      // Treat invalid token as Unauthorized so client knows to re-login
+      return res.status(401).json({ error: "Unauthorized" });
     }
+    req.user = user;
     next();
   });
 };
@@ -728,10 +727,9 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
 
 // GET /api/data
 app.get("/api/data", authenticateToken, async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
   try {
-    // If user is logged in, return their data
-    // If not logged in, return admin data (as default/public view)
-    const username = req.user ? req.user.username : "admin";
+    const username = req.user.username;
 
     // Check cache
     if (!cachedUsersData[username]) {
@@ -1196,6 +1194,19 @@ app.post("/api/add-bookmark", async (req, res) => {
   let category;
   if (categoryTitle) {
     category = userData.groups.find((g) => g.title === categoryTitle);
+  }
+
+  // If category provided but not found, create it
+  if (categoryTitle && !category) {
+    category = {
+      id: Date.now().toString(),
+      title: categoryTitle,
+      items: [],
+      cardSize: 120,
+      cardLayout: "vertical",
+      gridGap: 24,
+    };
+    userData.groups.push(category);
   }
 
   if (!category) {

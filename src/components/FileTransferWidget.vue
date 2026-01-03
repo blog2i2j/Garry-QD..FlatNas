@@ -32,6 +32,7 @@ const props = defineProps<{ widget: WidgetConfig }>();
 const store = useMainStore();
 const socket = ref<Socket | null>(null);
 const { isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
+const isSmallLayout = computed(() => props.widget.w === 1 && props.widget.h === 2);
 
 const activeTab = useStorage<"chat" | "files" | "photos">(
   `flatnas-transfer-tab-${props.widget.id}`,
@@ -40,6 +41,14 @@ const activeTab = useStorage<"chat" | "files" | "photos">(
 const loading = ref(false);
 const error = ref<string | null>(null);
 const items = ref<TransferItem[]>([]);
+const scrollContainerRef = ref<HTMLDivElement | null>(null);
+
+const scrollToBottom = async () => {
+  await nextTick();
+  if (scrollContainerRef.value) {
+    scrollContainerRef.value.scrollTop = scrollContainerRef.value.scrollHeight;
+  }
+};
 
 const composerText = ref("");
 const composerRef = ref<HTMLTextAreaElement | null>(null);
@@ -742,9 +751,14 @@ const deleteSelected = async () => {
 
 watch(
   () => [store.isLogged, activeTab.value],
-  () => {
+  async () => {
     selectedIds.value = {};
-    if (store.isLogged) fetchItems();
+    if (store.isLogged) {
+      await fetchItems();
+      if (activeTab.value === "chat") {
+        scrollToBottom();
+      }
+    }
   },
   { immediate: true },
 );
@@ -817,7 +831,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="px-3 py-2 border-b border-white/10">
+    <div v-if="!isSmallLayout" class="border-b border-white/10 px-3 py-2">
       <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-tight">
         <div class="text-sm font-bold text-white">文件传输助手</div>
         <div class="text-[11px] text-white/70">支持拖拽、多选、断点续传</div>
@@ -1100,6 +1114,7 @@ onBeforeUnmount(() => {
 
         <div
           v-else
+          ref="scrollContainerRef"
           class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3 scrollbar-glass"
           @wheel="handleScrollIsolation"
           @contextmenu.prevent.stop="onListContextMenu"
@@ -1124,8 +1139,11 @@ onBeforeUnmount(() => {
                 <div v-for="it in g.items" :key="it.id" class="flex">
                   <div
                     v-if="it.type === 'text'"
-                    class="max-w-[90%] rounded-xl px-3 py-2 bg-white/10 text-white text-sm border border-white/10 transition-shadow select-text"
-                    :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
+                    class="max-w-[90%] rounded-xl bg-white/10 text-white border border-white/10 transition-shadow select-text"
+                    :class="[
+                      selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : '',
+                      isSmallLayout ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
+                    ]"
                     :data-transfer-id="it.id"
                     @click="onChatItemClick(it)"
                     @contextmenu.prevent.stop="
@@ -1158,8 +1176,11 @@ onBeforeUnmount(() => {
 
                   <button
                     v-else
-                    class="max-w-[90%] text-left rounded-xl px-3 py-2 bg-white/10 hover:bg-white/15 transition-colors border border-white/10 transition-shadow select-none"
-                    :class="selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : ''"
+                    class="max-w-[90%] text-left rounded-xl bg-white/10 hover:bg-white/15 transition-colors border border-white/10 transition-shadow select-none"
+                    :class="[
+                      selectedIds[it.id] ? 'shadow-[0_0_0_2px_rgba(96,165,250,0.55)]' : '',
+                      isSmallLayout ? 'px-2 py-1.5' : 'px-3 py-2',
+                    ]"
                     :data-transfer-id="it.id"
                     style="-webkit-touch-callout: none"
                     @click="onChatItemClick(it)"
@@ -1182,7 +1203,12 @@ onBeforeUnmount(() => {
                         {{ String(it.file.type || "").startsWith("image/") ? "🖼️" : "📄" }}
                       </div>
                       <div class="min-w-0">
-                        <div class="text-sm font-bold text-white truncate">{{ it.file.name }}</div>
+                        <div
+                          class="font-bold text-white truncate"
+                          :class="isSmallLayout ? 'text-xs' : 'text-sm'"
+                        >
+                          {{ it.file.name }}
+                        </div>
                         <div class="text-[11px] text-white/60">{{ formatBytes(it.file.size) }}</div>
                       </div>
                     </div>
@@ -1291,14 +1317,19 @@ onBeforeUnmount(() => {
           </template>
         </div>
 
-        <div v-if="activeTab === 'chat'" class="border-t border-white/10 p-3">
-          <div class="flex items-end gap-2">
+        <div
+          v-if="activeTab === 'chat'"
+          class="border-t border-white/10"
+          :class="isSmallLayout ? 'p-1' : 'p-3'"
+        >
+          <div :class="isSmallLayout ? 'relative block' : 'flex items-end gap-2'">
             <textarea
               ref="composerRef"
               v-model="composerText"
               rows="1"
-              placeholder="Shift+Enter 换行"
-              class="flex-1 resize-none rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm outline-none text-white placeholder-white/50 focus:border-blue-400"
+              :placeholder="isSmallLayout ? '这里粘贴或拖入，或发送消息' : 'Shift+Enter 换行'"
+              class="resize-none rounded-xl border border-white/20 bg-white/10 outline-none text-white placeholder-white/50 focus:border-blue-400"
+              :class="isSmallLayout ? 'w-full pr-8 pl-2 py-1 text-xs' : 'flex-1 px-3 py-2 text-sm'"
               @keydown.enter.prevent="
                 (e) => {
                   if ((e as KeyboardEvent).shiftKey) {
@@ -1310,6 +1341,27 @@ onBeforeUnmount(() => {
               "
             ></textarea>
             <button
+              v-if="isSmallLayout"
+              class="absolute right-1 bottom-1 p-1 text-blue-400 hover:text-blue-300 transition-colors"
+              @click="sendText"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+            <button
+              v-else
               class="px-3 py-2 text-xs font-bold rounded-xl bg-blue-500 text-white hover:bg-blue-600"
               @click="sendText"
             >

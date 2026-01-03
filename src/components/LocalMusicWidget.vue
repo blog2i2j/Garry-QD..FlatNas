@@ -1737,7 +1737,7 @@ watch(syncPlayerState, (enabled) => {
           <!-- Library Selection -->
           <div class="px-3 py-1.5 border-b border-white/10 bg-white/5 flex flex-col gap-1.5">
             <!-- Mode Selector -->
-            <div class="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+            <div class="flex gap-1 overflow-x-auto custom-scrollbar pb-0.5">
               <button
                 v-for="mode in ['songs', 'artists', 'albums']"
                 :key="mode"
