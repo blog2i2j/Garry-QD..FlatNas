@@ -73,7 +73,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.43";
+  const currentVersion = "1.0.44";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -260,6 +260,198 @@ export const useMainStore = defineStore("main", () => {
     }
   };
 
+  const handleDataUpdate = (data: any) => {
+    // If we got username back, ensure it matches
+    if (data.username && data.username !== username.value) {
+      username.value = data.username;
+      localStorage.setItem("flat-nas-username", data.username);
+    }
+
+    if (data.items && data.items.length > 0 && (!data.groups || data.groups.length === 0)) {
+      groups.value = [{ id: Date.now().toString(), title: "默认分组", items: data.items }];
+      saveData();
+    } else if (data.groups) {
+      groups.value = data.groups;
+      if (groups.value.length === 0) {
+        groups.value.push({ id: "g1", title: "常用", items: createDefaultItems(), preset: true });
+      }
+    } else {
+      groups.value = [{ id: "g1", title: "常用", items: createDefaultItems(), preset: true }];
+    }
+
+    if (Array.isArray(data.widgets)) {
+      widgets.value = data.widgets;
+
+      // 修复潜在的组件类型错乱问题 (例如备忘录被错误标记为 docker)
+      const memoW = widgets.value.find((w) => w.id === "memo");
+      if (memoW && memoW.type !== "memo") {
+        memoW.type = "memo";
+      }
+
+      // 强健的 Docker 组件修复逻辑
+      // 1. 查找最佳 Docker 组件候选 (优先匹配 ID，其次匹配类型)
+      let dockerCandidate = widgets.value.find((w) => w.id === "docker");
+      if (!dockerCandidate) {
+        dockerCandidate = widgets.value.find((w) => w.type === "docker");
+      }
+
+      // 2. 从列表中移除所有相关的组件 (防止重复或 ID 冲突)
+      widgets.value = widgets.value.filter((w) => w.id !== "docker" && w.type !== "docker");
+
+      // 3. 准备最终的 Docker 组件
+      let finalDockerWidget: WidgetConfig;
+
+      if (dockerCandidate) {
+        // 使用现有组件作为基础，但强制 ID 和类型
+        finalDockerWidget = dockerCandidate;
+        finalDockerWidget.id = "docker";
+        finalDockerWidget.type = "docker";
+        // 确保关键属性存在，防止渲染错误
+        if (typeof finalDockerWidget.colSpan !== "number") finalDockerWidget.colSpan = 1;
+        if (typeof finalDockerWidget.rowSpan !== "number") finalDockerWidget.rowSpan = 1;
+        if (typeof finalDockerWidget.enable !== "boolean") finalDockerWidget.enable = false;
+        if (typeof finalDockerWidget.isPublic !== "boolean") finalDockerWidget.isPublic = true;
+      } else {
+        // 不存在则创建默认的
+        finalDockerWidget = {
+          id: "docker",
+          type: "docker",
+          enable: false,
+          isPublic: true,
+          colSpan: 1,
+          rowSpan: 1,
+        };
+      }
+
+      // 4. 将规范化后的 Docker 组件添加到列表末尾
+      widgets.value.push(finalDockerWidget);
+
+      const fileTransferList = widgets.value.filter((w) => w.type === "file-transfer");
+      if (fileTransferList.length > 1) {
+        const keep = fileTransferList.find((w) => w.id === "file-transfer") || fileTransferList[0]!;
+        widgets.value = widgets.value.filter((w) => w.type !== "file-transfer" || w === keep);
+        if (
+          keep.id !== "file-transfer" &&
+          !widgets.value.some((w) => w.id === "file-transfer" && w.type !== "file-transfer")
+        ) {
+          keep.id = "file-transfer";
+        }
+      } else if (
+        fileTransferList.length === 1 &&
+        fileTransferList[0]!.id !== "file-transfer" &&
+        !widgets.value.some((w) => w.id === "file-transfer" && w.type !== "file-transfer")
+      ) {
+        fileTransferList[0]!.id = "file-transfer";
+      }
+
+      if (!widgets.value.find((w) => w.type === "rss")) {
+        widgets.value.push({
+          id: "rss-reader",
+          type: "rss",
+          enable: false,
+          colSpan: 1,
+          rowSpan: 2,
+          isPublic: true,
+        });
+      }
+      if (!widgets.value.find((w) => w.type === "sidebar")) {
+        widgets.value.push({
+          id: "sidebar",
+          type: "sidebar",
+          enable: false,
+          isPublic: true,
+        });
+      }
+    } else {
+      // Default widgets if empty
+      widgets.value = [
+        { id: "w1", type: "clock", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "w2", type: "weather", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "w3", type: "calendar", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "w5", type: "search", enable: true, isPublic: true },
+        { id: "w7", type: "quote", enable: true, isPublic: true },
+        {
+          id: "clockweather",
+          type: "clockweather",
+          enable: true,
+          colSpan: 1,
+          rowSpan: 1,
+          isPublic: true,
+        },
+        { id: "sidebar", type: "sidebar", enable: false, isPublic: true },
+        { id: "memo", type: "memo", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "todo", type: "todo", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        {
+          id: "calculator",
+          type: "calculator",
+          enable: true,
+          colSpan: 1,
+          rowSpan: 1,
+          isPublic: true,
+        },
+        { id: "ip", type: "ip", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "hot", type: "hot", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
+        { id: "player", type: "player", enable: true, colSpan: 2, rowSpan: 1, isPublic: true },
+      ];
+    }
+
+    if (data.appConfig) appConfig.value = { ...appConfig.value, ...data.appConfig };
+    if (!appConfig.value.background) appConfig.value.background = "/default-wallpaper.svg";
+
+    if (!appConfig.value.searchEngines || appConfig.value.searchEngines.length === 0) {
+      appConfig.value.searchEngines = [
+        {
+          id: "google",
+          key: "google",
+          label: "Google",
+          urlTemplate: "https://www.google.com/search?q={q}",
+        },
+        {
+          id: "bing",
+          key: "bing",
+          label: "Bing",
+          urlTemplate: "https://cn.bing.com/search?q={q}",
+        },
+        {
+          id: "baidu",
+          key: "baidu",
+          label: "百度",
+          urlTemplate: "https://www.baidu.com/s?wd={q}",
+        },
+      ];
+    }
+    if (!appConfig.value.defaultSearchEngine) appConfig.value.defaultSearchEngine = "google";
+    if (typeof appConfig.value.rememberLastEngine !== "boolean")
+      appConfig.value.rememberLastEngine = true;
+
+    const cachedShape = localStorage.getItem("flat-nas-icon-shape");
+    if (cachedShape) appConfig.value.iconShape = cachedShape;
+    const cachedColor = localStorage.getItem("flat-nas-group-title-color");
+    if (cachedColor) appConfig.value.groupTitleColor = cachedColor;
+    const cachedCardBg = localStorage.getItem("flat-nas-card-bg-color");
+    if (cachedCardBg) appConfig.value.cardBgColor = cachedCardBg;
+
+    if (data.rssFeeds) rssFeeds.value = data.rssFeeds;
+    if (data.rssCategories) rssCategories.value = data.rssCategories;
+
+    checkUpdate();
+    saveToCache(data);
+  };
+
+  const fetchAndProcessData = async () => {
+    try {
+      const headers: Record<string, string> = {};
+      if (token.value) headers["Authorization"] = `Bearer ${token.value}`;
+
+      const res = await fetch(`/api/data`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      handleDataUpdate(data);
+    } catch (e) {
+      console.error("Fetch data failed", e);
+    }
+  };
+
   const init = async () => {
     isInitializing = true;
     const loaded = loadFromCache();
@@ -268,208 +460,32 @@ export const useMainStore = defineStore("main", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     await fetchSystemConfig();
-    try {
-      const headers: Record<string, string> = {};
-      if (token.value) headers["Authorization"] = `Bearer ${token.value}`;
 
-      const res = await fetch(`/api/data`, { headers });
-      const data = await res.json();
+    await fetchAndProcessData();
 
-      // If we got username back, ensure it matches
-      if (data.username && data.username !== username.value) {
-        username.value = data.username;
-        localStorage.setItem("flat-nas-username", data.username);
-      }
-
-      if (data.items && data.items.length > 0 && (!data.groups || data.groups.length === 0)) {
-        groups.value = [{ id: Date.now().toString(), title: "默认分组", items: data.items }];
-        saveData();
-      } else if (data.groups) {
-        groups.value = data.groups;
-        if (groups.value.length === 0) {
-          groups.value.push({ id: "g1", title: "常用", items: createDefaultItems(), preset: true });
-        }
-      } else {
-        groups.value = [{ id: "g1", title: "常用", items: createDefaultItems(), preset: true }];
-      }
-
-      if (Array.isArray(data.widgets)) {
-        widgets.value = data.widgets;
-
-        // 修复潜在的组件类型错乱问题 (例如备忘录被错误标记为 docker)
-        const memoW = widgets.value.find((w) => w.id === "memo");
-        if (memoW && memoW.type !== "memo") {
-          memoW.type = "memo";
-        }
-
-        // 强健的 Docker 组件修复逻辑
-        // 1. 查找最佳 Docker 组件候选 (优先匹配 ID，其次匹配类型)
-        let dockerCandidate = widgets.value.find((w) => w.id === "docker");
-        if (!dockerCandidate) {
-          dockerCandidate = widgets.value.find((w) => w.type === "docker");
-        }
-
-        // 2. 从列表中移除所有相关的组件 (防止重复或 ID 冲突)
-        widgets.value = widgets.value.filter((w) => w.id !== "docker" && w.type !== "docker");
-
-        // 3. 准备最终的 Docker 组件
-        let finalDockerWidget: WidgetConfig;
-
-        if (dockerCandidate) {
-          // 使用现有组件作为基础，但强制 ID 和类型
-          finalDockerWidget = dockerCandidate;
-          finalDockerWidget.id = "docker";
-          finalDockerWidget.type = "docker";
-          // 确保关键属性存在，防止渲染错误
-          if (typeof finalDockerWidget.colSpan !== "number") finalDockerWidget.colSpan = 1;
-          if (typeof finalDockerWidget.rowSpan !== "number") finalDockerWidget.rowSpan = 1;
-          if (typeof finalDockerWidget.enable !== "boolean") finalDockerWidget.enable = false;
-          if (typeof finalDockerWidget.isPublic !== "boolean") finalDockerWidget.isPublic = true;
-        } else {
-          // 不存在则创建默认的
-          finalDockerWidget = {
-            id: "docker",
-            type: "docker",
-            enable: false,
-            isPublic: true,
-            colSpan: 1,
-            rowSpan: 1,
-          };
-        }
-
-        // 4. 将规范化后的 Docker 组件添加到列表末尾
-        widgets.value.push(finalDockerWidget);
-
-        const fileTransferList = widgets.value.filter((w) => w.type === "file-transfer");
-        if (fileTransferList.length > 1) {
-          const keep =
-            fileTransferList.find((w) => w.id === "file-transfer") || fileTransferList[0]!;
-          widgets.value = widgets.value.filter((w) => w.type !== "file-transfer" || w === keep);
-          if (
-            keep.id !== "file-transfer" &&
-            !widgets.value.some((w) => w.id === "file-transfer" && w.type !== "file-transfer")
-          ) {
-            keep.id = "file-transfer";
-          }
-        } else if (
-          fileTransferList.length === 1 &&
-          fileTransferList[0]!.id !== "file-transfer" &&
-          !widgets.value.some((w) => w.id === "file-transfer" && w.type !== "file-transfer")
+    if (!socketListenersBound) {
+      socket.on("memo:updated", ({ widgetId, content }) => {
+        const w = widgets.value.find((x) => x.id === widgetId);
+        if (w) w.data = content;
+      });
+      socket.on("todo:updated", ({ widgetId, content }) => {
+        const w = widgets.value.find((x) => x.id === widgetId);
+        if (w) w.data = content;
+      });
+      socket.on("data-updated", async ({ username: updatedUser }) => {
+        if (
+          updatedUser === username.value ||
+          (username.value === "admin" && updatedUser === "admin")
         ) {
-          fileTransferList[0]!.id = "file-transfer";
+          await fetchAndProcessData();
         }
-
-        if (!widgets.value.find((w) => w.type === "rss")) {
-          widgets.value.push({
-            id: "rss-reader",
-            type: "rss",
-            enable: false,
-            colSpan: 1,
-            rowSpan: 2,
-            isPublic: true,
-          });
-        }
-        if (!widgets.value.find((w) => w.type === "sidebar")) {
-          widgets.value.push({
-            id: "sidebar",
-            type: "sidebar",
-            enable: false,
-            isPublic: true,
-          });
-        }
-      } else {
-        // Default widgets if empty
-        widgets.value = [
-          { id: "w1", type: "clock", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "w2", type: "weather", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "w3", type: "calendar", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "w5", type: "search", enable: true, isPublic: true },
-          { id: "w7", type: "quote", enable: true, isPublic: true },
-          {
-            id: "clockweather",
-            type: "clockweather",
-            enable: true,
-            colSpan: 1,
-            rowSpan: 1,
-            isPublic: true,
-          },
-          { id: "sidebar", type: "sidebar", enable: false, isPublic: true },
-          { id: "memo", type: "memo", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "todo", type: "todo", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          {
-            id: "calculator",
-            type: "calculator",
-            enable: true,
-            colSpan: 1,
-            rowSpan: 1,
-            isPublic: true,
-          },
-          { id: "ip", type: "ip", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "hot", type: "hot", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
-          { id: "player", type: "player", enable: true, colSpan: 2, rowSpan: 1, isPublic: true },
-        ];
-      }
-
-      if (data.appConfig) appConfig.value = { ...appConfig.value, ...data.appConfig };
-      if (!appConfig.value.background) appConfig.value.background = "/default-wallpaper.svg";
-
-      if (!appConfig.value.searchEngines || appConfig.value.searchEngines.length === 0) {
-        appConfig.value.searchEngines = [
-          {
-            id: "google",
-            key: "google",
-            label: "Google",
-            urlTemplate: "https://www.google.com/search?q={q}",
-          },
-          {
-            id: "bing",
-            key: "bing",
-            label: "Bing",
-            urlTemplate: "https://cn.bing.com/search?q={q}",
-          },
-          {
-            id: "baidu",
-            key: "baidu",
-            label: "百度",
-            urlTemplate: "https://www.baidu.com/s?wd={q}",
-          },
-        ];
-      }
-      if (!appConfig.value.defaultSearchEngine) appConfig.value.defaultSearchEngine = "google";
-      if (typeof appConfig.value.rememberLastEngine !== "boolean")
-        appConfig.value.rememberLastEngine = true;
-
-      const cachedShape = localStorage.getItem("flat-nas-icon-shape");
-      if (cachedShape) appConfig.value.iconShape = cachedShape;
-      const cachedColor = localStorage.getItem("flat-nas-group-title-color");
-      if (cachedColor) appConfig.value.groupTitleColor = cachedColor;
-      const cachedCardBg = localStorage.getItem("flat-nas-card-bg-color");
-      if (cachedCardBg) appConfig.value.cardBgColor = cachedCardBg;
-
-      if (data.rssFeeds) rssFeeds.value = data.rssFeeds;
-      if (data.rssCategories) rssCategories.value = data.rssCategories;
-
-      checkUpdate();
-      if (!socketListenersBound) {
-        socket.on("memo:updated", ({ widgetId, content }) => {
-          const w = widgets.value.find((x) => x.id === widgetId);
-          if (w) w.data = content;
-        });
-        socket.on("todo:updated", ({ widgetId, content }) => {
-          const w = widgets.value.find((x) => x.id === widgetId);
-          if (w) w.data = content;
-        });
-        socketListenersBound = true;
-      }
-      if (token.value) {
-        socket.emit("auth", { token: token.value });
-      }
-      saveToCache(data);
-      isInitializing = false;
-    } catch (e) {
-      console.error("加载失败", e);
-      isInitializing = false;
+      });
+      socketListenersBound = true;
     }
+    if (token.value) {
+      socket.emit("auth", { token: token.value });
+    }
+    isInitializing = false;
   };
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;

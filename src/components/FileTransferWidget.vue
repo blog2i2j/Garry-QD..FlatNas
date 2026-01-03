@@ -767,7 +767,7 @@ watch(
   () => [activeTab.value, items.value],
   async ([tab]) => {
     if (!store.isLogged) return;
-    if (tab !== "photos") return;
+    if (tab !== "photos" && tab !== "chat" && tab !== "files") return;
     await nextTick();
     const photoItems = items.value.filter(
       (x): x is Extract<TransferItem, { type: "file" }> =>
@@ -1198,9 +1198,18 @@ onBeforeUnmount(() => {
                   >
                     <div class="flex items-center gap-3">
                       <div
-                        class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10"
+                        class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10 overflow-hidden"
                       >
-                        {{ String(it.file.type || "").startsWith("image/") ? "🖼️" : "📄" }}
+                        <img
+                          v-if="
+                            String(it.file.type || '').startsWith('image/') && blobUrlById[it.id]
+                          "
+                          :src="blobUrlById[it.id]"
+                          class="w-full h-full object-cover"
+                        />
+                        <span v-else>
+                          {{ String(it.file.type || "").startsWith("image/") ? "🖼️" : "📄" }}
+                        </span>
                       </div>
                       <div class="min-w-0">
                         <div
@@ -1242,9 +1251,21 @@ onBeforeUnmount(() => {
                   "
                 />
                 <div
-                  class="w-9 h-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0"
+                  class="w-9 h-9 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden"
                 >
-                  <span v-if="it.type === 'file' && String(it.file.type || '').startsWith('image/')"
+                  <img
+                    v-if="
+                      it.type === 'file' &&
+                      String(it.file.type || '').startsWith('image/') &&
+                      blobUrlById[it.id]
+                    "
+                    :src="blobUrlById[it.id]"
+                    class="w-full h-full object-cover"
+                  />
+                  <span
+                    v-else-if="
+                      it.type === 'file' && String(it.file.type || '').startsWith('image/')
+                    "
                     >🖼️</span
                   >
                   <span v-else>📄</span>
@@ -1327,7 +1348,7 @@ onBeforeUnmount(() => {
               ref="composerRef"
               v-model="composerText"
               rows="1"
-              :placeholder="isSmallLayout ? '这里粘贴或拖入，或发送消息' : 'Shift+Enter 换行'"
+              :placeholder="isSmallLayout ? '粘贴/拖入 (Shift+Enter)' : 'Shift+Enter 换行'"
               class="resize-none rounded-xl border border-white/20 bg-white/10 outline-none text-white placeholder-white/50 focus:border-blue-400"
               :class="isSmallLayout ? 'w-full pr-8 pl-2 py-1 text-xs' : 'flex-1 px-3 py-2 text-sm'"
               @keydown.enter.prevent="

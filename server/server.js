@@ -726,12 +726,81 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
 });
 
 // GET /api/data
-app.get("/api/data", authenticateToken, async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-  try {
-    const username = req.user.username;
+// Public Groups API (for extension)
+app.get("/api/public/groups", async (req, res) => {
+  // Explicitly set CORS headers for this endpoint to ensure extension accessibility
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+  );
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 
-    // Check cache
+  let username = "admin";
+
+  // Auth Check
+  if (systemConfig.authMode === "multi") {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const decoded = jwt.verify(token, SECRET_KEY);
+      username = decoded.username;
+    } catch {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+  } else {
+    // Single mode: if token provided, use it, else default to admin
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        username = decoded.username;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Load data
+  if (!cachedUsersData[username]) {
+    const filePath = getUserFile(username);
+    try {
+      const json = await fs.readFile(filePath, "utf-8");
+      cachedUsersData[username] = JSON.parse(json);
+    } catch {
+      return res.status(404).json({ error: "User data not found" });
+    }
+  }
+
+  const userData = cachedUsersData[username];
+  res.json({ groups: userData.groups || [] });
+});
+
+app.get("/api/data", async (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    let username = "";
+    if (token) {
+      try {
+        const user = jwt.verify(token, SECRET_KEY);
+        if (user && typeof user === "object" && "username" in user) {
+          username = user.username;
+        }
+      } catch {
+        // Ignore invalid token
+      }
+    }
+
+    let isGuest = false;
+    if (!username) {
+      username = "admin";
+      isGuest = true;
+    }
+
     if (!cachedUsersData[username]) {
       const filePath = getUserFile(username);
       try {
@@ -739,22 +808,42 @@ app.get("/api/data", authenticateToken, async (req, res) => {
         cachedUsersData[username] = JSON.parse(json);
       } catch {
         if (username === "admin") {
-          // Should not happen if ensureInit works
           return res.status(500).json({ error: "Admin data missing" });
         }
         return res.status(404).json({ error: "User data not found" });
       }
     }
 
-    if (req.query.ping) {
-      return res.json({ success: true, ts: Date.now() });
-    }
-
-    const safeData = { ...cachedUsersData[username] };
+    const userData = cachedUsersData[username];
+    const safeData = { ...userData };
     delete safeData.password;
-
-    // Add username to response so frontend knows who we are viewing
     safeData.username = username;
+
+    // Fix: Allow guest access with isPublic: false
+    if (isGuest) {
+      console.log("[API Data] Guest access detected, filtering data...");
+      safeData.isPublic = false;
+      // Filter groups
+      if (safeData.groups) {
+        const originalCount = safeData.groups.reduce((acc, g) => acc + (g.items || []).length, 0);
+        safeData.groups = safeData.groups
+          .map((group) => ({
+            ...group,
+            items: (group.items || []).filter((item) => item.isPublic === true),
+          }))
+          .filter((group) => group.items.length > 0);
+        const newCount = safeData.groups.reduce((acc, g) => acc + (g.items || []).length, 0);
+        console.log(`[API Data] Filtered items: ${originalCount} -> ${newCount}`);
+      }
+      // Filter widgets
+      if (safeData.widgets) {
+        const originalW = safeData.widgets.length;
+        safeData.widgets = safeData.widgets.filter((w) => w.isPublic === true);
+        console.log(`[API Data] Filtered widgets: ${originalW} -> ${safeData.widgets.length}`);
+      }
+    } else {
+      console.log(`[API Data] Authenticated access: ${username}`);
+    }
 
     res.json(safeData);
   } catch (err) {
@@ -1140,6 +1229,14 @@ app.post("/api/admin/license", authenticateToken, async (req, res) => {
 
 // Add Bookmark
 app.post("/api/add-bookmark", async (req, res) => {
+  // Explicitly set CORS headers for this endpoint to ensure extension accessibility
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
+  );
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+
   // Auth Check: Permissive for single user mode, stricter for multi
   let username = "admin";
   if (systemConfig.authMode === "multi") {
