@@ -1350,7 +1350,11 @@ onBeforeUnmount(() => {
               rows="1"
               :placeholder="isSmallLayout ? '粘贴/拖入 (Shift+Enter)' : 'Shift+Enter 换行'"
               class="resize-none rounded-xl border border-white/20 bg-white/10 outline-none text-white placeholder-white/50 focus:border-blue-400"
-              :class="isSmallLayout ? 'w-full pr-8 pl-2 py-1 text-xs' : 'flex-1 px-3 py-2 text-sm'"
+              :class="
+                isSmallLayout
+                  ? 'w-full pr-8 pl-2 py-1 text-xs scrollbar-hide'
+                  : 'flex-1 px-3 py-2 text-sm'
+              "
               @keydown.enter.prevent="
                 (e) => {
                   if ((e as KeyboardEvent).shiftKey) {
@@ -1469,3 +1473,13 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+</style>
