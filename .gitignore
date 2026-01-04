@@ -137,3 +137,4 @@ server/data/*
 Thumbs.db
 .DS_Store
 desktop.ini
+.fnsync_temp_dir
