@@ -921,7 +921,7 @@ const fetchContainerStatuses = async () => {
 
   // Schedule next poll
   if (isMounted.value) {
-    containerPollTimer = setTimeout(fetchContainerStatuses, 5000);
+    containerPollTimer = setTimeout(fetchContainerStatuses, 12000);
   }
 };
 

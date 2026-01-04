@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
+import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { useMainStore } from "@/stores/main";
 import type { WidgetConfig } from "@/types";
 
@@ -313,6 +313,7 @@ const showToast = (msg: string, duration = 2000) => {
 };
 
 const fetchDockerInfo = async (silent = true) => {
+  if (!store.systemConfig.enableDocker && !useMock.value) return;
   if (useMock.value) return;
   try {
     const headers = store.getHeaders();
@@ -372,20 +373,12 @@ const startPolling = () => {
     cleanupCache();
 
     // 动态频率算法：
-    // 1. 错误状态：30秒 (降频避险)
-    // 2. 正常状态：每 5 个容器为一个请求单位，每增加一个单位增加 5 秒间隔
-    //    1-5个 -> 5s
-    //    6-10个 -> 10s
-    //    11-15个 -> 15s
-    let interval = 5000;
+    // 1. 错误状态：60秒 (降频避险)
+    // 2. 正常状态：固定 12 秒 (降低频率减少资源占用)
+    let interval = 12000;
 
     if (errorCount.value > 0) {
-      interval = 30000;
-    } else {
-      const count = containers.value.length;
-      // 向上市取整，至少 1 个单位
-      const units = Math.ceil(Math.max(count, 1) / 5);
-      interval = units * 5000;
+      interval = 60000;
     }
 
     // 重新调度下一次轮询
@@ -810,7 +803,7 @@ const getStatusColor = (state: string) => {
     <!-- 错误提示（如果有数据则只显示在顶部，没数据才全屏显示） -->
     <div
       v-if="error && !containers.length"
-      class="flex-1 flex flex-col items-center justify-center text-red-500 text-xs text-center p-2 gap-2"
+      class="flex-1 flex flex-col items-center justify-start pt-10 text-red-500 text-xs text-center p-2 gap-2"
     >
       <span>{{ error }}</span>
       <button

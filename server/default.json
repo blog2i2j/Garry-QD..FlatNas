@@ -814,9 +814,10 @@
       "id": "docker",
       "type": "docker",
       "enable": false,
-      "isPublic": true,
+      "isPublic": false,
       "colSpan": 1,
-      "rowSpan": 1
+      "rowSpan": 1,
+      "hideOnMobile": true
     }
   ],
   "appConfig": {
