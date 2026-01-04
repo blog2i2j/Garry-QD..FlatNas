@@ -58,7 +58,7 @@ export const useMainStore = defineStore("main", () => {
   const items = computed(() => groups.value.flatMap((g) => g.items));
   const rssFeeds = ref<RssFeed[]>([]);
   const rssCategories = ref<RssCategory[]>([]);
-  const systemConfig = ref({ authMode: "single", enableDocker: false }); // Default
+  const systemConfig = ref({ authMode: "single" }); // Default
 
   // Auth State
   const token = ref(localStorage.getItem("flat-nas-token") || "");
@@ -86,7 +86,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.49";
+  const currentVersion = "1.0.51";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -207,7 +207,7 @@ export const useMainStore = defineStore("main", () => {
     }
   };
 
-  const updateSystemConfig = async (newConfig: { authMode?: string; enableDocker?: boolean }) => {
+  const updateSystemConfig = async (newConfig: { authMode: string }) => {
     try {
       const res = await fetch("/api/system-config", {
         method: "POST",

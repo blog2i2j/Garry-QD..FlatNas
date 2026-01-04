@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useMainStore } from "@/stores/main";
 import type { WidgetConfig } from "@/types";
 
@@ -44,6 +44,12 @@ interface DockerInfo {
 }
 
 const store = useMainStore();
+
+// Polling intervals (ms)
+const POLL_INTERVAL_MIN = 12000;
+const POLL_INTERVAL_MAX = 17000;
+const POLL_INTERVAL_ERROR = 36000;
+
 const props = defineProps<{ widget?: WidgetConfig; compact?: boolean }>();
 
 const MB = 1024 * 1024;
@@ -281,9 +287,17 @@ const fetchContainers = async () => {
         error.value = data.error || "Docker 不可用";
         errorCount.value++;
 
-        // 即便 Docker 服务挂了，也只是提示，不停止轮询（除非用户关掉页面）
-        // 这样如果服务恢复了，马上就能看到
-        // if (errorCount.value >= 10) ... // 移除自动停止逻辑
+        // 如果 Docker 明确不可用，为了节省资源，直接停止自动轮询
+        // 但如果还在启动宽容期内（retryDeadline），则继续尝试
+        if (Date.now() < retryDeadline.value) {
+          error.value = (data.error || "Docker 不可用") + " (启动检测中...)";
+          // 不调用 stopPolling，让 startPolling 继续调度
+        } else {
+          // 超过宽容期，停止轮询
+          // 用户可以通过点击“重试连接”按钮手动重新开始
+          stopPolling();
+          return;
+        }
       } else {
         // 其他业务错误，保留数据，显示错误
         error.value = data.error || "获取数据失败";
@@ -313,7 +327,6 @@ const showToast = (msg: string, duration = 2000) => {
 };
 
 const fetchDockerInfo = async (silent = true) => {
-  if (!store.systemConfig.enableDocker && !useMock.value) return;
   if (useMock.value) return;
   try {
     const headers = store.getHeaders();
@@ -335,9 +348,14 @@ const fetchDockerInfo = async (silent = true) => {
   }
 };
 
+const retryDeadline = ref(0);
+const RETRY_WINDOW = 3 * 60 * 1000; // 3分钟
+const RETRY_INTERVAL = 10000; // 10秒
+
 const checkConnection = (silent = false) => {
   error.value = "";
   errorCount.value = 0;
+  retryDeadline.value = Date.now() + RETRY_WINDOW; // 重置重试窗口
   fetchContainers();
   fetchDockerInfo(silent);
   startPolling();
@@ -373,12 +391,18 @@ const startPolling = () => {
     cleanupCache();
 
     // 动态频率算法：
-    // 1. 错误状态：60秒 (降频避险)
-    // 2. 正常状态：固定 12 秒 (降低频率减少资源占用)
-    let interval = 12000;
+    // 1. 错误状态：
+    //    a. 启动宽容期内：10秒 (RETRY_INTERVAL)
+    //    b. 超过宽容期：30秒 (降频避险)
+    // 2. 正常状态：12-17秒随机
+    let interval = POLL_INTERVAL_MIN + Math.random() * (POLL_INTERVAL_MAX - POLL_INTERVAL_MIN);
 
     if (errorCount.value > 0) {
-      interval = 60000;
+      if (Date.now() < retryDeadline.value) {
+        interval = RETRY_INTERVAL;
+      } else {
+        interval = POLL_INTERVAL_ERROR;
+      }
     }
 
     // 重新调度下一次轮询

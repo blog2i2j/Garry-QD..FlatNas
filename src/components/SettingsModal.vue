@@ -2042,22 +2042,6 @@ watch(activeTab, (val) => {
                 Docker 管理 (内测中)
               </h4>
               <div v-if="dockerWidget" class="flex items-center gap-3 text-xs mr-[10px]">
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-600 font-bold">启用管理</span>
-                  <label class="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      v-model="store.systemConfig.enableDocker"
-                      @change="
-                        store.updateSystemConfig({ enableDocker: store.systemConfig.enableDocker })
-                      "
-                      class="sr-only peer"
-                    />
-                    <div
-                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
-                    ></div>
-                  </label>
-                </div>
                 <button
                   @click="checkDockerConnection"
                   class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-100 transition-colors font-bold"
@@ -2068,47 +2052,47 @@ watch(activeTab, (val) => {
             </div>
 
             <!-- Host Status Widget Section -->
-            <div
-              v-if="store.systemConfig.enableDocker"
-              class="space-y-3 mb-6 pb-6 border-b border-gray-100"
-            >
+            <div class="space-y-3 mb-6 pb-6 border-b border-gray-100">
               <div class="flex items-center justify-between">
+                <span class="text-sm font-bold text-gray-800">宿主机状态组件</span>
                 <div class="flex items-center gap-4">
-                  <span class="text-sm font-bold text-gray-800">宿主机状态组件</span>
-                  <div v-if="systemStatusWidget" class="flex items-center gap-2">
-                    <span class="text-xs text-gray-700 font-medium">公开访问</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        v-model="systemStatusWidget.isPublic"
-                        class="sr-only peer"
-                      />
-                      <div
-                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
-                      ></div>
-                    </label>
+                  <div
+                    v-if="systemStatusWidget && systemStatusWidget.enable"
+                    class="flex items-center gap-2 animate-fade-in"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-700 font-medium">公开访问</span>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          v-model="systemStatusWidget.isPublic"
+                          class="sr-only peer"
+                        />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
+                        ></div>
+                      </label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-700 font-medium">手机端显示</span>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          :checked="!systemStatusWidget.hideOnMobile"
+                          @change="onMobileSystemStatusDisplayChange"
+                          class="sr-only peer"
+                        />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"
+                        ></div>
+                      </label>
+                    </div>
                   </div>
-                  <div v-if="systemStatusWidget" class="flex items-center gap-2">
-                    <span class="text-xs text-gray-700 font-medium">手机端显示</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        :checked="!systemStatusWidget.hideOnMobile"
-                        @change="onMobileSystemStatusDisplayChange"
-                        class="sr-only peer"
-                      />
-                      <div
-                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"
-                      ></div>
-                    </label>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-700 font-medium">启用</span>
                   <label class="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       :checked="systemStatusWidget?.enable"
+                      aria-label="启用"
                       @change="
                         (e) => {
                           if ((e.target as HTMLInputElement).checked) enableSystemStatusWidget();
@@ -2123,6 +2107,7 @@ watch(activeTab, (val) => {
                     <div
                       class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
                     ></div>
+                    <span class="text-sm text-gray-700 ml-3">启用</span>
                   </label>
                 </div>
               </div>
@@ -2155,46 +2140,70 @@ watch(activeTab, (val) => {
               </div>
             </div>
 
-            <div v-if="dockerWidget && store.systemConfig.enableDocker" class="space-y-3">
+            <div v-if="dockerWidget" class="space-y-3">
               <div class="flex items-center justify-between">
+                <span class="text-sm font-bold text-gray-800">Docker 组件</span>
                 <div class="flex items-center gap-4">
-                  <span class="text-sm font-bold text-gray-800">Docker 组件</span>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-700 font-medium">公开访问</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" v-model="dockerWidget.isPublic" class="sr-only peer" />
-                      <div
-                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
-                      ></div>
-                    </label>
+                  <div v-if="dockerWidget.enable" class="flex items-center gap-2 animate-fade-in">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-700 font-medium">公开访问</span>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          v-model="dockerWidget.isPublic"
+                          class="sr-only peer"
+                        />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
+                        ></div>
+                      </label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-gray-700 font-medium">手机端显示</span>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          :checked="!dockerWidget.hideOnMobile"
+                          @change="onMobileDockerDisplayChange"
+                          class="sr-only peer"
+                        />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"
+                        ></div>
+                      </label>
+                    </div>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-700 font-medium">手机端显示</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        :checked="!dockerWidget.hideOnMobile"
-                        @change="onMobileDockerDisplayChange"
-                        class="sr-only peer"
-                      />
-                      <div
-                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"
-                      ></div>
-                    </label>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-700 font-medium">启用</span>
                   <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="dockerWidget.enable" class="sr-only peer" />
+                    <input
+                      type="checkbox"
+                      v-model="dockerWidget.enable"
+                      aria-label="启用"
+                      class="sr-only peer"
+                    />
                     <div
                       class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
                     ></div>
+                    <span class="text-sm text-gray-700 ml-3">启用</span>
                   </label>
                 </div>
               </div>
 
               <div class="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-gray-400">支持启动/停止/重启</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      :checked="!!dockerWidget.data?.useMock"
+                      @change="(e) => toggleDockerMock((e.target as HTMLInputElement).checked)"
+                      class="sr-only peer"
+                    />
+                    <div
+                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"
+                    ></div>
+                  </label>
+                  <span class="text-[10px] text-gray-500">使用模拟数据</span>
+                </div>
                 <div class="flex items-center gap-2">
                   <span class="text-xs text-gray-700 font-medium">内网主机</span>
                   <input
@@ -2217,13 +2226,6 @@ watch(activeTab, (val) => {
               <div class="h-[500px]">
                 <DockerWidget :widget="dockerWidget" :compact="true" />
               </div>
-            </div>
-
-            <div
-              v-else-if="!store.systemConfig.enableDocker"
-              class="text-center py-8 text-gray-500"
-            >
-              <p class="mb-4">请先开启 Docker 管理</p>
             </div>
 
             <div v-else class="text-center py-8 text-gray-500">

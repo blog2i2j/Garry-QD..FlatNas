@@ -27,6 +27,15 @@ const socketPath =
   (process.platform === "win32" ? "//./pipe/docker_engine" : "/var/run/docker.sock");
 const docker = new Docker({ socketPath });
 
+// Polling interval for Docker stats (ms)
+const DOCKER_STATS_POLL_INTERVAL = 5000;
+// Timeout for Docker stats fetching (ms) - 2.5x polling interval
+const DOCKER_STATS_TIMEOUT = DOCKER_STATS_POLL_INTERVAL * 2.5;
+
+// Max idle time before stopping stats collector (ms) - 60 seconds
+const MAX_IDLE_TIME = 60000;
+let lastDockerRequestTime = 0;
+
 // --- Docker Stats Collector & Cache ---
 const containerStatsCache = new Map(); // id -> { cpuPercent, memUsage, memLimit, memPercent, netIO, blockIO, timestamp }
 let isStatsCollectorRunning = false;
@@ -106,12 +115,6 @@ const startStatsCollector = () => {
   isStatsCollectorRunning = true;
 
   const collect = async () => {
-    // Check if Docker management is enabled
-    if (systemConfig.enableDocker === false) {
-      setTimeout(collect, 5000);
-      return;
-    }
-
     try {
       // 1. Get running containers
       // listContainers returns basic info.
@@ -133,7 +136,7 @@ const startStatsCollector = () => {
             // Promise.race for timeout
             const statsPromise = container.stats({ stream: false });
             const timeoutPromise = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Stats timeout")), 5000),
+              setTimeout(() => reject(new Error("Stats timeout")), DOCKER_STATS_TIMEOUT),
             );
 
             const rawStats = await Promise.race([statsPromise, timeoutPromise]);
@@ -163,19 +166,17 @@ const startStatsCollector = () => {
       }
     } catch (e) {
       console.error("Stats collector error:", e);
-      setTimeout(collect, 10000);
-      return;
+    } finally {
+      // Schedule next run
+      setTimeout(collect, 5000);
     }
-
-    // Schedule next run
-    setTimeout(collect, 5000);
   };
 
   collect();
 };
 
-// Start collector moved to ensureInit
-// startStatsCollector();
+// Start collector
+startStatsCollector();
 
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -327,7 +328,7 @@ const readStreamToText = async (stream, maxBytes, encoding = "utf-8") => {
 
 // In-memory cache for all users: { username: data }
 const cachedUsersData = {};
-let systemConfig = { authMode: "single", enableDocker: false }; // default: 'single' or 'multi'
+let systemConfig = { authMode: "single" }; // default: 'single' or 'multi'
 
 async function atomicWrite(filePath, content) {
   const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -380,8 +381,7 @@ async function ensureInit() {
   // Load System Config
   try {
     const sysContent = await fs.readFile(SYSTEM_CONFIG_FILE, "utf-8");
-    const loaded = JSON.parse(sysContent);
-    systemConfig = { ...systemConfig, ...loaded };
+    systemConfig = JSON.parse(sysContent);
   } catch {
     await fs.writeFile(SYSTEM_CONFIG_FILE, JSON.stringify(systemConfig, null, 2));
   }
@@ -576,6 +576,10 @@ app.get("/api/system/stats", authenticateToken, async (req, res) => {
 
 // Docker Management APIs
 app.get("/api/docker/containers", authenticateToken, async (req, res) => {
+  // Update last access time and ensure collector is running
+  lastDockerRequestTime = Date.now();
+  startStatsCollector();
+
   try {
     const containers = await docker.listContainers({ all: true });
 
@@ -779,20 +783,9 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
   if (!req.user || req.user.username !== "admin") {
     return res.status(403).json({ error: "Only admin can change system config" });
   }
-  const { authMode, enableDocker } = req.body;
-  let changed = false;
-
+  const { authMode } = req.body;
   if (authMode && (authMode === "single" || authMode === "multi")) {
     systemConfig.authMode = authMode;
-    changed = true;
-  }
-
-  if (typeof enableDocker === "boolean") {
-    systemConfig.enableDocker = enableDocker;
-    changed = true;
-  }
-
-  if (changed) {
     await atomicWrite(SYSTEM_CONFIG_FILE, JSON.stringify(systemConfig, null, 2));
     res.json({ success: true, systemConfig });
   } else {
@@ -930,10 +923,9 @@ app.get("/api/data", async (req, res) => {
 // Login
 const recordFailedAttempt = (ip) => {
   if (!loginAttempts[ip]) {
-    loginAttempts[ip] = { count: 0, lockUntil: 0, updatedAt: Date.now() };
+    loginAttempts[ip] = { count: 0, lockUntil: 0 };
   }
   const entry = loginAttempts[ip];
-  entry.updatedAt = Date.now();
   entry.count++;
   if (entry.count >= 5) {
     entry.lockUntil = Date.now() + 15 * 60 * 1000;
@@ -3356,59 +3348,3 @@ io.on("connection", (socket) => {
 httpServer.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
-
-// --- Memory Cleanup Task ---
-// Runs every hour to clean up expired cache entries and old login attempts
-setInterval(
-  () => {
-    const now = Date.now();
-    let cleanedCount = 0;
-
-    // 1. Cleanup HOT_CACHE.custom
-    if (HOT_CACHE.custom instanceof Map) {
-      for (const [key, val] of HOT_CACHE.custom.entries()) {
-        if (now - val.ts > CACHE_TTL_MS) {
-          HOT_CACHE.custom.delete(key);
-          cleanedCount++;
-        }
-      }
-    }
-
-    // 2. Cleanup HOT_CACHE.rss
-    if (HOT_CACHE.rss instanceof Map) {
-      for (const [key, val] of HOT_CACHE.rss.entries()) {
-        if (now - val.ts > CACHE_TTL_MS) {
-          HOT_CACHE.rss.delete(key);
-          cleanedCount++;
-        }
-      }
-    }
-
-    // 3. Cleanup loginAttempts
-    // Remove entries that are not locked and haven't been updated for 1 hour
-    // OR entries that were locked but lock time has passed (and also old)
-    const LOGIN_ATTEMPT_TTL = 60 * 60 * 1000; // 1 hour
-    for (const ip in loginAttempts) {
-      const entry = loginAttempts[ip];
-      // If locked, check if lock expired.
-      const isLocked = entry.lockUntil > now;
-
-      // If not locked, and last update was long ago -> delete
-      if (!isLocked && entry.updatedAt && now - entry.updatedAt > LOGIN_ATTEMPT_TTL) {
-        delete loginAttempts[ip];
-        cleanedCount++;
-      }
-      // If locked, we keep it until lock expires. Once lock expires, it falls into above case eventually.
-      // If entry has no updatedAt (legacy), we might want to set it or delete it.
-      else if (!entry.updatedAt && !isLocked) {
-        delete loginAttempts[ip];
-        cleanedCount++;
-      }
-    }
-
-    if (cleanedCount > 0) {
-      console.log(`[Memory Cleanup] Removed ${cleanedCount} expired entries.`);
-    }
-  },
-  60 * 60 * 1000,
-); // Run every hour
