@@ -86,7 +86,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.51";
+  const currentVersion = "1.0.52";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -510,6 +510,12 @@ export const useMainStore = defineStore("main", () => {
           if (w) w.data = content;
         });
         socket.on("data-updated", async ({ username: updatedUser }) => {
+          // 如果有正在进行的保存或等待中的保存，则忽略本次更新，以本地状态为准
+          // 避免快速操作时被旧的服务器状态覆盖
+          if (saveTimer !== null || isSaving.value) {
+            return;
+          }
+
           if (
             updatedUser === username.value ||
             (username.value === "admin" && updatedUser === "admin")
@@ -526,12 +532,17 @@ export const useMainStore = defineStore("main", () => {
   };
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  const isSaving = ref(false);
   let lastSavedJson = "";
 
   const saveData = async (immediate = false) => {
-    if (saveTimer) clearTimeout(saveTimer);
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
 
     const doSave = async () => {
+      isSaving.value = true;
       try {
         if (!isLogged.value) {
           return;
@@ -575,6 +586,8 @@ export const useMainStore = defineStore("main", () => {
         }
       } catch (e) {
         console.error("保存失败", e);
+      } finally {
+        isSaving.value = false;
       }
     };
 
@@ -582,7 +595,10 @@ export const useMainStore = defineStore("main", () => {
       return doSave();
     }
 
-    saveTimer = setTimeout(doSave, 500);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      doSave();
+    }, 500);
   };
 
   const cleanInvalidGroups = () => {

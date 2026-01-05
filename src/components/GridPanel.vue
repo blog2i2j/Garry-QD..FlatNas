@@ -234,6 +234,7 @@ const draggableWidgets = computed({
 
 const layoutData = ref<GridLayoutItem[]>([]);
 let skipNextLayoutSave = false;
+let isInternalUpdate = false;
 const { deviceKey, isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
 const checkVisible = (obj?: WidgetConfig | NavItem) => {
   if (!obj) return false;
@@ -256,6 +257,8 @@ const rowHeight = computed(() =>
 watch(
   () => [store.widgets, widgetColNum.value, deviceKey.value],
   () => {
+    if (isInternalUpdate) return;
+
     const visibleWidgets = store.widgets.filter(
       (w) =>
         checkVisible(w) &&
@@ -336,6 +339,8 @@ const handleLayoutUpdated = (newLayout: GridLayoutItem[]) => {
   }
   if (!changed) return;
 
+  isInternalUpdate = true;
+
   newLayout.forEach((l) => {
     const w = store.widgets.find((sw) => sw.id === l.i);
     if (w) {
@@ -360,6 +365,9 @@ const handleLayoutUpdated = (newLayout: GridLayoutItem[]) => {
     }
   });
   store.saveData();
+  nextTick(() => {
+    isInternalUpdate = false;
+  });
 };
 
 const displayGroups = computed(() => {
