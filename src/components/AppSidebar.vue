@@ -18,6 +18,11 @@ const props = defineProps<{
 const emit = defineEmits(["update:collapsed"]);
 const store = useMainStore();
 const { isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
+const isHovered = ref(false);
+const isCollapsed = computed(() => {
+  if (isMobile.value) return props.collapsed;
+  return props.collapsed && !isHovered.value;
+});
 const fileInput = ref<HTMLInputElement | null>(null);
 const viewMode = ref<"bookmarks" | "groups">(store.appConfig.sidebarViewMode || "bookmarks");
 
@@ -374,34 +379,30 @@ const menuItems = computed(() => {
 
 <template>
   <div
-    class="flex flex-col transition-all duration-300 z-50 fixed left-4 top-4 max-h-[90vh] rounded-3xl"
+    class="flex flex-col transition-all duration-300 z-50 fixed left-4 max-h-[90vh] rounded-3xl backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20 text-black"
     :class="[
-      isMobile && collapsed
-        ? 'w-auto h-auto rounded-lg top-2 left-2 bottom-auto'
-        : 'backdrop-blur-md shadow-2xl',
-      collapsed ? (isMobile ? 'w-auto' : 'w-[68px]') : 'w-64',
-      store.appConfig.background
-        ? isMobile && collapsed
-          ? 'text-white bg-black/10 backdrop-blur-md border border-white/10 shadow-sm'
-          : 'bg-black/60 border border-white/10 text-white'
-        : isMobile && collapsed
-          ? 'text-gray-700'
-          : 'bg-white/80 border border-gray-200 text-gray-700',
+      isMobile && isCollapsed ? 'w-auto h-auto rounded-lg top-2 left-2 bottom-auto' : 'top-4',
+      isCollapsed && !isMobile
+        ? 'w-[48px] !top-1/2 !-translate-y-1/2 max-h-[calc(100vh-2rem)]'
+        : '',
+      isCollapsed ? (isMobile ? 'w-auto' : 'w-[48px]') : 'w-64',
     ]"
+    @mouseenter="isHovered = true"
+    @mouseleave="isHovered = false"
   >
     <!-- Toggle Button -->
     <div
-      class="flex items-center"
+      class="flex items-center text-black"
       :class="[
-        isMobile && collapsed ? 'p-1' : 'px-3 py-4 border-b',
-        store.appConfig.background ? 'border-white/10' : 'border-gray-100',
-        collapsed ? 'justify-center' : 'justify-between',
+        isMobile && isCollapsed ? 'p-1' : 'px-3 py-4 border-b',
+        'border-white/15',
+        isCollapsed ? 'justify-center' : 'justify-between',
       ]"
     >
       <button
-        v-if="!collapsed"
+        v-if="!isCollapsed"
         @click="toggleViewMode"
-        class="font-bold text-lg truncate hover:opacity-70 transition-opacity flex items-center gap-1"
+        class="font-bold text-lg truncate hover:opacity-70 transition-opacity flex items-center gap-1 text-black"
         :title="viewMode === 'bookmarks' ? '切换到分组导航' : '切换到书签'"
       >
         {{ viewMode === "bookmarks" ? "收藏夹" : "快捷导航" }}
@@ -421,10 +422,9 @@ const menuItems = computed(() => {
         </svg>
       </button>
       <button
-        v-if="store.isLogged && !collapsed && viewMode === 'bookmarks'"
+        v-if="store.isLogged && !isCollapsed && viewMode === 'bookmarks'"
         @click="openAddModal"
-        class="p-1.5 rounded-lg transition-colors group relative"
-        :class="store.appConfig.background ? 'hover:bg-white/10' : 'hover:bg-gray-100'"
+        class="p-1.5 rounded-xl transition-all group relative bg-white/10 backdrop-blur-[8px] border border-white/15 hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 text-black"
         title="快速添加书签"
       >
         <svg
@@ -440,21 +440,18 @@ const menuItems = computed(() => {
       </button>
       <button
         @click="toggle"
-        class="p-1.5 rounded-lg transition-colors group relative"
-        :class="[
-          store.appConfig.background ? 'hover:bg-white/10' : 'hover:bg-gray-100',
-          collapsed ? 'w-full flex justify-center' : '',
-        ]"
+        class="p-1.5 rounded-xl transition-all group relative bg-white/10 backdrop-blur-[8px] border border-white/15 hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 text-black"
+        :class="[isCollapsed ? 'w-10 h-10 flex justify-center items-center' : '']"
         title="Ctrl+B 切换侧边栏"
       >
         <svg
-          v-if="collapsed"
+          v-if="isCollapsed"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
           stroke-width="1.5"
           stroke="currentColor"
-          class="w-6 h-6"
+          class="w-5 h-5"
         >
           <path
             stroke-linecap="round"
@@ -479,19 +476,24 @@ const menuItems = computed(() => {
     <!-- Main Content -->
     <div
       ref="scrollContainer"
-      class="flex-1 overflow-y-auto py-4 space-y-2 px-3 overscroll-contain"
-      :class="{ 'no-scrollbar': collapsed }"
-      v-show="!isMobile || !collapsed"
+      class="flex-1 overflow-y-auto py-2 space-y-1 px-1 overscroll-contain custom-scrollbar"
+      :class="{ 'no-scrollbar': isCollapsed, 'flex flex-col items-center': isCollapsed }"
+      v-show="!isMobile || !isCollapsed"
     >
       <!-- Bookmarks View -->
       <template v-if="viewMode === 'bookmarks'">
         <template v-if="bookmarks.length > 0">
-          <div v-for="category in bookmarks" :key="category.id" class="space-y-1">
+          <div
+            v-for="category in bookmarks"
+            :key="category.id"
+            class="space-y-1"
+            :class="{ 'flex flex-col items-center w-full': isCollapsed }"
+          >
             <!-- Category Title -->
             <div
-              v-if="!collapsed"
+              v-if="!isCollapsed"
               @click="toggleCategory(category)"
-              class="w-full px-2 py-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider opacity-50 hover:opacity-100 transition-opacity cursor-pointer group/header"
+              class="w-full px-2 py-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black opacity-70 hover:opacity-100 transition-opacity cursor-pointer group/header drop-shadow-[0_1px_2px_rgba(255,255,255,0.4)]"
             >
               <span class="truncate flex-1">{{ category.title }}</span>
 
@@ -539,26 +541,28 @@ const menuItems = computed(() => {
             </div>
 
             <!-- Items -->
-            <div v-show="!category.collapsed || collapsed">
+            <div
+              v-show="!category.collapsed || isCollapsed"
+              :class="{ 'flex flex-col items-center w-full space-y-1': isCollapsed }"
+            >
               <div
                 v-for="item in category.children"
                 :key="item.id"
-                class="w-full flex items-center gap-2 p-1.5 rounded-lg transition-all group relative"
+                class="w-full flex items-center gap-2 transition-all group relative hover:bg-white/25 text-black"
                 :class="[
-                  store.appConfig.background
-                    ? 'hover:bg-white/10 text-white/90'
-                    : 'hover:bg-gray-100 text-gray-600',
+                  isCollapsed ? 'justify-center w-10 h-10 p-0 rounded-xl' : 'p-1.5 rounded-lg',
                 ]"
               >
                 <a
                   :href="item.url"
                   target="_blank"
                   class="flex-1 flex items-center min-w-0"
-                  :class="collapsed ? 'justify-center' : 'gap-2'"
+                  :class="isCollapsed ? 'justify-center w-full h-full' : 'gap-2'"
                 >
                   <!-- Icon -->
                   <div
-                    class="w-6 h-6 flex-shrink-0 flex items-center justify-center overflow-hidden"
+                    class="flex-shrink-0 flex items-center justify-center overflow-hidden"
+                    :class="isCollapsed ? 'w-5 h-5' : 'w-6 h-6'"
                   >
                     <img
                       v-if="item.icon"
@@ -574,9 +578,7 @@ const menuItems = computed(() => {
                   <!-- Label -->
                   <span
                     class="font-medium whitespace-nowrap transition-all duration-300 origin-left truncate text-sm"
-                    :class="
-                      collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto flex-1'
-                    "
+                    :class="isCollapsed ? 'hidden' : 'opacity-100 w-auto flex-1'"
                   >
                     {{ item.title }}
                   </span>
@@ -584,7 +586,7 @@ const menuItems = computed(() => {
 
                 <!-- Edit/Delete Buttons (Visible on Hover & Logged In) -->
                 <div
-                  v-if="store.isLogged && !collapsed"
+                  v-if="store.isLogged && !isCollapsed"
                   class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <button
@@ -630,19 +632,13 @@ const menuItems = computed(() => {
                 </div>
 
                 <div
-                  v-if="collapsed"
-                  class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200"
-                  :class="
-                    store.appConfig.background
-                      ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-100'
-                      : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-                  "
+                  v-if="isCollapsed"
+                  class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-100"
                 >
                   {{ item.title }}
                   <!-- Arrow -->
                   <div
-                    class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent"
-                    :class="store.appConfig.background ? 'border-r-black/80' : 'border-r-gray-800'"
+                    class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
                   ></div>
                 </div>
               </div>
@@ -666,15 +662,10 @@ const menuItems = computed(() => {
           </svg>
           <span class="text-xs">暂无书签</span>
         </div>
-        <div v-if="store.isLogged && !collapsed" class="flex justify-center p-2 mt-auto">
+        <div v-if="store.isLogged && !isCollapsed" class="flex justify-center p-2 mt-auto">
           <button
             @click="openAddModal"
-            class="p-2 rounded-lg transition-colors group relative w-full flex items-center justify-center gap-2 border border-dashed"
-            :class="[
-              store.appConfig.background
-                ? 'hover:bg-white/10 border-white/20 text-white/70'
-                : 'hover:bg-gray-100 border-gray-300 text-gray-500',
-            ]"
+            class="p-2 rounded-lg transition-colors group relative w-full flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
             title="快速添加书签"
           >
             <svg
@@ -700,26 +691,24 @@ const menuItems = computed(() => {
           class="space-y-1"
           :animation="150"
           :forceFallback="true"
-          :disabled="collapsed"
+          :disabled="isCollapsed"
           handle=".drag-handle"
           @end="store.saveData()"
+          :class="{ 'flex flex-col items-center w-full': isCollapsed }"
         >
           <button
             v-for="group in store.groups"
             :key="group.id"
             @click="scrollToGroup(group.id)"
-            class="w-full flex items-center p-2 rounded-lg transition-all group relative text-left"
+            class="w-full flex items-center transition-all group relative text-left text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
             :class="[
-              store.appConfig.background
-                ? 'hover:bg-white/10 text-white/90'
-                : 'hover:bg-gray-100 text-gray-600',
-              collapsed ? 'justify-center' : 'gap-2',
+              isCollapsed ? 'justify-center w-10 h-10 p-0 rounded-xl' : 'p-2 rounded-lg gap-2',
             ]"
           >
             <!-- Icon/Indicator -->
             <div
-              class="w-5 h-5 flex-shrink-0 flex items-center justify-center drag-handle"
-              :class="!collapsed ? 'cursor-move' : ''"
+              class="flex-shrink-0 flex items-center justify-center"
+              :class="[isCollapsed ? 'w-5 h-5' : 'w-5 h-5']"
             >
               <img
                 v-if="group.icon"
@@ -735,44 +724,51 @@ const menuItems = computed(() => {
             <!-- Label -->
             <span
               class="font-medium whitespace-nowrap transition-all duration-300 origin-left flex-1 truncate text-sm"
-              :class="collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'"
+              :class="isCollapsed ? 'hidden' : 'opacity-100 w-auto'"
             >
               {{ group.title }}
             </span>
 
+            <!-- Drag Handle (Right) -->
+            <div
+              v-if="!isCollapsed"
+              class="drag-handle cursor-move p-1 text-black/30 hover:text-black/80 transition-colors select-none text-xs font-bold"
+              title="拖动排序"
+            >
+              ::
+            </div>
+
             <!-- Tooltip for collapsed -->
             <div
-              v-if="collapsed"
-              class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200"
-              :class="
-                store.appConfig.background
-                  ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-100'
-                  : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-              "
+              v-if="isCollapsed"
+              class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-100"
             >
               {{ group.title }}
               <!-- Arrow -->
               <div
-                class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent"
-                :class="store.appConfig.background ? 'border-r-black/80' : 'border-r-gray-800'"
+                class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
               ></div>
             </div>
           </button>
         </VueDraggable>
-        <div v-else-if="store.groups.length > 0" class="space-y-1">
+        <div
+          v-else-if="store.groups.length > 0"
+          class="space-y-1"
+          :class="{ 'flex flex-col items-center w-full': isCollapsed }"
+        >
           <button
             v-for="group in store.groups"
             :key="group.id"
             @click="scrollToGroup(group.id)"
-            class="w-full flex items-center p-2 rounded-lg transition-all group relative text-left"
+            class="w-full flex items-center transition-all group relative text-left text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
             :class="[
-              store.appConfig.background
-                ? 'hover:bg-white/10 text-white/90'
-                : 'hover:bg-gray-100 text-gray-600',
-              collapsed ? 'justify-center' : 'gap-2',
+              isCollapsed ? 'justify-center w-10 h-10 p-0 rounded-xl' : 'p-2 rounded-lg gap-2',
             ]"
           >
-            <div class="w-5 h-5 flex-shrink-0 flex items-center justify-center">
+            <div
+              class="flex-shrink-0 flex items-center justify-center"
+              :class="isCollapsed ? 'w-5 h-5' : 'w-5 h-5'"
+            >
               <img
                 v-if="group.icon"
                 :src="group.icon"
@@ -785,23 +781,17 @@ const menuItems = computed(() => {
             </div>
             <span
               class="font-medium whitespace-nowrap transition-all duration-300 origin-left flex-1 truncate text-sm"
-              :class="collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'"
+              :class="isCollapsed ? 'hidden' : 'opacity-100 w-auto'"
             >
               {{ group.title }}
             </span>
             <div
-              v-if="collapsed"
-              class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200"
-              :class="
-                store.appConfig.background
-                  ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-100'
-                  : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-              "
+              v-if="isCollapsed"
+              class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-100"
             >
               {{ group.title }}
               <div
-                class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent"
-                :class="store.appConfig.background ? 'border-r-black/80' : 'border-r-gray-800'"
+                class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
               ></div>
             </div>
           </button>
@@ -814,21 +804,15 @@ const menuItems = computed(() => {
 
     <!-- Bottom Toolbar (Menu Items + Import) -->
     <div
-      v-if="!collapsed || (collapsed && viewMode === 'bookmarks' && store.isLogged)"
-      class="p-2 border-t"
-      :class="store.appConfig.background ? 'border-white/10' : 'border-gray-100'"
+      v-if="!isCollapsed || (isCollapsed && viewMode === 'bookmarks' && store.isLogged)"
+      class="p-2 border-t border-white/15"
     >
       <div class="flex flex-wrap items-center justify-center gap-1">
         <!-- Add Bookmark Button (Collapsed) -->
         <button
-          v-if="collapsed"
+          v-if="isCollapsed"
           @click="openAddModal"
-          class="p-2 rounded-lg transition-all group relative"
-          :class="[
-            store.appConfig.background
-              ? 'hover:bg-white/10 text-white/90'
-              : 'hover:bg-gray-100 text-gray-600',
-          ]"
+          class="p-2 rounded-xl transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
           title="快速添加书签"
         >
           <div class="w-5 h-5 flex-shrink-0">
@@ -845,63 +829,41 @@ const menuItems = computed(() => {
           </div>
           <!-- Tooltip -->
           <div
-            class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200"
-            :class="
-              store.appConfig.background
-                ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100'
-                : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-            "
+            class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
           >
             添加书签
             <div
-              class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent"
-              :class="store.appConfig.background ? 'border-r-black/80' : 'border-r-gray-800'"
+              class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
             ></div>
           </div>
         </button>
 
         <!-- Menu Items -->
         <button
-          v-for="item in !collapsed ? menuItems : []"
+          v-for="item in !isCollapsed ? menuItems : []"
           :key="item.id"
           @click="item.action"
-          class="p-2 rounded-lg transition-all group relative"
-          :class="[
-            store.appConfig.background
-              ? 'hover:bg-white/10 text-white/90'
-              : 'hover:bg-gray-100 text-gray-600',
-          ]"
+          class="p-2 rounded-lg transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
           :title="item.label"
         >
           <div class="w-5 h-5 flex-shrink-0" v-html="item.icon"></div>
 
           <div
-            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200"
-            :class="
-              store.appConfig.background
-                ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100'
-                : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-            "
+            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
           >
             {{ item.label }}
             <!-- Arrow -->
             <div
-              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent"
-              :class="store.appConfig.background ? 'border-t-black/80' : 'border-t-gray-800'"
+              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-black/80"
             ></div>
           </div>
         </button>
 
         <!-- Import Button -->
         <button
-          v-if="store.isLogged && !collapsed"
+          v-if="store.isLogged && !isCollapsed"
           @click="handleImportClick"
-          class="p-2 rounded-lg transition-all group relative"
-          :class="[
-            store.appConfig.background
-              ? 'hover:bg-white/10 text-white/90'
-              : 'hover:bg-gray-100 text-gray-600',
-          ]"
+          class="p-2 rounded-lg transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
           title="导入书签"
         >
           <div class="w-5 h-5 flex-shrink-0">
@@ -922,17 +884,11 @@ const menuItems = computed(() => {
           </div>
 
           <div
-            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200"
-            :class="
-              store.appConfig.background
-                ? 'bg-black/80 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100'
-                : 'bg-gray-800 opacity-0 group-hover:opacity-100'
-            "
+            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
           >
             导入书签
             <div
-              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent"
-              :class="store.appConfig.background ? 'border-t-black/80' : 'border-t-gray-800'"
+              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-black/80"
             ></div>
           </div>
 
@@ -1122,6 +1078,21 @@ const menuItems = computed(() => {
 .no-scrollbar {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
 }
 
 .animate-fade-in {

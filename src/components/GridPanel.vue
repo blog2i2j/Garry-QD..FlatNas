@@ -851,18 +851,37 @@ const fetchContainerStatuses = async () => {
             if (item.containerId && !item.containerId.startsWith("mock-")) {
               const foundById = liveContainers.find((c) => c.Id === item.containerId);
               if (!foundById) {
-                const targetName = item.containerName || item.title;
-                if (targetName) {
-                  const foundByName = liveContainers.find((c) =>
-                    (c.Names || []).some((n) => n.replace(/^\//, "") === targetName),
+                // Try to find by name (handle ID change after container recreation)
+                let foundByName: DockerContainer | undefined;
+
+                // 1. Try strict match by containerName (if set)
+                if (item.containerName) {
+                  foundByName = liveContainers.find((c) =>
+                    (c.Names || []).some((n) => n.replace(/^\//, "") === item.containerName),
                   );
-                  if (foundByName) {
-                    console.log(
-                      `[Docker Fix] Container ID changed for "${targetName}". Updating ${item.containerId} -> ${foundByName.Id}`,
-                    );
-                    item.containerId = foundByName.Id;
-                    needsSave = true;
+                }
+
+                // 2. Fallback to match by item.title (legacy support or if name matches title)
+                if (!foundByName && item.title) {
+                  foundByName = liveContainers.find((c) =>
+                    (c.Names || []).some((n) => n.replace(/^\//, "") === item.title),
+                  );
+                }
+
+                if (foundByName) {
+                  console.log(
+                    `[Docker Fix] Container ID changed. Updating ${item.containerId} -> ${foundByName.Id} (Name: ${foundByName.Names?.[0]})`,
+                  );
+                  item.containerId = foundByName.Id;
+
+                  // Ensure containerName is synced to the real container name
+                  // This ensures future updates work even if user renames the card title
+                  const realName = (foundByName.Names?.[0] || "").replace(/^\//, "");
+                  if (realName && item.containerName !== realName) {
+                    item.containerName = realName;
                   }
+
+                  needsSave = true;
                 }
               }
             }
