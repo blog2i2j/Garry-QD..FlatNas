@@ -1124,7 +1124,7 @@ app.post("/api/login", async (req, res) => {
   let match = false;
 
   try {
-    if (storedPassword.startsWith("$2b$")) {
+    if (storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2a$")) {
       match = await bcrypt.compare(password, storedPassword);
     } else {
       match = password === storedPassword;

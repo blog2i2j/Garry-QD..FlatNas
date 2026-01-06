@@ -108,6 +108,16 @@ watch(
   { immediate: true },
 );
 
+const scrollToMusicSettings = () => {
+  activeTab.value = "lucky-stun";
+  setTimeout(() => {
+    const el = document.getElementById("music-settings");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, 100);
+};
+
 const setMusicSize = (cols: number, rows: number) => {
   const index = store.widgets.findIndex((w) => w.type === "music");
   if (index !== -1) {
@@ -1790,7 +1800,7 @@ watch(activeTab, (val) => {
                       class="flex flex-col items-center gap-2 flex-1 justify-center scale-100 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors w-full"
                       @click="
                         w.type === 'music'
-                          ? (activeTab = 'lucky-stun')
+                          ? scrollToMusicSettings()
                           : w.type === 'system-status'
                             ? (activeTab = 'docker')
                             : (editingOpacityId = w.id)
@@ -2515,7 +2525,7 @@ watch(activeTab, (val) => {
             </div>
 
             <!-- Music Widget Settings -->
-            <div class="bg-pink-50 border border-pink-100 rounded-xl p-4 mb-6">
+            <div id="music-settings" class="bg-pink-50 border border-pink-100 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
                 <h4 class="text-lg font-bold text-gray-800">道理鱼音乐设置</h4>
                 <label class="relative inline-flex items-center cursor-pointer">
