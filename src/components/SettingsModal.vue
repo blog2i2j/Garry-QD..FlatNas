@@ -577,7 +577,8 @@ const toggleAuthMode = async () => {
 const performAuthModeSwitch = async (newMode: string) => {
   const success = await store.updateSystemConfig({ authMode: newMode });
   if (success) {
-    alert(`已切换为${newMode === "single" ? "单用户模式" : "多用户模式"}`);
+    close();
+    store.logout();
   } else {
     alert("切换失败，请检查权限");
   }
