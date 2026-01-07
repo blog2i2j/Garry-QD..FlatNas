@@ -59,6 +59,18 @@ const save = () => {
   applyStyles();
 };
 
+const copyPrompt = () => {
+  const text = `请帮我写一个简洁的 HTML/CSS 卡片组件。
+功能：[在此输入你的需求，如：显示当前日期和一句名言]
+要求：
+1. 容器宽高自适应，内容居中。
+2. 风格现代简约，圆角设计。
+3. 请分别提供 HTML 和 CSS 代码。`;
+  navigator.clipboard.writeText(text).then(() => {
+    alert("提示词已复制到剪贴板，快去发送给 AI 吧！");
+  });
+};
+
 const toggleEdit = () => {
   isEditing.value = !isEditing.value;
 };
@@ -183,6 +195,32 @@ watch([htmlContent, cssContent], () => {
       <p class="text-[10px] text-gray-400 mt-1">
         提示: CSS 选择器会自动加上前缀以避免污染全局样式，但建议使用独特的类名。
       </p>
+
+      <!-- AI Helper -->
+      <div
+        class="mt-2 p-2 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100"
+      >
+        <div class="flex items-center gap-1 mb-1.5">
+          <span class="text-sm">🤖</span>
+          <span class="text-xs font-bold text-purple-700">AI 辅助生成</span>
+        </div>
+        <p class="text-[10px] text-gray-600 mb-1.5">
+          复制下方提示词给 AI (如 ChatGPT/DeepSeek)，即可快速生成组件代码：
+        </p>
+        <div
+          class="bg-white p-2 rounded border border-purple-100 text-[10px] text-gray-500 font-mono break-all cursor-pointer hover:border-purple-300 transition-colors relative group"
+          @click="copyPrompt"
+          title="点击复制提示词"
+        >
+          <div
+            class="hidden group-hover:block absolute right-1 top-1 bg-purple-100 text-purple-600 px-1 py-0.5 rounded text-[10px]"
+          >
+            点击复制
+          </div>
+          <span class="text-purple-600 select-none">Prompt: </span>请帮我写一个简洁的 HTML/CSS
+          卡片组件...
+        </div>
+      </div>
     </div>
   </div>
 </template>

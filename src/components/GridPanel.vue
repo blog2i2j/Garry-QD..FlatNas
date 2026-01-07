@@ -646,15 +646,25 @@ const handleCardClick = (item: NavItem) => {
 };
 
 const handleDockerAction = async (item: NavItem, action: string) => {
-  if (!item.containerId) return;
+  let containerId = item.containerId;
+
+  // Resolve ID from name if needed
+  if ((!containerId || !containerStatuses.value[containerId]) && item.containerName) {
+    const resolvedId = liveContainerNamesMap.value[item.containerName];
+    if (resolvedId) {
+      containerId = resolvedId;
+    }
+  }
+
+  if (!containerId) return;
 
   if (action === "update") {
-    isUpdating.value.add(item.containerId);
+    isUpdating.value.add(containerId);
   }
 
   try {
     const headers = store.getHeaders();
-    await fetch(`/api/docker/container/${item.containerId}/${action}`, {
+    await fetch(`/api/docker/container/${containerId}/${action}`, {
       method: "POST",
       headers,
     });
@@ -667,7 +677,7 @@ const handleDockerAction = async (item: NavItem, action: string) => {
     console.error(`Failed to ${action} container`, e);
   } finally {
     if (action === "update") {
-      isUpdating.value.delete(item.containerId);
+      isUpdating.value.delete(containerId);
       // Force refresh status immediately after update
       setTimeout(fetchContainerStatuses, 1000);
       setTimeout(fetchContainerStatuses, 5000);
@@ -694,6 +704,19 @@ const containerStatuses = ref<
 
 // Track updating containers
 const isUpdating = ref<Set<string>>(new Set());
+
+const isItemUpdating = (item: NavItem) => {
+  if (!item) return false;
+  // Check explicit ID
+  if (item.containerId && isUpdating.value.has(item.containerId)) return true;
+
+  // Check resolved ID
+  if (item.containerName) {
+    const id = liveContainerNamesMap.value[item.containerName];
+    if (id && isUpdating.value.has(id)) return true;
+  }
+  return false;
+};
 
 const formatBytes = (bytes: number, decimals = 1) => {
   if (!bytes) return "0B";
@@ -743,6 +766,27 @@ const previousStatsMap = ref<
   >
 >({});
 
+const liveContainerNamesMap = ref<Record<string, string>>({});
+
+const getContainerStatus = (item: NavItem) => {
+  if (!item) return undefined;
+
+  // 1. Try by ID (Fastest)
+  if (item.containerId && containerStatuses.value[item.containerId]) {
+    return containerStatuses.value[item.containerId];
+  }
+
+  // 2. Try by Name (Fallback / No-ID case)
+  if (item.containerName) {
+    const id = liveContainerNamesMap.value[item.containerName];
+    if (id && containerStatuses.value[id]) {
+      return containerStatuses.value[id];
+    }
+  }
+
+  return undefined;
+};
+
 const fetchContainerStatuses = async () => {
   if (typeof document !== "undefined" && document.visibilityState === "hidden") {
     if (containerPollTimer) clearTimeout(containerPollTimer);
@@ -750,7 +794,9 @@ const fetchContainerStatuses = async () => {
     return;
   }
 
-  const hasAnyContainerItems = store.groups.some((g) => g.items.some((item) => !!item.containerId));
+  const hasAnyContainerItems = store.groups.some((g) =>
+    g.items.some((item) => !!item.containerId || !!item.containerName),
+  );
   if (!hasAnyContainerItems) {
     if (containerPollTimer) clearTimeout(containerPollTimer);
     containerPollTimer = null;
@@ -765,12 +811,16 @@ const fetchContainerStatuses = async () => {
   // 0. Ensure every docker-bound item has at least a placeholder status
   store.groups.forEach((g) => {
     g.items.forEach((item) => {
-      if (!item.containerId) return;
-      const existing = containerStatuses.value[item.containerId];
-      statusMap[item.containerId] = {
-        state: existing?.state || "unknown",
-        stats: existing?.stats,
-      };
+      if (!item.containerId && !item.containerName) return;
+
+      // If we only have name, we can't key by ID yet, but we will fix this in step 2
+      if (item.containerId) {
+        const existing = containerStatuses.value[item.containerId];
+        statusMap[item.containerId] = {
+          state: existing?.state || "unknown",
+          stats: existing?.stats,
+        };
+      }
     });
   });
 
@@ -850,7 +900,9 @@ const fetchContainerStatuses = async () => {
   // 2. Try to fetch real data
   // Only fetch if there are container items to update
   const hasRealDockerItems = store.groups.some((g) =>
-    g.items.some((item) => item.containerId && !item.containerId.startsWith("mock-")),
+    g.items.some(
+      (item) => (item.containerId && !item.containerId.startsWith("mock-")) || item.containerName,
+    ),
   );
 
   if (hasRealDockerItems && !dockerMockEnabled) {
@@ -865,9 +917,22 @@ const fetchContainerStatuses = async () => {
       if (data.success) {
         const liveContainers = (data.data || []) as DockerContainer[];
 
+        // Build Name -> ID map for fallback lookups
+        const newNameMap: Record<string, string> = {};
+        liveContainers.forEach((c) => {
+          if (c.Names && c.Names.length) {
+            c.Names.forEach((n) => {
+              const cleanName = n.replace(/^\//, "");
+              newNameMap[cleanName] = c.Id;
+            });
+          }
+        });
+        liveContainerNamesMap.value = newNameMap;
+
         let needsSave = false;
         store.groups.forEach((g) => {
           g.items.forEach((item) => {
+            // Case 1: Has ID. Check if valid, or fix if invalid.
             if (item.containerId && !item.containerId.startsWith("mock-")) {
               const foundById = liveContainers.find((c) => c.Id === item.containerId);
               if (!foundById) {
@@ -903,6 +968,23 @@ const fetchContainerStatuses = async () => {
 
                   needsSave = true;
                 }
+              }
+            }
+            // Case 2: No ID (or mock ID), but has Name. Try to bind.
+            else if (
+              (!item.containerId || item.containerId.startsWith("mock-")) &&
+              item.containerName
+            ) {
+              const foundByName = liveContainers.find((c) =>
+                (c.Names || []).some((n) => n.replace(/^\//, "") === item.containerName),
+              );
+
+              if (foundByName) {
+                console.log(
+                  `[Docker Bind] Found container by name. Binding ${item.containerName} -> ${foundByName.Id}`,
+                );
+                item.containerId = foundByName.Id;
+                needsSave = true;
               }
             }
           });
@@ -2274,14 +2356,14 @@ onMounted(() => {
 
                 <!-- Docker Stats Background Bars -->
                 <div
-                  v-if="item.containerId"
+                  v-if="getContainerStatus(item)"
                   class="absolute inset-0 z-0 pointer-events-none overflow-hidden rounded-[inherit]"
                 >
                   <!-- Update Dot (Top Left) -->
                   <div
                     v-if="
-                      containerStatuses[item.containerId]?.hasUpdate &&
-                      !isUpdating.has(item.containerId)
+                      getContainerStatus(item)?.hasUpdate &&
+                      (!item.containerId || !isUpdating.has(item.containerId))
                     "
                     class="absolute top-1.5 left-1.5 w-2.5 h-2.5 rounded-full bg-red-500 z-50 shadow-[0_0_4px_rgba(239,68,68,0.8)] border border-white/40 animate-pulse"
                     title="Container Image Update Available"
@@ -2305,10 +2387,7 @@ onMounted(() => {
                         width:
                           Math.min(
                             100,
-                            Math.max(
-                              0,
-                              containerStatuses[item.containerId]?.stats?.cpuPercent || 0,
-                            ),
+                            Math.max(0, getContainerStatus(item)?.stats?.cpuPercent || 0),
                           ) + '%',
                       }"
                     ></div>
@@ -2328,10 +2407,7 @@ onMounted(() => {
                         width:
                           Math.min(
                             100,
-                            Math.max(
-                              0,
-                              containerStatuses[item.containerId]?.stats?.memPercent || 0,
-                            ),
+                            Math.max(0, getContainerStatus(item)?.stats?.memPercent || 0),
                           ) + '%',
                       }"
                     ></div>
@@ -2378,14 +2454,12 @@ onMounted(() => {
 
                   <!-- Container Status Indicator -->
                   <div
-                    v-if="item.containerId && containerStatuses[item.containerId]"
+                    v-if="getContainerStatus(item)"
                     class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white z-20"
                     :class="
-                      containerStatuses[item.containerId]?.state === 'running'
-                        ? 'bg-green-500'
-                        : 'bg-gray-400'
+                      getContainerStatus(item)?.state === 'running' ? 'bg-green-500' : 'bg-gray-400'
                     "
-                    :title="containerStatuses[item.containerId]?.state"
+                    :title="getContainerStatus(item)?.state"
                   ></div>
                 </div>
 
@@ -2422,7 +2496,7 @@ onMounted(() => {
 
                   <!-- Docker Stats Info -->
                   <div
-                    v-if="item.containerId"
+                    v-if="getContainerStatus(item)"
                     class="flex flex-col gap-0.5 text-[10px] mt-0.5 w-full opacity-90 leading-none font-mono"
                     :style="{
                       color:
@@ -2439,13 +2513,8 @@ onMounted(() => {
                     <div class="flex justify-between items-center" title="Network I/O (RX/TX)">
                       <span class="font-bold opacity-70">NET</span>
                       <span class="font-mono truncate ml-1">
-                        <template v-if="containerStatuses[item.containerId]?.stats">
-                          ↓{{
-                            formatBytes(
-                              containerStatuses[item.containerId]?.stats?.netIO?.rx || 0,
-                              0,
-                            )
-                          }}/s
+                        <template v-if="getContainerStatus(item)?.stats">
+                          ↓{{ formatBytes(getContainerStatus(item)?.stats?.netIO?.rx || 0, 0) }}/s
                         </template>
                         <template v-else>--</template>
                       </span>
@@ -2453,12 +2522,9 @@ onMounted(() => {
                     <div class="flex justify-between items-center" title="Block I/O (Read/Write)">
                       <span class="font-bold opacity-70">IO</span>
                       <span class="font-mono truncate ml-1">
-                        <template v-if="containerStatuses[item.containerId]?.stats">
+                        <template v-if="getContainerStatus(item)?.stats">
                           R{{
-                            formatBytes(
-                              containerStatuses[item.containerId]?.stats?.blockIO?.read || 0,
-                              0,
-                            )
+                            formatBytes(getContainerStatus(item)?.stats?.blockIO?.read || 0, 0)
                           }}/s
                         </template>
                         <template v-else>--</template>
@@ -2664,9 +2730,9 @@ onMounted(() => {
       </div>
 
       <!-- Docker Actions -->
-      <template v-if="contextMenuItem?.containerId">
+      <template v-if="contextMenuItem?.containerId || contextMenuItem?.containerName">
         <div
-          v-if="containerStatuses[contextMenuItem.containerId]?.hasUpdate"
+          v-if="getContainerStatus(contextMenuItem)?.hasUpdate && !isItemUpdating(contextMenuItem)"
           @click="
             handleDockerAction(contextMenuItem, 'update');
             closeContextMenu();
@@ -2677,7 +2743,7 @@ onMounted(() => {
         </div>
 
         <div
-          v-if="containerStatuses[contextMenuItem.containerId]?.state === 'running'"
+          v-if="getContainerStatus(contextMenuItem)?.state === 'running'"
           @click="
             handleDockerAction(contextMenuItem, 'stop');
             closeContextMenu();

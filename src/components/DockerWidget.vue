@@ -214,6 +214,7 @@ const performMockAction = (id: string, action: string) => {
 };
 
 const errorCount = ref(0);
+const lastMockUpdate = ref(0);
 
 const isLoading = ref(false);
 
@@ -224,9 +225,18 @@ const fetchContainers = async () => {
       containers.value.forEach((c) => {
         if (c.State === "running") c.mockStartAt = Date.now();
       });
+      lastMockUpdate.value = Date.now();
       // 模拟模式下也要触发 prefetch，确保逻辑一致性（虽然 mock 不发请求，但可能涉及状态处理）
       prefetchInspectForContainers(containers.value);
     } else {
+      const now = Date.now();
+      // Throttle mock updates to match real data frequency (5s)
+      if (now - lastMockUpdate.value < 4500) {
+        error.value = "";
+        return;
+      }
+      lastMockUpdate.value = now;
+
       containers.value = containers.value.map((c) => {
         if (c.State === "running") {
           const memLimit = c.stats?.memLimit ?? 1024 * MB;
@@ -397,7 +407,9 @@ const startPolling = () => {
     // 2. 正常状态：12-17秒随机
     let interval = POLL_INTERVAL_MIN + Math.random() * (POLL_INTERVAL_MAX - POLL_INTERVAL_MIN);
 
-    if (errorCount.value > 0) {
+    if (useMock.value) {
+      interval = 5000;
+    } else if (errorCount.value > 0) {
       if (Date.now() < retryDeadline.value) {
         interval = RETRY_INTERVAL;
       } else {

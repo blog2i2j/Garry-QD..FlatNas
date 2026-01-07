@@ -457,6 +457,81 @@ app.use(cors());
 app.use(express.json({ limit: "120mb" }));
 app.use(express.urlencoded({ extended: true, limit: "120mb" }));
 
+// Helper to update container ID in all user configs (Global Sync)
+async function updateContainerIdGlobally(oldId, newId, containerName) {
+  console.log(`[ContainerSync] Syncing ID change ${oldId} -> ${newId} (${containerName})`);
+
+  const filesToCheck = new Set();
+
+  // Always check data.json (Single mode default)
+  try {
+    await fs.access(OLD_DATA_FILE);
+    filesToCheck.add(OLD_DATA_FILE);
+  } catch {}
+
+  // Check all users in USERS_DIR
+  try {
+    const userFiles = await fs.readdir(USERS_DIR);
+    for (const f of userFiles) {
+      if (f.endsWith(".json")) {
+        filesToCheck.add(path.join(USERS_DIR, f));
+      }
+    }
+  } catch (err) {
+    console.warn("[ContainerSync] Failed to list users dir:", err);
+  }
+
+  for (const filePath of filesToCheck) {
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch {
+        continue;
+      }
+
+      let modified = false;
+      // Determine username for cache update
+      let username = null;
+      if (filePath === OLD_DATA_FILE) {
+        if (systemConfig.authMode === "single") username = "admin";
+      } else {
+        username = path.basename(filePath, ".json");
+      }
+
+      if (data.groups) {
+        for (const group of data.groups) {
+          if (group.items) {
+            for (const item of group.items) {
+              if (item.containerId === oldId) {
+                item.containerId = newId;
+                if (containerName) {
+                  const realName = containerName.replace(/^\//, "");
+                  if (item.containerName !== realName) item.containerName = realName;
+                }
+                modified = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (modified) {
+        await atomicWrite(filePath, JSON.stringify(data, null, 2));
+        console.log(`[ContainerSync] Updated config in ${filePath}`);
+
+        if (username && cachedUsersData[username]) {
+          cachedUsersData[username] = data;
+          io.emit("data-updated", { username, source: "container-sync" });
+        }
+      }
+    } catch (err) {
+      console.error(`[ContainerSync] Error processing ${filePath}:`, err);
+    }
+  }
+}
+
 // Helper to get user file path
 function getUserFile(username) {
   // Single User Mode Compatibility:
@@ -824,6 +899,9 @@ app.post("/api/docker/container/:id/:action", authenticateToken, async (req, res
       const newContainer = await docker.createContainer(options);
       await newContainer.start();
       console.log(`[Update] Container updated and started: ${containerName}`);
+
+      // Sync ID to all users
+      await updateContainerIdGlobally(id, newContainer.id, containerName);
     } else return res.status(400).json({ error: "Invalid action" });
 
     res.json({ success: true });
@@ -931,6 +1009,9 @@ setInterval(async () => {
           const newContainer = await docker.createContainer(options);
           await newContainer.start();
           console.log(`[AutoUpdate] Updated ${c.Names[0]} successfully.`);
+
+          // Update container ID in all user configs
+          await updateContainerIdGlobally(c.Id, newContainer.id, info.Name);
         }
       } catch (err) {
         console.error(`[AutoUpdate] Failed to check/update ${c.Names[0]}:`, err.message);
