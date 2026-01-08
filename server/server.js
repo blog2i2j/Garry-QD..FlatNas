@@ -179,6 +179,74 @@ const startStatsCollector = () => {
 // Start collector
 startStatsCollector();
 
+// --- Docker Update Checker ---
+const containerUpdateCache = new Map(); // containerId -> boolean
+let isUpdateCheckerRunning = false;
+
+const checkContainerUpdates = async () => {
+  if (isUpdateCheckerRunning) return;
+  isUpdateCheckerRunning = true;
+  console.log("[UpdateChecker] Starting update check...");
+
+  try {
+    const containers = await docker.listContainers({ all: false }); // Only check running containers? Or all? Let's check all relevant ones.
+    // Filter out containers without names or special ones if needed.
+
+    // Process sequentially to avoid network spike
+    for (const container of containers) {
+      try {
+        // Skip if we checked recently? For now, just check.
+        const imageName = container.Image;
+        if (!imageName) continue;
+
+        // Skip if image is a SHA (dangling or no tag)
+        if (imageName.startsWith("sha256:")) continue;
+
+        // Pull the image to check for updates
+        // Note: This downloads the layers if they are new.
+        await new Promise((resolve, reject) => {
+          docker.pull(imageName, (err, stream) => {
+            if (err) return reject(err);
+            // We don't need to log progress, just wait for finish
+            docker.modem.followProgress(stream, (err, output) => {
+              if (err) return reject(err);
+              resolve(output);
+            });
+          });
+        });
+
+        // Inspect the image to get the new ID
+        const image = docker.getImage(imageName);
+        const imageInfo = await image.inspect();
+
+        // Compare with container's current ImageID
+        // container.ImageID is what is running
+        // imageInfo.Id is what is latest local (which we just pulled)
+        if (imageInfo.Id !== container.ImageID) {
+          containerUpdateCache.set(container.Id, true);
+          // console.log(`[UpdateChecker] Update available for ${container.Names[0]}: ${container.ImageID} -> ${imageInfo.Id}`);
+        } else {
+          containerUpdateCache.set(container.Id, false);
+        }
+      } catch (err) {
+        console.warn(
+          `[UpdateChecker] Failed to check update for ${container.Names[0]} (${container.Image}):`,
+          err.message,
+        );
+      }
+    }
+  } catch (err) {
+    console.error("[UpdateChecker] Global error:", err);
+  } finally {
+    isUpdateCheckerRunning = false;
+    console.log("[UpdateChecker] Finished.");
+  }
+};
+
+// Run update check on startup (delayed) and periodically
+setTimeout(checkContainerUpdates, 60 * 1000); // Start 1 min after boot
+setInterval(checkContainerUpdates, 6 * 60 * 60 * 1000); // Check every 6 hours
+
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
@@ -666,10 +734,12 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
 
     // Enrich containers with stats from cache
     const enriched = containers.map((c) => {
+      const hasUpdate = containerUpdateCache.get(c.Id) || false;
       if (c.State === "running" && containerStatsCache.has(c.Id)) {
         const s = containerStatsCache.get(c.Id);
         return {
           ...c,
+          hasUpdate,
           stats: {
             cpuPercent: s.cpuPercent,
             memUsage: s.memUsage,
@@ -680,9 +750,8 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
           },
         };
       }
-      return c;
+      return { ...c, hasUpdate };
     });
-
     res.json({ success: true, data: enriched });
   } catch (error) {
     if (error.code === "ENOENT") {
@@ -693,6 +762,15 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
     // Return empty list instead of 500 if docker is not available, so frontend doesn't break
     res.json({ success: false, error: "Docker not available: " + error.message, data: [] });
   }
+});
+
+app.post("/api/docker/check-updates", authenticateToken, async (req, res) => {
+  if (isUpdateCheckerRunning) {
+    return res.json({ success: true, message: "Update check already running" });
+  }
+  // Run async, don't wait
+  checkContainerUpdates();
+  res.json({ success: true, message: "Update check started" });
 });
 
 app.get("/api/docker/container/:id/inspect-lite", authenticateToken, async (req, res) => {
