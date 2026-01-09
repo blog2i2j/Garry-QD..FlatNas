@@ -265,7 +265,7 @@ const io = new Server(httpServer, {
 import crypto from "crypto";
 
 const PORT = 3000;
-const SECRET_KEY = process.env.SECRET_KEY || crypto.randomBytes(32).toString("hex");
+let SECRET_KEY = process.env.SECRET_KEY || crypto.randomBytes(32).toString("hex");
 
 if (!process.env.SECRET_KEY) {
   console.warn(
@@ -995,8 +995,19 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
   }
   const { authMode } = req.body;
   if (authMode && (authMode === "single" || authMode === "multi")) {
+    const oldMode = systemConfig.authMode;
     systemConfig.authMode = authMode;
     await atomicWrite(SYSTEM_CONFIG_FILE, JSON.stringify(systemConfig, null, 2));
+
+    // If mode changed, invalidate all tokens by rotating the secret key
+    if (oldMode !== authMode) {
+      SECRET_KEY = crypto.randomBytes(32).toString("hex");
+      console.log(
+        `[SystemConfig] Auth mode changed (${oldMode} -> ${authMode}). Secret key rotated to invalidate all sessions.`,
+      );
+      io.emit("auth-mode-changed", { mode: authMode });
+    }
+
     res.json({ success: true, systemConfig });
   } else {
     res.status(400).json({ error: "Invalid config" });
@@ -1193,6 +1204,7 @@ app.get("/api/data", async (req, res) => {
     const safeData = { ...userData };
     delete safeData.password;
     safeData.username = username;
+    safeData.systemConfig = systemConfig;
 
     // Fix: Allow guest access with isPublic: false
     if (isGuest) {

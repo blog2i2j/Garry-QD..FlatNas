@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useMainStore } from "../stores/main";
+import type { NavGroup } from "../types";
 import IconShape from "./IconShape.vue";
 import IconUploader from "./IconUploader.vue";
 
@@ -18,8 +19,7 @@ const group = computed(() => {
 
 const close = () => emit("update:show", false);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const updateGroup = (updates: any) => {
+const updateGroup = (updates: Partial<NavGroup>) => {
   if (props.groupId) {
     store.updateGroup(props.groupId, updates);
   }
@@ -58,21 +58,28 @@ const handleReset = () => {
   }
 };
 
-const handlePublicChange = (e: Event) => {
-  const isPublic = (e.target as HTMLInputElement).checked;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updates: any = { isPublic };
+const handleBatchPublish = () => {
+  if (!group.value) return;
 
-  // If enabling public mode, also set all items to public
-  if (isPublic && group.value && group.value.items) {
+  const updates: Partial<NavGroup> = { isPublic: true };
+  if (group.value.items) {
     const newItems = group.value.items.map((item) => ({
       ...item,
       isPublic: true,
     }));
     updates.items = newItems;
   }
-
   updateGroup(updates);
+};
+
+const handleBatchUnpublish = () => {
+  if (!group.value || !group.value.items) return;
+
+  const newItems = group.value.items.map((item) => ({
+    ...item,
+    isPublic: false,
+  }));
+  updateGroup({ isPublic: false, items: newItems });
 };
 
 // --- Color Helper ---
@@ -170,29 +177,28 @@ const bgAlpha = computed({
             class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100"
           >
             <div class="flex flex-col">
-              <span class="text-xs font-bold text-gray-700"
-                >公开此分组<span class="font-normal text-gray-500 ml-1"
-                  >（关闭后还有公开项目，请单独关闭公开设置）</span
-                ></span
-              >
+              <span class="text-xs font-bold text-gray-700">公开此分组（一次性执行）</span>
               <span class="text-[10px] text-gray-400">允许未登录访客查看此分组内容</span>
             </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                :checked="!!group.isPublic"
-                @change="handlePublicChange"
-                class="sr-only peer"
-              />
-              <div
-                class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
-              ></div>
-            </label>
+            <div class="flex gap-2">
+              <button
+                @click="handleBatchUnpublish"
+                class="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs font-bold rounded-lg shadow-sm hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              >
+                不公开
+              </button>
+              <button
+                @click="handleBatchPublish"
+                class="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs font-bold rounded-lg shadow-sm hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors"
+              >
+                公开
+              </button>
+            </div>
           </div>
 
           <!-- Auto Hide Title Toggle -->
           <div
-            class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100 mt-3"
+            class="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-100"
           >
             <div class="flex flex-col">
               <span class="text-xs font-bold text-gray-700">自动隐藏标题</span>

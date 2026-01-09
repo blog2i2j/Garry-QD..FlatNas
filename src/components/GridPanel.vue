@@ -59,6 +59,10 @@ const isEditMode = ref(false);
 const activeResizeWidgetId = ref<string | null>(null);
 const currentEditItem = ref<NavItem | null>(null);
 const currentGroupId = ref<string>("");
+
+watch(showGroupSettingsModal, (val) => {
+  isEditMode.value = val;
+});
 const isLanMode = ref(false);
 const latency = ref(0);
 const isChecking = ref(true);

@@ -176,11 +176,12 @@ const formatDuration = (ms: number) => {
 };
 
 const formatBytes = (bytes: number) => {
-  if (!bytes) return "0B";
+  if (!bytes || bytes <= 0) return "0B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
+  const rawIndex = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.max(rawIndex, 0), sizes.length - 1);
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + (sizes[i] ?? "B");
 };
 
 const performMockAction = (id: string, action: string) => {
@@ -572,9 +573,8 @@ const getPreferredPort = (c: DockerContainer): number | null => {
         return 0;
       });
 
-    if (sorted.length > 0 && sorted[0].PrivatePort) {
-      return sorted[0].PrivatePort;
-    }
+    const first = sorted[0];
+    if (first?.PrivatePort) return first.PrivatePort;
   }
 
   return null;

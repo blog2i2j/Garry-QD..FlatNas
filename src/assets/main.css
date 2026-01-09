@@ -31,3 +31,9 @@
 .scrollbar-glass::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+@media (max-width: 1024px) and (max-height: 768px) {
+  html {
+    zoom: 0.9;
+  }
+}

@@ -29,8 +29,19 @@ export const useMainStore = defineStore("main", () => {
   let socketListenersBound = false;
   let isInitializing = false;
 
-  socket.on("connect", () => {
+  socket.on("connect", async () => {
     isConnected.value = true;
+    // Check if system config changed while we were disconnected
+    // This handles the case where user switches mode in one tab while another is briefly offline
+    const oldMode = systemConfig.value.authMode;
+    await fetchSystemConfig();
+    if (systemConfig.value.authMode !== oldMode) {
+      if (isLogged.value) {
+        logout();
+      } else {
+        init();
+      }
+    }
   });
   socket.on("disconnect", () => {
     isConnected.value = false;
@@ -86,7 +97,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.59";
+  const currentVersion = "1.0.61";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -795,6 +806,19 @@ export const useMainStore = defineStore("main", () => {
     // Reload to show default/public view
     await init();
   };
+
+  socket.on("auth-mode-changed", (data: { mode: string }) => {
+    if (data && data.mode) {
+      systemConfig.value.authMode = data.mode;
+    }
+    if (isLogged.value) {
+      // Force logout on other clients when system mode changes
+      logout();
+    } else {
+      // Refresh to update UI state (e.g. login screen vs dashboard)
+      init();
+    }
+  });
 
   const changePassword = (newPwd: string) => {
     password.value = newPwd;
