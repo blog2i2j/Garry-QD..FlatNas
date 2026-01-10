@@ -207,6 +207,17 @@ const isInternalNetwork = (url: string) => {
   // 3. mDNS (.local)
   if (url.toLowerCase().endsWith(".local")) return true;
 
+  // 4. 用户自定义白名单 (支持域名后缀和 IP 前缀)
+  if (store.appConfig.internalDomains) {
+    const whitelist = store.appConfig.internalDomains
+      .split("\n")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+    for (const item of whitelist) {
+      if (url.includes(item)) return true;
+    }
+  }
+
   return false;
 };
 
@@ -633,13 +644,20 @@ const handleCardClick = (item: NavItem) => {
 
   // Lucky STUN Port Replacement
   // 当配置了 Lucky STUN 且当前访问域名与卡片链接域名一致时，自动替换端口
+  // 逻辑升级 V2：
+  // 1. 默认行为：只要域名一致，就认为是“同一台机器”，默认尝试替换端口（为了解决从 STUN 端口访问时，卡片仍是内网端口的问题）。
+  // 2. 例外处理：如果用户显式勾选了 skipLuckyStun（禁止替换），则保持原样（用于 Plex 等其他服务）。
   const stunData = store.luckyStunData?.data;
   if (stunData?.stun === "success" && stunData?.port) {
     try {
       const urlObj = new URL(targetUrl);
       if (urlObj.hostname === window.location.hostname) {
-        urlObj.port = String(stunData.port);
-        targetUrl = urlObj.toString();
+        // 只要当前不是内网 IP 访问，就自动替换端口
+        // (防止在局域网用 IP 访问时，被错误替换成公网端口导致无法访问)
+        if (!isInternalNetwork(window.location.hostname)) {
+          urlObj.port = String(stunData.port);
+          targetUrl = urlObj.toString();
+        }
       }
     } catch {
       // Ignore relative or invalid URLs

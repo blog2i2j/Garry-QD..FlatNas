@@ -217,6 +217,33 @@ const performMockAction = (id: string, action: string) => {
 const errorCount = ref(0);
 const lastMockUpdate = ref(0);
 
+interface UpdateCheckStatus {
+  lastCheck: number;
+  isChecking: boolean;
+  lastError: string | null;
+  checkedCount: number;
+  totalCount?: number;
+  updateCount: number;
+  failures?: { name: string; error: string }[];
+}
+const updateStatus = ref<UpdateCheckStatus | null>(null);
+const isCheckingUpdate = ref(false);
+
+const triggerUpdateCheck = async () => {
+  if (isCheckingUpdate.value || updateStatus.value?.isChecking) return;
+  try {
+    isCheckingUpdate.value = true;
+    const headers = store.getHeaders();
+    await fetch("/api/docker/check-updates", { method: "POST", headers });
+    // 立即刷新一次以获取最新状态（变为 isChecking=true）
+    setTimeout(fetchContainers, 500);
+  } catch (e) {
+    console.error("Failed to trigger update check", e);
+  } finally {
+    isCheckingUpdate.value = false;
+  }
+};
+
 const isLoading = ref(false);
 
 const fetchContainers = async () => {
@@ -286,6 +313,9 @@ const fetchContainers = async () => {
     const data = await res.json();
     if (data.success) {
       containers.value = (data.data || []) as DockerContainer[];
+      if (data.updateStatus) {
+        updateStatus.value = data.updateStatus;
+      }
       prefetchInspectForContainers(containers.value);
       errorCount.value = 0;
       error.value = "";
@@ -817,6 +847,41 @@ const getStatusColor = (state: string) => {
         <span class="font-bold text-gray-700 dark:text-gray-200">Docker</span>
       </div>
       <div class="flex items-center gap-2">
+        <button
+          @click="triggerUpdateCheck"
+          class="text-[10px] bg-gray-50 text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors flex items-center"
+          :title="
+            updateStatus?.isChecking
+              ? `正在检测: ${updateStatus.checkedCount} / ${updateStatus.totalCount || '?'}`
+              : updateStatus?.lastCheck
+                ? `上次检测: ${new Date(updateStatus.lastCheck).toLocaleString()}${
+                    updateStatus.failures?.length
+                      ? '\n\n检测失败:\n' +
+                        updateStatus.failures.map((f) => `- ${f.name}: ${f.error}`).join('\n')
+                      : ''
+                  }`
+                : '检测镜像更新'
+          "
+          :disabled="updateStatus?.isChecking"
+        >
+          <span
+            v-if="updateStatus?.isChecking"
+            class="animate-spin inline-block w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full mr-1"
+          ></span>
+          <span v-if="updateStatus?.isChecking" class="mr-1">
+            {{ updateStatus.checkedCount }}/{{ updateStatus.totalCount || "?" }}
+          </span>
+          <span
+            v-else-if="updateStatus?.failures?.length"
+            class="text-yellow-600 flex items-center"
+          >
+            <span class="mr-1">⚠️</span>
+            <span>查更新</span>
+          </span>
+          <span v-else>
+            {{ updateStatus?.isChecking ? "检测中" : "查更新" }}
+          </span>
+        </button>
         <button
           @click="() => checkConnection(false)"
           class="text-[10px] bg-blue-50 text-blue-500 px-2 py-1 rounded hover:bg-blue-100 transition-colors"

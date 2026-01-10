@@ -1271,6 +1271,18 @@ watch(activeTab, (val) => {
             🔒 账户管理
           </button>
           <button
+            @click="activeTab = 'network'"
+            :class="[
+              'px-4 py-2 text-sm font-medium rounded-lg transition-colors text-left flex items-center gap-2',
+              activeTab === 'network'
+                ? 'bg-blue-50 text-blue-600'
+                : 'text-gray-600 hover:bg-gray-50',
+            ]"
+          >
+            <span>🌐</span>
+            <span>网络判定</span>
+          </button>
+          <button
             @click="activeTab = 'lucky-stun'"
             :class="
               activeTab === 'lucky-stun'
@@ -2518,6 +2530,80 @@ watch(activeTab, (val) => {
             </template>
           </div>
 
+          <div v-if="activeTab === 'network'" class="p-4 space-y-4">
+            <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3 mb-4">
+              网络环境判定设置
+            </h4>
+
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
+              <div class="flex items-start gap-2 mb-3">
+                <span class="text-blue-500 mt-0.5">ℹ️</span>
+                <p class="text-xs text-blue-700 leading-relaxed">
+                  FlatNas 会自动检测您的网络环境。如果检测到您处于内网（如家庭 Wi-Fi），
+                  应用卡片会自动切换到内网地址以提高速度。
+                  <br />
+                  如果您使用了<b>内网穿透</b>或<b>P2P工具</b>（如 FRP, ZeroTier, Tailscale），
+                  请将这些域名或 IP 段添加到下方白名单中，以便 FlatNas 将其识别为“内网环境”。
+                </p>
+              </div>
+
+              <div class="space-y-3">
+                <label class="block text-sm font-bold text-gray-700">
+                  自定义内网域名/IP白名单
+                </label>
+                <textarea
+                  v-model="store.appConfig.internalDomains"
+                  @change="store.saveData()"
+                  rows="4"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-blue-500 outline-none font-mono"
+                  placeholder="每行一个，支持域名后缀或 IP 段。例如：
+.frp.yourdomain.com
+100.64.
+192.168.100."
+                ></textarea>
+                <p class="text-[10px] text-gray-500">
+                  * 系统默认已包含 localhost, 127.0.0.1, 192.168.x.x, 10.x.x.x 等标准私有地址。
+                </p>
+              </div>
+            </div>
+
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4">
+              <h5 class="text-sm font-bold text-gray-700 mb-3">强制模式</h5>
+              <div class="flex items-center gap-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    v-model="store.appConfig.forceNetworkMode"
+                    value="auto"
+                    @change="store.saveData()"
+                    class="text-blue-500 focus:ring-blue-500"
+                  />
+                  <span class="text-sm text-gray-700">自动判定 (推荐)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    v-model="store.appConfig.forceNetworkMode"
+                    value="lan"
+                    @change="store.saveData()"
+                    class="text-blue-500 focus:ring-blue-500"
+                  />
+                  <span class="text-sm text-gray-700">强制内网模式</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    v-model="store.appConfig.forceNetworkMode"
+                    value="wan"
+                    @change="store.saveData()"
+                    class="text-blue-500 focus:ring-blue-500"
+                  />
+                  <span class="text-sm text-gray-700">强制外网模式</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div v-if="activeTab === 'lucky-stun'" class="p-4 space-y-4">
             <div class="flex items-center gap-2 mb-4">
               <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3">
@@ -2936,8 +3022,28 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   </button>
                 </div>
                 <p class="text-xs text-gray-500 mt-2">
-                  请在 STUN 穿透配置中，将全局 Webhook 的地址设置为上述地址。
+                  请在 STUN 穿透配置中，将全局 Webhook 的地址设置为上述地址，并使用以下配置：
                 </p>
+
+                <div class="mt-3 space-y-3 bg-white p-3 rounded-lg border border-blue-100">
+                  <div>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-xs font-bold text-gray-700">请求头 (Header)</span>
+                    </div>
+                    <code class="block text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200">Content-Type: application/json</code>
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-xs font-bold text-gray-700">请求体 (Body)</span>
+                    </div>
+                    <pre class="text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200 whitespace-pre">
+{
+  "stun": "success",
+  "ip": "#{ip}",
+  "port": "#{port}"
+}</pre>
+                  </div>
+                </div>
               </div>
 
               <div class="space-y-3">

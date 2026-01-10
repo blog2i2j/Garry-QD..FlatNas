@@ -83,6 +83,8 @@ export interface AppConfig {
   backgroundMask?: number;
   mobileBackgroundBlur?: number;
   mobileBackgroundMask?: number;
+  internalDomains?: string;
+  forceNetworkMode?: "auto" | "lan" | "wan";
   customTitle: string;
   titleAlign: "left" | "center" | "right" | string;
   titleSize: number;

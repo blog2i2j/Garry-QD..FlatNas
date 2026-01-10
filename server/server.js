@@ -182,36 +182,106 @@ startStatsCollector();
 // --- Docker Update Checker ---
 const containerUpdateCache = new Map(); // containerId -> boolean
 let isUpdateCheckerRunning = false;
+const updateCheckStatus = {
+  lastCheck: 0,
+  isChecking: false,
+  lastError: null,
+  checkedCount: 0,
+  totalCount: 0,
+  updateCount: 0,
+  failures: [], // Array of { name: string, error: string }
+};
 
-const checkContainerUpdates = async () => {
+const checkContainerUpdates = async (force = false) => {
   if (isUpdateCheckerRunning) return;
+
+  // Minimum check interval: 5 minutes (unless forced)
+  if (!force && Date.now() - updateCheckStatus.lastCheck < 5 * 60 * 1000) {
+    console.log("[UpdateChecker] Skipping check (recently checked)");
+    return;
+  }
+
   isUpdateCheckerRunning = true;
+  updateCheckStatus.isChecking = true;
+  updateCheckStatus.lastError = null;
+  updateCheckStatus.checkedCount = 0;
+  updateCheckStatus.totalCount = 0;
+  updateCheckStatus.updateCount = 0;
+  updateCheckStatus.failures = [];
+
   console.log("[UpdateChecker] Starting update check...");
 
   try {
-    const containers = await docker.listContainers({ all: false }); // Only check running containers? Or all? Let's check all relevant ones.
-    // Filter out containers without names or special ones if needed.
+    const containers = await docker.listContainers({ all: false }); // Only check running containers
+
+    // Filter valid containers first
+    const targets = containers.filter((c) => {
+      const imageName = c.Image;
+      // Skip if no image name or is SHA (dangling)
+      return imageName && !imageName.startsWith("sha256:");
+    });
+
+    updateCheckStatus.totalCount = targets.length;
 
     // Process sequentially to avoid network spike
-    for (const container of containers) {
+    for (const container of targets) {
+      const containerName = (
+        container.Names && container.Names[0] ? container.Names[0] : "unknown"
+      ).replace(/^\//, "");
       try {
-        // Skip if we checked recently? For now, just check.
         const imageName = container.Image;
-        if (!imageName) continue;
-
-        // Skip if image is a SHA (dangling or no tag)
-        if (imageName.startsWith("sha256:")) continue;
 
         // Pull the image to check for updates
         // Note: This downloads the layers if they are new.
+        // Use Idle Timeout (60s) + Total Timeout (10 min) for bad network
         await new Promise((resolve, reject) => {
+          let timedOut = false;
+          let idleTimer = null;
+          let totalTimer = null;
+
+          const cleanup = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            if (totalTimer) clearTimeout(totalTimer);
+          };
+
+          // 1. Total Timeout: 10 minutes (hard limit)
+          totalTimer = setTimeout(() => {
+            timedOut = true;
+            cleanup();
+            reject(new Error("Total timeout (10m) pulling image"));
+          }, 600000);
+
+          // 2. Idle Timeout: 60 seconds (reset on progress)
+          const resetIdleTimer = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              timedOut = true;
+              cleanup();
+              reject(new Error("Idle timeout (60s) - download stalled"));
+            }, 60000);
+          };
+
+          resetIdleTimer();
+
           docker.pull(imageName, (err, stream) => {
-            if (err) return reject(err);
-            // We don't need to log progress, just wait for finish
-            docker.modem.followProgress(stream, (err, output) => {
-              if (err) return reject(err);
-              resolve(output);
-            });
+            if (timedOut) return;
+            if (err) {
+              cleanup();
+              return reject(err);
+            }
+            docker.modem.followProgress(
+              stream,
+              (err, output) => {
+                cleanup();
+                if (timedOut) return;
+                if (err) return reject(err);
+                resolve(output);
+              },
+              () => {
+                // On progress event
+                if (!timedOut) resetIdleTimer();
+              },
+            );
           });
         });
 
@@ -224,21 +294,33 @@ const checkContainerUpdates = async () => {
         // imageInfo.Id is what is latest local (which we just pulled)
         if (imageInfo.Id !== container.ImageID) {
           containerUpdateCache.set(container.Id, true);
-          // console.log(`[UpdateChecker] Update available for ${container.Names[0]}: ${container.ImageID} -> ${imageInfo.Id}`);
+          updateCheckStatus.updateCount++;
+          console.log(
+            `[UpdateChecker] Update available for ${containerName}: ${container.ImageID} -> ${imageInfo.Id}`,
+          );
         } else {
           containerUpdateCache.set(container.Id, false);
         }
       } catch (err) {
         console.warn(
-          `[UpdateChecker] Failed to check update for ${container.Names[0]} (${container.Image}):`,
+          `[UpdateChecker] Failed to check update for ${containerName} (${container.Image}):`,
           err.message,
         );
+        updateCheckStatus.failures.push({
+          name: containerName,
+          error: err.message,
+        });
+      } finally {
+        updateCheckStatus.checkedCount++;
       }
     }
+    updateCheckStatus.lastCheck = Date.now();
   } catch (err) {
     console.error("[UpdateChecker] Global error:", err);
+    updateCheckStatus.lastError = err.message;
   } finally {
     isUpdateCheckerRunning = false;
+    updateCheckStatus.isChecking = false;
     console.log("[UpdateChecker] Finished.");
   }
 };
@@ -752,7 +834,7 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
       }
       return { ...c, hasUpdate };
     });
-    res.json({ success: true, data: enriched });
+    res.json({ success: true, data: enriched, updateStatus: updateCheckStatus });
   } catch (error) {
     if (error.code === "ENOENT") {
       console.warn("Docker not found (ENOENT). Is Docker Desktop running?");
@@ -768,8 +850,8 @@ app.post("/api/docker/check-updates", authenticateToken, async (req, res) => {
   if (isUpdateCheckerRunning) {
     return res.json({ success: true, message: "Update check already running" });
   }
-  // Run async, don't wait
-  checkContainerUpdates();
+  // Run async, don't wait. Force check (ignore debounce)
+  checkContainerUpdates(true);
   res.json({ success: true, message: "Update check started" });
 });
 
@@ -1029,6 +1111,11 @@ setInterval(async () => {
     const containers = await docker.listContainers({ all: true });
     for (const c of containers) {
       if (c.State !== "running") continue;
+
+      // Skip FlatNas itself to prevent suicide during update
+      if (c.Image.includes("flatnas") || c.Names.some((n) => n.toLowerCase().includes("flatnas"))) {
+        continue;
+      }
 
       // Check for updates logic (simplified version of what frontend does via API)
       // Note: In a real scenario, we need to pull the image and check if the ID changed
@@ -2350,10 +2437,20 @@ app.delete("/api/transfer/items/:id", authenticateToken, async (req, res) => {
 });
 
 // Lucky STUN Cache
+const LUCKY_STUN_FILE = path.join(DATA_DIR, "lucky_stun.json");
 let LUCKY_STUN_CACHE = {
   ts: 0,
   data: null,
 };
+
+// Load STUN cache from file
+try {
+  if (fs.existsSync(LUCKY_STUN_FILE)) {
+    LUCKY_STUN_CACHE = JSON.parse(fs.readFileSync(LUCKY_STUN_FILE, "utf-8"));
+  }
+} catch (e) {
+  console.error("Failed to load Lucky STUN cache:", e.message);
+}
 
 // Lucky STUN Webhook
 app.post("/api/webhook/lucky/stun", (req, res) => {
@@ -2365,6 +2462,13 @@ app.post("/api/webhook/lucky/stun", (req, res) => {
       ts: Date.now(),
       data: data,
     };
+
+    // Save to file
+    try {
+      fs.writeFileSync(LUCKY_STUN_FILE, JSON.stringify(LUCKY_STUN_CACHE, null, 2));
+    } catch (e) {
+      console.error("Failed to save Lucky STUN cache:", e.message);
+    }
 
     // Emit to all connected clients
     io.emit("lucky:stun", LUCKY_STUN_CACHE);
