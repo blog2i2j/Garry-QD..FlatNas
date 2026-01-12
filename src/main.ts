@@ -10,8 +10,12 @@ if (typeof document !== "undefined" && typeof navigator !== "undefined") {
   const ua = navigator.userAgent || "";
   const isHarmony = /(harmonyos|hongmeng|hm os)/i.test(ua);
   const isHuawei = /(huaweibrowser|huawei)/i.test(ua);
+  const isAlook = /alook/i.test(ua);
   if (isHarmony || isHuawei) {
     document.documentElement.classList.add("harmony-os");
+  }
+  if (isAlook) {
+    document.documentElement.classList.add("alook-browser");
   }
 }
 

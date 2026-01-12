@@ -98,7 +98,8 @@ textarea,
   touch-action: manipulation;
 }
 
-.harmony-os {
+.harmony-os,
+.alook-browser {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
@@ -106,6 +107,9 @@ textarea,
 
 .harmony-os input,
 .harmony-os select,
-.harmony-os textarea {
+.harmony-os textarea,
+.alook-browser input,
+.alook-browser select,
+.alook-browser textarea {
   font-size: 16px;
 }

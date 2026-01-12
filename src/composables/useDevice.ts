@@ -10,6 +10,7 @@ export function useDevice(deviceMode?: Ref<"auto" | "desktop" | "tablet" | "mobi
   const isHuaweiBrowser = /(huaweibrowser|huawei)/i.test(ua);
   const isAndroid = uaLower.includes("android");
   const isiOS = /(iphone|ipad|ipod)/i.test(ua);
+  const isAlook = /alook/i.test(ua);
   const isMobileUA = /(mobi|mobile|android|iphone|ipod|ipad)/i.test(ua);
 
   const autoKey = computed(() => {
@@ -18,7 +19,8 @@ export function useDevice(deviceMode?: Ref<"auto" | "desktop" | "tablet" | "mobi
     const mode = deviceMode?.value || "auto";
     if (mode !== "auto") return mode as "desktop" | "tablet" | "mobile";
 
-    const treatAsHandheld = isHarmony || isHuaweiBrowser || isAndroid || isiOS || isMobileUA;
+    const treatAsHandheld =
+      isHarmony || isHuaweiBrowser || isAndroid || isiOS || isMobileUA || isAlook;
 
     if (treatAsHandheld) {
       const minSide = Math.min(w, h);
@@ -59,6 +61,7 @@ export function useDevice(deviceMode?: Ref<"auto" | "desktop" | "tablet" | "mobi
     isVia,
     isQuark,
     isUC,
+    isAlook,
     isSafari,
     isHarmony,
     isHuaweiBrowser,
