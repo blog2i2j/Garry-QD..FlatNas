@@ -11,6 +11,7 @@ process.on("unhandledRejection", (reason, promise) => {
 
 import { Server } from "socket.io";
 import fs from "fs/promises";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
@@ -376,6 +377,7 @@ const TRANSFER_INDEX = path.join(TRANSFER_ROOT, "index.json");
 const TRANSFER_UPLOADS = path.join(TRANSFER_ROOT, "uploads");
 const TRANSFER_CHUNKS = path.join(TRANSFER_ROOT, "chunks");
 const ICON_CACHE_DIR = path.join(DATA_DIR, "icon-cache");
+const PUBLIC_DIR = path.join(__dirname, "public"); // User custom public directory
 
 // Helper to ensure directory exists safely
 async function ensureDir(dirPath) {
@@ -528,6 +530,7 @@ async function ensureInit() {
   await ensureDir(TRANSFER_UPLOADS);
   await ensureDir(TRANSFER_CHUNKS);
   await ensureDir(ICON_CACHE_DIR);
+  await ensureDir(PUBLIC_DIR);
 
   // Load System Config
   try {
@@ -2445,8 +2448,8 @@ let LUCKY_STUN_CACHE = {
 
 // Load STUN cache from file
 try {
-  if (fs.existsSync(LUCKY_STUN_FILE)) {
-    LUCKY_STUN_CACHE = JSON.parse(fs.readFileSync(LUCKY_STUN_FILE, "utf-8"));
+  if (existsSync(LUCKY_STUN_FILE)) {
+    LUCKY_STUN_CACHE = JSON.parse(readFileSync(LUCKY_STUN_FILE, "utf-8"));
   }
 } catch (e) {
   console.error("Failed to load Lucky STUN cache:", e.message);
@@ -2465,7 +2468,7 @@ app.post("/api/webhook/lucky/stun", (req, res) => {
 
     // Save to file
     try {
-      fs.writeFileSync(LUCKY_STUN_FILE, JSON.stringify(LUCKY_STUN_CACHE, null, 2));
+      writeFileSync(LUCKY_STUN_FILE, JSON.stringify(LUCKY_STUN_CACHE, null, 2));
     } catch (e) {
       console.error("Failed to save Lucky STUN cache:", e.message);
     }
@@ -2884,6 +2887,7 @@ app.use("/music", express.static(MUSIC_DIR));
 app.use("/backgrounds", express.static(BACKGROUNDS_DIR));
 app.use("/mobile_backgrounds", express.static(MOBILE_BACKGROUNDS_DIR));
 app.use("/icon-cache", express.static(ICON_CACHE_DIR));
+app.use("/public", express.static(PUBLIC_DIR));
 
 // Get backgrounds list
 app.get("/api/backgrounds", async (req, res) => {

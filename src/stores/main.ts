@@ -97,7 +97,7 @@ export const useMainStore = defineStore("main", () => {
     }));
 
   // Version Check
-  const currentVersion = "1.0.63";
+  const currentVersion = "1.0.64";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -420,6 +420,38 @@ export const useMainStore = defineStore("main", () => {
     }
 
     if (data.appConfig) appConfig.value = { ...appConfig.value, ...data.appConfig };
+
+    // Migration for Custom Scripts List
+    if (
+      appConfig.value.customCss &&
+      (!appConfig.value.customCssList || appConfig.value.customCssList.length === 0)
+    ) {
+      appConfig.value.customCssList = [
+        {
+          id: "default-css",
+          name: "默认自定义 CSS",
+          content: appConfig.value.customCss,
+          enable: true,
+        },
+      ];
+    }
+    if (!appConfig.value.customCssList) appConfig.value.customCssList = [];
+
+    if (
+      appConfig.value.customJs &&
+      (!appConfig.value.customJsList || appConfig.value.customJsList.length === 0)
+    ) {
+      appConfig.value.customJsList = [
+        {
+          id: "default-js",
+          name: "默认自定义 JS",
+          content: appConfig.value.customJs,
+          enable: true,
+        },
+      ];
+    }
+    if (!appConfig.value.customJsList) appConfig.value.customJsList = [];
+
     if (!appConfig.value.background) appConfig.value.background = "/default-wallpaper.svg";
 
     if (!appConfig.value.searchEngines || appConfig.value.searchEngines.length === 0) {
@@ -885,6 +917,22 @@ export const useMainStore = defineStore("main", () => {
     { deep: true },
   );
 
+  const updateCustomScripts = () => {
+    if (appConfig.value.customCssList) {
+      appConfig.value.customCss = appConfig.value.customCssList
+        .filter((item) => item.enable)
+        .map((item) => `/* ${item.name} */\n${item.content}`)
+        .join("\n\n");
+    }
+    if (appConfig.value.customJsList) {
+      appConfig.value.customJs = appConfig.value.customJsList
+        .filter((item) => item.enable)
+        .map((item) => `// ${item.name}\n${item.content}`)
+        .join("\n\n");
+    }
+    saveData();
+  };
+
   return {
     groups,
     items,
@@ -929,5 +977,6 @@ export const useMainStore = defineStore("main", () => {
     uploadLicense,
     luckyStunData,
     fetchLuckyStunData,
+    updateCustomScripts,
   };
 });

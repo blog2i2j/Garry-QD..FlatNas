@@ -59,6 +59,13 @@ export interface NavGroup {
   iconSize?: number;
 }
 
+export interface CustomScript {
+  id: string;
+  name: string;
+  content: string;
+  enable: boolean;
+}
+
 export interface SearchEngine {
   id: string;
   key: string;
@@ -143,7 +150,9 @@ export interface AppConfig {
   sidebarViewMode?: "bookmarks" | "groups";
   empireMode?: boolean;
   customCss?: string;
+  customCssList?: CustomScript[];
   customJs?: string;
+  customJsList?: CustomScript[];
   customJsDisclaimerAgreed?: boolean;
   mouseHoverEffect?: "scale" | "lift" | "glow" | "none" | string;
   autoUltrawide?: boolean;

@@ -13,7 +13,7 @@ const showBackToTop = computed(() => y.value > windowHeight.value);
 // Auto-detect ultrawide screen
 const checkUltrawide = () => {
   if (!store.appConfig.autoUltrawide) return;
-  
+
   const ratio = windowWidth.value / windowHeight.value;
   // 21:9 ≈ 2.33, 32:9 ≈ 3.55
   // Consider ultrawide if ratio > 2.3
@@ -28,7 +28,7 @@ watch(
   () => {
     checkUltrawide();
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 const scrollToTop = () => {
@@ -322,7 +322,7 @@ onMounted(() => {
   </Transition>
 
   <!-- Global Audio Element for persistent playback across groups -->
-  <audio id="flatnas-global-audio" style="display: none;" crossorigin="anonymous"></audio>
+  <audio id="flatnas-global-audio" style="display: none" crossorigin="anonymous"></audio>
 </template>
 
 <style>

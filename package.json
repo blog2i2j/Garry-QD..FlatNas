@@ -1,6 +1,6 @@
 {
   "name": "flat-nas",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "license": "AGPL-3.0",
   "private": true,
   "type": "module",
@@ -20,6 +20,7 @@
     "test": "vitest --environment=jsdom"
   },
   "dependencies": {
+    "@types/prismjs": "^1.26.5",
     "@vueuse/core": "^14.1.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -32,6 +33,7 @@
     "lunar-javascript": "^1.7.7",
     "multer": "^2.0.2",
     "pinia": "^3.0.4",
+    "prismjs": "^1.30.0",
     "rss-parser": "^3.13.0",
     "smooth-corners": "^1.1.0",
     "socket.io": "^4.8.1",

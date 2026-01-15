@@ -10,6 +10,7 @@ import DockerWidget from "./DockerWidget.vue";
 import SystemStatusWidget from "./SystemStatusWidget.vue";
 import RssSettings from "./RssSettings.vue";
 import SearchSettings from "./SearchSettings.vue";
+import ScriptManager from "./ScriptManager.vue";
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits(["update:show"]);
@@ -2804,15 +2805,16 @@ watch(activeTab, (val) => {
             <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
               <h4 class="text-lg font-bold mb-4 text-gray-800">自定义 CSS</h4>
               <div>
-                <textarea
-                  v-model="store.appConfig.customCss"
-                  rows="6"
+                <ScriptManager
+                  v-if="store.appConfig.customCssList"
+                  v-model="store.appConfig.customCssList"
+                  type="css"
                   placeholder="/* 输入自定义 CSS 代码 */
 .card-item {
   border-radius: 20px;
 }"
-                  class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-blue-500 outline-none text-sm font-mono"
-                ></textarea>
+                  @change="store.updateCustomScripts()"
+                />
                 <div class="text-xs text-gray-500 mt-2">
                   提示：在此处输入的 CSS 将直接应用到页面，可用于微调样式。
                 </div>
@@ -2852,16 +2854,17 @@ watch(activeTab, (val) => {
               </div>
 
               <div v-else>
-                <textarea
-                  v-model="store.appConfig.customJs"
-                  rows="6"
+                <ScriptManager
+                  v-if="store.appConfig.customJsList"
+                  v-model="store.appConfig.customJsList"
+                  type="js"
                   placeholder="// 输入自定义 JS 代码
 console.log('Hello from Custom JS!');
 document.querySelector('.card-item').addEventListener('click', () => {
   alert('Clicked!');
 });"
-                  class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm font-mono"
-                ></textarea>
+                  @change="store.updateCustomScripts()"
+                />
                 <div class="text-xs text-gray-500 mt-2 flex justify-between items-center">
                   <span>提示：JS 代码将在页面加载时执行。可与自定义 CSS 配合实现高级交互。</span>
                   <button
@@ -3030,18 +3033,24 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <div class="flex items-center gap-2 mb-1">
                       <span class="text-xs font-bold text-gray-700">请求头 (Header)</span>
                     </div>
-                    <code class="block text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200">Content-Type: application/json</code>
+                    <code
+                      class="block text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200"
+                      >Content-Type: application/json</code
+                    >
                   </div>
                   <div>
                     <div class="flex items-center gap-2 mb-1">
                       <span class="text-xs font-bold text-gray-700">请求体 (Body)</span>
                     </div>
-                    <pre class="text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200 whitespace-pre">
+                    <pre
+                      class="text-xs text-gray-600 font-mono bg-gray-50 p-1.5 rounded border border-gray-200 whitespace-pre"
+                    >
 {
   "stun": "success",
   "ip": "#{ip}",
   "port": "#{port}"
-}</pre>
+}</pre
+                    >
                   </div>
                 </div>
               </div>
