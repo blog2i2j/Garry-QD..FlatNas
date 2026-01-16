@@ -438,7 +438,7 @@ onMounted(() => {
 
           <button
             @click="$emit('update:show', false)"
-            class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+            class="w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-500 hover:text-red-900 transition-colors"
           >
             ✕
           </button>
@@ -549,7 +549,7 @@ onMounted(() => {
                   min="0"
                   max="20"
                   step="1"
-                  class="w-16 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-16 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                   title="模糊半径"
                 />
               </div>
@@ -562,7 +562,7 @@ onMounted(() => {
                   min="0"
                   max="1"
                   step="0.1"
-                  class="w-16 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-16 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                   title="遮罩浓度"
                 />
               </div>

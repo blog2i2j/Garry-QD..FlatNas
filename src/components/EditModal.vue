@@ -42,11 +42,13 @@ const form = ref<Omit<NavItem, "id">>({
   title: "",
   url: "",
   lanUrl: "",
+  backupUrls: [],
+  backupLanUrls: [],
   icon: "",
   description1: "",
   description2: "",
   description3: "",
-  color: "bg-blue-50 text-blue-600",
+  color: "bg-gray-100 text-gray-700",
   titleColor: "",
   isPublic: false,
   backgroundImage: "",
@@ -567,9 +569,9 @@ const autoFetchIcon = async () => {
     // 尝试多种来源抓取图标
     // 调整顺序：优先使用可靠的 API，最后尝试直接访问 favicon.ico
     const candidates = [
+      `https://www.favicon.vip/get.php?url=${encodeURIComponent(targetUrl)}`,
+      `https://icon.bqb.cool?url=${encodeURIComponent(targetUrl)}`,
       `https://icons.duckduckgo.com/ip3/${urlObj.hostname}.ico`,
-      `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`,
-      `https://api.uomg.com/api/favicon?url=${encodeURIComponent(targetUrl)}`,
       `${urlObj.origin}/favicon.ico`,
     ];
 
@@ -613,6 +615,8 @@ watch(
         // 编辑模式：回填数据
         form.value = {
           ...props.data,
+          backupUrls: props.data.backupUrls ? [...props.data.backupUrls] : [],
+          backupLanUrls: props.data.backupLanUrls ? [...props.data.backupLanUrls] : [],
           description1: props.data.description1 || "",
           description2: props.data.description2 || "",
           description3: props.data.description3 || "",
@@ -649,8 +653,10 @@ watch(
           title: "",
           url: "",
           lanUrl: "",
+          backupUrls: [],
+          backupLanUrls: [],
           icon: "",
-          color: "bg-blue-50 text-blue-600",
+          color: "bg-gray-100 text-gray-700",
           titleColor: "",
           isPublic: false,
           backgroundImage: "",
@@ -663,6 +669,28 @@ watch(
     }
   },
 );
+
+const addBackupUrl = () => {
+  if (!form.value.backupUrls) form.value.backupUrls = [];
+  form.value.backupUrls.push("");
+};
+
+const removeBackupUrl = (index: number) => {
+  if (form.value.backupUrls) {
+    form.value.backupUrls.splice(index, 1);
+  }
+};
+
+const addBackupLanUrl = () => {
+  if (!form.value.backupLanUrls) form.value.backupLanUrls = [];
+  form.value.backupLanUrls.push("");
+};
+
+const removeBackupLanUrl = (index: number) => {
+  if (form.value.backupLanUrls) {
+    form.value.backupLanUrls.splice(index, 1);
+  }
+};
 
 const close = () => emit("update:show", false);
 
@@ -679,7 +707,8 @@ const processIconError = () => {
     !val.includes("api.uomg.com") &&
     !val.includes("simpleicons.org") &&
     !val.includes("duckduckgo.com") &&
-    !val.includes("google.com/s2")
+    !val.includes("favicon.vip") &&
+    !val.includes("icon.bqb.cool")
   ) {
     console.log("Icon load failed, trying to fallback to reliable API:", val);
     try {
@@ -779,17 +808,15 @@ const submit = async () => {
     <div
       class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100"
     >
-      <div
-        class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50"
-      >
+      <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white">
         <h3 class="text-lg font-bold text-gray-800">{{ data ? "修改项目" : "添加新项目" }}</h3>
 
         <div class="flex items-center gap-2 ml-auto mr-4">
-          <span class="text-xs font-bold text-gray-500">公开显示</span>
+          <span class="text-xs font-bold text-gray-500">公开</span>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" v-model="form.isPublic" class="sr-only peer" />
             <div
-              class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
+              class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-gray-900"
             ></div>
           </label>
         </div>
@@ -809,15 +836,15 @@ const submit = async () => {
               <input
                 v-model="form.title"
                 type="text"
-                class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors pr-24"
+                class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors pr-24"
                 placeholder="例如：我的博客"
               />
               <button
                 @click="networkMatch"
-                class="absolute right-1 top-1 bottom-1 px-3 bg-purple-50 text-purple-600 text-xs font-bold rounded-md hover:bg-purple-100 flex items-center gap-1 transition-colors"
+                class="absolute right-1 top-1 bottom-1 px-3 bg-gray-50 text-gray-600 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center gap-1 transition-colors"
                 title="根据标题搜索网络图标库"
               >
-                🌐 标题匹配
+                匹配图标
               </button>
             </div>
           </div>
@@ -848,7 +875,7 @@ const submit = async () => {
             <input
               v-model="form.description1"
               type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors text-sm"
+              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
               placeholder="水平模式显示"
             />
           </div>
@@ -857,7 +884,7 @@ const submit = async () => {
             <input
               v-model="form.description2"
               type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors text-sm"
+              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
               placeholder="水平模式显示"
             />
           </div>
@@ -866,7 +893,7 @@ const submit = async () => {
             <input
               v-model="form.description3"
               type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors text-sm"
+              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
               placeholder="水平模式显示"
             />
           </div>
@@ -874,35 +901,93 @@ const submit = async () => {
 
         <div>
           <label class="block text-sm font-medium text-gray-600 mb-1"
-            >外网链接 <span class="text-red-500">*</span></label
-          >
+            >外网链接 <span class="text-red-500">*</span>
+            <button
+              @click="addBackupUrl"
+              class="ml-2 text-xs text-gray-500 hover:text-gray-900 hover:underline"
+              title="添加备用外网地址"
+            >
+              + 备用地址
+            </button>
+          </label>
           <div class="relative">
             <input
               v-model="form.url"
               type="text"
-              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none transition-colors pr-24"
+              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors pr-24"
               placeholder="https://example.com"
             />
             <button
               @click="domainMatch"
-              class="absolute right-1 top-1 bottom-1 px-3 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-md hover:bg-indigo-100 flex items-center gap-1 transition-colors"
+              class="absolute right-1 top-1 bottom-1 px-3 bg-gray-50 text-gray-600 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center gap-1 transition-colors"
               title="根据链接二级域名匹配图标"
             >
-              🔗 域名匹配
+              匹配图标
             </button>
+          </div>
+          <!-- Backup URLs -->
+          <div v-if="form.backupUrls && form.backupUrls.length > 0" class="space-y-2 mt-2">
+            <div
+              v-for="(url, index) in form.backupUrls"
+              :key="'backup-wan-' + index"
+              class="relative flex items-center gap-2"
+            >
+              <input
+                v-model="form.backupUrls![index]"
+                type="text"
+                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
+                :placeholder="'备用外网地址 ' + (index + 1)"
+              />
+              <button
+                @click="removeBackupUrl(index)"
+                class="text-gray-400 hover:text-red-500 p-1"
+                title="删除"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
 
         <div>
           <label class="block text-sm font-medium text-gray-600 mb-1"
-            >内网链接 <span class="text-gray-400 text-xs">(选填，内网访问时优先跳转)</span></label
-          >
+            >内网链接 <span class="text-gray-400 text-xs">(选填，内网访问时优先跳转)</span>
+            <button
+              @click="addBackupLanUrl"
+              class="ml-2 text-xs text-gray-500 hover:text-gray-900 hover:underline"
+              title="添加备用内网地址"
+            >
+              + 备用地址
+            </button>
+          </label>
           <input
             v-model="form.lanUrl"
             type="text"
             placeholder="http://192.168.1.x:8080"
-            class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-green-500 outline-none transition-colors"
+            class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors"
           />
+          <!-- Backup LAN URLs -->
+          <div v-if="form.backupLanUrls && form.backupLanUrls.length > 0" class="space-y-2 mt-2">
+            <div
+              v-for="(url, index) in form.backupLanUrls"
+              :key="'backup-lan-' + index"
+              class="relative flex items-center gap-2"
+            >
+              <input
+                v-model="form.backupLanUrls![index]"
+                type="text"
+                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
+                :placeholder="'备用内网地址 ' + (index + 1)"
+              />
+              <button
+                @click="removeBackupLanUrl(index)"
+                class="text-gray-400 hover:text-red-500 p-1"
+                title="删除"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -910,24 +995,28 @@ const submit = async () => {
             <div class="flex-1">
               <div class="flex items-center gap-4 mb-2">
                 <label class="text-sm font-medium text-gray-600">图标样式</label>
-                <div class="flex bg-gray-100 p-1 rounded-lg">
+                <div class="flex bg-gray-100 p-0.5 rounded-lg text-xs">
                   <button
                     @click="iconType = 'image'"
-                    class="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                    class="px-3 py-1 rounded-md transition-all"
                     :class="
-                      iconType === 'image' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'
+                      iconType === 'image'
+                        ? 'bg-white text-gray-800 shadow-sm font-medium'
+                        : 'text-gray-500 hover:text-gray-700'
                     "
                   >
-                    🖼️ 图片
+                    图片
                   </button>
                   <button
                     @click="iconType = 'emoji'"
-                    class="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                    class="px-3 py-1 rounded-md transition-all"
                     :class="
-                      iconType === 'emoji' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'
+                      iconType === 'emoji'
+                        ? 'bg-white text-gray-800 shadow-sm font-medium'
+                        : 'text-gray-500 hover:text-gray-700'
                     "
                   >
-                    😊 Emoji
+                    Emoji
                   </button>
                 </div>
               </div>
@@ -939,7 +1028,7 @@ const submit = async () => {
                 <input
                   v-model="saveIconToLocal"
                   type="checkbox"
-                  class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  class="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
                 />
                 <span>保存到本地缓存（推荐，配置更小）</span>
               </label>
@@ -952,14 +1041,14 @@ const submit = async () => {
                   :class="
                     isFetching
                       ? 'bg-gray-100 text-gray-400'
-                      : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   "
                 >
                   <span
                     v-if="isFetching"
                     class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
                   ></span>
-                  {{ isFetching ? "适配中..." : "🧩 本地匹配" }}
+                  {{ isFetching ? "适配中..." : "本地匹配" }}
                 </button>
 
                 <button
@@ -969,14 +1058,14 @@ const submit = async () => {
                   :class="
                     isFetching
                       ? 'bg-gray-100 text-gray-400'
-                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   "
                 >
                   <span
                     v-if="isFetching"
                     class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
                   ></span>
-                  {{ isFetching ? "正在获取..." : "⚡ 自动抓取图标" }}
+                  {{ isFetching ? "正在获取..." : "自动抓取" }}
                 </button>
               </div>
             </div>
@@ -1007,14 +1096,14 @@ const submit = async () => {
             <input
               v-model="form.icon"
               type="text"
-              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-blue-500 outline-none pr-20 text-xl"
+              class="w-full px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none pr-20 text-xl"
               placeholder="输入 Emoji"
             />
             <button
               @click="randomEmoji"
-              class="absolute right-1 top-1 bottom-1 px-3 bg-yellow-50 text-yellow-600 text-xs font-bold rounded-md hover:bg-yellow-100 flex items-center gap-1"
+              class="absolute right-1 top-1 bottom-1 px-3 bg-gray-50 text-gray-600 text-xs font-medium rounded-md hover:bg-gray-100 flex items-center gap-1 transition-colors"
             >
-              🎲 随机
+              随机
             </button>
           </div>
 
@@ -1024,7 +1113,7 @@ const submit = async () => {
                 v-model="form.icon"
                 type="text"
                 placeholder="图片 URL 地址..."
-                class="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-blue-500 outline-none"
+                class="w-full px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-gray-900 outline-none"
                 @focus="iconInputFocused = true"
                 @blur="onIconInputBlur"
               />
@@ -1046,7 +1135,7 @@ const submit = async () => {
                 min="20"
                 max="200"
                 step="5"
-                class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
               />
               <span class="text-xs text-gray-500 w-8 text-right">{{ form.iconSize }}%</span>
             </div>
@@ -1066,7 +1155,7 @@ const submit = async () => {
                 v-model="form.backgroundImage"
                 type="text"
                 placeholder="背景图 URL..."
-                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-blue-500 outline-none"
+                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm focus:border-gray-900 outline-none"
               />
               <button
                 v-if="form.backgroundImage"
@@ -1105,7 +1194,7 @@ const submit = async () => {
                   min="0"
                   max="20"
                   step="1"
-                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                 />
               </div>
               <div>
@@ -1119,7 +1208,7 @@ const submit = async () => {
                   min="0"
                   max="1"
                   step="0.1"
-                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                 />
               </div>
             </div>
@@ -1127,17 +1216,17 @@ const submit = async () => {
         </div>
       </div>
 
-      <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 border-t border-gray-100">
+      <div class="px-6 py-4 bg-white flex justify-end gap-3 border-t border-gray-100">
         <button
           @click="close"
-          class="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-200 transition-colors"
+          class="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors text-sm font-medium"
         >
           取消
         </button>
         <button
           @click="submit"
           :disabled="isSaving"
-          class="px-6 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95"
+          class="px-6 py-2 rounded-lg bg-gray-900 text-white hover:bg-black transition-all active:scale-95 text-sm font-medium"
         >
           {{ isSaving ? "保存中..." : data ? "保存修改" : "确认添加" }}
         </button>

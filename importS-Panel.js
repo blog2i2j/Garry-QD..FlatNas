@@ -15,9 +15,10 @@ async function getAutoIcon(url) {
 
     // 尝试几个常用的图标获取服务
     const candidates = [
+      `https://www.favicon.vip/get.php?url=${hostname}`,
+      `https://icon.bqb.cool?url=${url}`,
       `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
       `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`,
-      `https://api.iowen.cn/favicon/${hostname}.png`,
     ];
 
     for (const src of candidates) {

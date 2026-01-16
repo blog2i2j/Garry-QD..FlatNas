@@ -1327,6 +1327,12 @@ const handleMenuWanOpen = () => {
   window.open(item.url, "_blank");
 };
 
+const handleMenuOpen = (url: string) => {
+  closeContextMenu();
+  if (!url) return;
+  window.open(url, "_blank");
+};
+
 const handleMenuEdit = () => {
   if (contextMenuItem.value) {
     openEditModal(contextMenuItem.value, contextMenuGroupId.value);
@@ -2316,7 +2322,7 @@ onMounted(() => {
                 @touchmove="onCardTouchMove"
                 @touchend="onCardTouchEnd"
                 @touchcancel="onCardTouchEnd"
-                class="flex items-center justify-center cursor-pointer transition-all select-none relative group overflow-hidden"
+                class="flex items-center justify-center cursor-pointer transition-all select-none relative group hover:z-[999]"
                 :class="[
                   item.containerId && isUpdating.has(item.containerId)
                     ? 'opacity-50 pointer-events-none !cursor-not-allowed animate-pulse ring-2 ring-yellow-400'
@@ -2609,6 +2615,68 @@ onMounted(() => {
                 >
                   {{ item.title }}
                 </span>
+
+                <!-- Backup URLs Shortcut Overlay (Popup) -->
+                <div
+                  v-if="
+                    !isEditMode &&
+                    ((item.backupUrls && item.backupUrls.length) ||
+                      (item.backupLanUrls && item.backupLanUrls.length))
+                  "
+                  class="absolute top-[100%] left-1/2 -translate-x-1/2 mt-3 w-max max-w-[260px] bg-black/80 backdrop-blur-xl opacity-0 group-hover:opacity-100 transition-all duration-300 z-50 flex flex-col items-center gap-2 p-3 rounded-xl shadow-2xl border border-white/10 pointer-events-none group-hover:pointer-events-auto cursor-default before:absolute before:-top-4 before:left-0 before:w-full before:h-4"
+                  @click.stop
+                >
+                  <!-- Arrow -->
+                  <div
+                    class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/80 border-t border-l border-white/10 rotate-45"
+                  ></div>
+
+                  <div class="text-white/90 text-[11px] font-bold px-2 py-0.5">快捷入口</div>
+
+                  <div class="flex flex-wrap justify-center gap-2 w-full relative z-10">
+                    <!-- Main LAN -->
+                    <button
+                      v-if="item.lanUrl"
+                      @click.stop="handleMenuOpen(item.lanUrl)"
+                      class="bg-emerald-600/90 hover:bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
+                      title="主内网地址"
+                    >
+                      <span>🏠</span> 主
+                    </button>
+
+                    <!-- Main WAN -->
+                    <button
+                      v-if="item.url"
+                      @click.stop="handleMenuOpen(item.url)"
+                      class="bg-indigo-600/90 hover:bg-indigo-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
+                      title="主外网地址"
+                    >
+                      <span>🚀</span> 主
+                    </button>
+
+                    <!-- Backup LAN -->
+                    <button
+                      v-for="(url, idx) in item.backupLanUrls"
+                      :key="'lan-' + idx"
+                      @click.stop="handleMenuOpen(url)"
+                      class="bg-green-600/90 hover:bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
+                      title="备用内网地址"
+                    >
+                      <span>🌐</span> {{ idx + 1 }}
+                    </button>
+
+                    <!-- Backup WAN -->
+                    <button
+                      v-for="(url, idx) in item.backupUrls"
+                      :key="'wan-' + idx"
+                      @click.stop="handleMenuOpen(url)"
+                      class="bg-blue-600/90 hover:bg-blue-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
+                      title="备用外网地址"
+                    >
+                      <span>🛰️</span> {{ idx + 1 }}
+                    </button>
+                  </div>
+                </div>
               </div>
             </VueDraggable>
           </div>
@@ -2743,6 +2811,18 @@ onMounted(() => {
       >
         <span>🌐</span> 内网访问
       </div>
+      <!-- Backup LAN URLs -->
+      <template v-if="contextMenuItem?.backupLanUrls && contextMenuItem.backupLanUrls.length > 0">
+        <div
+          v-for="(url, index) in contextMenuItem.backupLanUrls"
+          :key="'backup-lan-' + index"
+          @click="handleMenuOpen(url)"
+          class="px-4 py-2 hover:bg-green-50 text-green-600 cursor-pointer flex items-center gap-2 text-sm transition-colors border-b border-gray-100"
+        >
+          <span>🌐</span> 备用内网 {{ index + 1 }}
+        </div>
+      </template>
+
       <div
         v-if="contextMenuItem?.url"
         @click="handleMenuWanOpen"
@@ -2750,6 +2830,17 @@ onMounted(() => {
       >
         <span>🛰️</span> 外网访问
       </div>
+      <!-- Backup WAN URLs -->
+      <template v-if="contextMenuItem?.backupUrls && contextMenuItem.backupUrls.length > 0">
+        <div
+          v-for="(url, index) in contextMenuItem.backupUrls"
+          :key="'backup-wan-' + index"
+          @click="handleMenuOpen(url)"
+          class="px-4 py-2 hover:bg-blue-50 text-blue-600 cursor-pointer flex items-center gap-2 text-sm transition-colors border-b border-gray-100"
+        >
+          <span>🛰️</span> 备用外网 {{ index + 1 }}
+        </div>
+      </template>
 
       <!-- Docker Actions -->
       <template v-if="contextMenuItem?.containerId || contextMenuItem?.containerName">

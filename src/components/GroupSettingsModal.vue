@@ -280,7 +280,7 @@ const bgAlpha = computed({
                 min="4"
                 max="32"
                 step="2"
-                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
               />
             </div>
 
@@ -301,7 +301,7 @@ const bgAlpha = computed({
                 min="60"
                 max="216"
                 step="4"
-                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
               />
             </div>
 
@@ -322,7 +322,7 @@ const bgAlpha = computed({
                 min="20"
                 max="100"
                 step="2"
-                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
               />
             </div>
           </div>
@@ -389,7 +389,7 @@ const bgAlpha = computed({
                     max="1"
                     step="0.05"
                     v-model.number="bgAlpha"
-                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                   />
                 </div>
 
@@ -478,7 +478,7 @@ const bgAlpha = computed({
                       min="0"
                       max="20"
                       step="1"
-                      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                     />
                   </div>
                   <div>
@@ -498,7 +498,7 @@ const bgAlpha = computed({
                       min="0"
                       max="1"
                       step="0.1"
-                      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                     />
                   </div>
                 </div>

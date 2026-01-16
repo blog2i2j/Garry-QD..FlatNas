@@ -2222,7 +2222,7 @@ watch(syncPlayerState, (enabled) => {
                   step="0.05"
                   :value="playerState.volume"
                   @input="onVolumeChange"
-                  class="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-400"
                 />
               </div>
             </div>

@@ -3214,13 +3214,34 @@ app.get("/api/fetch-meta", async (req, res) => {
 
     // Extract Icon
     let icon = "";
-    // Match rel="icon" or rel="shortcut icon"
-    const iconMatch = html.match(
-      /<link[^>]+rel=["'](?:shortcut\s+)?icon["'][^>]+href=["']([^"']+)["']/i,
-    );
 
-    if (iconMatch) {
-      icon = iconMatch[1];
+    const getAttr = (tag, name) => {
+      const match = tag.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
+      return match ? match[1] : null;
+    };
+
+    const links = html.match(/<link[^>]+>/gi) || [];
+
+    for (const link of links) {
+      const rel = getAttr(link, "rel");
+      const href = getAttr(link, "href");
+
+      if (!rel || !href) continue;
+
+      const relLower = rel.toLowerCase();
+
+      // Priority: icon > shortcut icon > others
+      if (relLower === "icon" || relLower === "shortcut icon") {
+        icon = href;
+        break;
+      }
+
+      if (relLower.includes("icon") && !icon) {
+        icon = href;
+      }
+    }
+
+    if (icon) {
       // Handle relative URLs
       if (!icon.startsWith("http")) {
         try {

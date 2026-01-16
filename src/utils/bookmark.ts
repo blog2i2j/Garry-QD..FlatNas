@@ -13,7 +13,7 @@ export const parseBookmarks = (html: string): BookmarkItem[] => {
     let icon = link.getAttribute("icon");
     if (!icon) {
       try {
-        icon = `https://api.iowen.cn/favicon/${new URL(url).hostname}.png`;
+        icon = `https://api.uomg.com/api/get.favicon?url=${new URL(url).hostname}`;
       } catch {
         icon = "";
       }

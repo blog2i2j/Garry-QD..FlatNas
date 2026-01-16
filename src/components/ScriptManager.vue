@@ -17,6 +17,7 @@ const emit = defineEmits<{
 const list = ref<CustomScript[]>(props.modelValue || []);
 const activeId = ref<string | null>(null);
 const deleteConfirmId = ref<string | null>(null);
+const isDragging = ref(false);
 let deleteTimeout: number | null = null;
 
 watch(
@@ -33,6 +34,54 @@ watch(
 const updateList = () => {
   emit("update:modelValue", list.value);
   emit("change");
+};
+
+const readFileContent = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = (e) => reject(e);
+    reader.readAsText(file);
+  });
+};
+
+const handleFileDrop = async (e: DragEvent) => {
+  isDragging.value = false;
+  const files = e.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!file) continue;
+    try {
+      const content = await readFileContent(file);
+      const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+
+      list.value.push({
+        id,
+        name: file.name,
+        content: content,
+        enable: true,
+      });
+
+      // If only one file, expand it
+      if (files.length === 1) {
+        activeId.value = id;
+      }
+    } catch (error) {
+      console.error("Error reading file:", file.name, error);
+    }
+  }
+  updateList();
+};
+
+const onDragLeave = (e: DragEvent) => {
+  const target = e.relatedTarget as Node;
+  const currentTarget = e.currentTarget as Node;
+  if (target && currentTarget.contains(target)) {
+    return;
+  }
+  isDragging.value = false;
 };
 
 const addItem = () => {
@@ -72,7 +121,32 @@ const toggleEnable = (item: CustomScript) => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div
+    class="space-y-4 relative"
+    @dragover.prevent="isDragging = true"
+    @dragleave.prevent="onDragLeave"
+    @drop.prevent="handleFileDrop"
+  >
+    <div
+      v-if="isDragging"
+      class="absolute inset-0 z-50 bg-blue-50 bg-opacity-90 border-2 border-dashed border-blue-500 rounded-xl flex flex-col items-center justify-center text-blue-500 pointer-events-none transition-all"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="h-12 w-12 mb-2"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+        />
+      </svg>
+      <span class="font-bold text-lg">释放文件以添加</span>
+    </div>
     <div class="space-y-2">
       <Draggable
         v-model="list"
@@ -80,7 +154,7 @@ const toggleEnable = (item: CustomScript) => {
         handle=".drag-handle"
         item-key="id"
         class="space-y-2"
-        animation="150"
+        :animation="150"
       >
         <div
           v-for="element in list"

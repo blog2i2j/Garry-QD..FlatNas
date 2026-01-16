@@ -100,7 +100,7 @@ const parseBookmarks = (html: string) => {
       let icon = link.getAttribute("icon");
       if (!icon) {
         try {
-          icon = `https://api.iowen.cn/favicon/${new URL(url).hostname}.png`;
+          icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(url)}`;
         } catch {
           icon = "";
         }
@@ -168,7 +168,11 @@ const autoFetchIcon = async () => {
     if (res.ok) {
       const data = await res.json();
       if (data.title) newTitle.value = data.title;
-      if (data.icon) newIcon.value = data.icon;
+      if (data.icon) {
+        newIcon.value = data.icon;
+      } else {
+        newIcon.value = `https://www.favicon.vip/get.php?url=${encodeURIComponent(newUrl.value)}`;
+      }
     }
   } catch (e) {
     console.error(e);
@@ -220,7 +224,7 @@ const confirmSubmit = () => {
 
     if (!newIcon.value) {
       try {
-        newIcon.value = `https://api.iowen.cn/favicon/${new URL(finalUrl).hostname}.png`;
+        newIcon.value = `https://www.favicon.vip/get.php?url=${encodeURIComponent(finalUrl)}`;
       } catch {
         // ignore
       }
@@ -431,7 +435,7 @@ const handleScrollIsolation = (e: WheelEvent) => {
               <img
                 :src="link.icon"
                 class="w-6 h-6 object-cover"
-                @error="link.icon = 'https://api.iowen.cn/favicon/unknown.png'"
+                @error="link.icon = 'https://www.favicon.vip/get.php?url=unknown'"
               />
             </div>
 

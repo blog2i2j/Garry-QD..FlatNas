@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
@@ -434,14 +434,14 @@ const checkDockerConnection = async () => {
     const data = await res.json();
     if (data.success) {
       alert(
-        `✅ 连接成功!\n\nSocket: ${data.socketPath}\n版本: ${data.version.Version}\n系统: ${data.info.OSType} / ${data.info.Architecture}\n容器: ${data.info.Containers}\n名称: ${data.info.Name}`,
+        `连接成功!\n\nSocket: ${data.socketPath}\n版本: ${data.version.Version}\n系统: ${data.info.OSType} / ${data.info.Architecture}\n容器: ${data.info.Containers}\n名称: ${data.info.Name}`,
       );
     } else {
-      alert(`❌ 连接失败: ${data.error}\nSocket: ${data.socketPath}`);
+      alert(`连接失败: ${data.error}\nSocket: ${data.socketPath}`);
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    alert("❌ 网络错误: " + msg);
+    alert("网络错误: " + msg);
   }
 };
 
@@ -621,7 +621,7 @@ const saveVersion = async () => {
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      alert("❌ 保存版本失败: " + (d.error || r.status));
+      alert("保存版本失败: " + (d.error || r.status));
       return;
     }
     versionLabel.value = "";
@@ -644,7 +644,7 @@ const restoreVersion = async (id: string) => {
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      alert("❌ 恢复失败: " + (d.error || r.status));
+      alert("恢复失败: " + (d.error || r.status));
       return;
     }
     window.location.reload();
@@ -664,7 +664,7 @@ const deleteVersion = async (id: string) => {
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      alert("❌ 删除失败: " + (d.error || r.status));
+      alert("删除失败: " + (d.error || r.status));
       return;
     }
     await fetchVersions();
@@ -969,10 +969,10 @@ const handleFileChange = (event: Event) => {
         body: JSON.stringify(data),
       });
       if (!r.ok) throw new Error("import_post_failed:" + r.status);
-      alert("✅ 导入成功！");
+      alert("导入成功！");
       window.location.reload();
     } catch (err) {
-      alert("❌ 导入失败，请检查文件格式是否为 JSON。");
+      alert("导入失败，请检查文件格式是否为 JSON。");
       console.error("[SettingsModal][Import] failed", err);
     } finally {
       if (fileInput.value) fileInput.value.value = "";
@@ -981,7 +981,7 @@ const handleFileChange = (event: Event) => {
   reader.readAsText(file);
 };
 
-const saveDefaultBtnText = ref("💾 设为默认模板");
+const saveDefaultBtnText = ref("设为默认模板");
 
 const handleReset = async () => {
   requestAuth(async () => {
@@ -1003,7 +1003,7 @@ const handleReset = async () => {
       window.location.reload();
     } catch (e: unknown) {
       const err = e as Error;
-      alert("❌ 恢复失败: " + (err.message || "未知错误"));
+      alert("恢复失败: " + (err.message || "未知错误"));
       console.error("[SettingsModal][Reset] failed", e);
     }
   }, "请输入密码以确认恢复初始化");
@@ -1027,13 +1027,13 @@ const handleSaveAsDefault = async () => {
       }
 
       // 移除成功弹窗，使用按钮文字反馈
-      saveDefaultBtnText.value = "✅ 保存成功！";
+      saveDefaultBtnText.value = "保存成功！";
       setTimeout(() => {
-        saveDefaultBtnText.value = "💾 设为默认模板";
+        saveDefaultBtnText.value = "设为默认模板";
       }, 2000);
     } catch (e: unknown) {
       const err = e as Error;
-      alert("❌ 保存失败: " + (err.message || "未知错误"));
+      alert("保存失败: " + (err.message || "未知错误"));
       console.error("[SettingsModal][SaveDefault] failed", e);
     }
   }, "请输入密码以确认保存默认模板");
@@ -1188,12 +1188,12 @@ watch(activeTab, (val) => {
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col md:flex-row h-[600px] md:h-[480px] relative"
+      class="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col md:flex-row h-[600px] md:h-[480px] relative"
       :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)` }"
     >
       <button
         @click="close"
-        class="absolute top-4 right-4 bg-[#FF0000] hover:bg-red-600 text-white z-10 w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-colors"
+        class="absolute top-4 right-4 bg-red-100 hover:bg-red-200 text-red-500 hover:text-red-900 z-10 w-7 h-7 rounded-full flex items-center justify-center shadow-sm transition-colors"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -1208,10 +1208,10 @@ watch(activeTab, (val) => {
       </button>
 
       <div
-        class="w-full md:w-1/4 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-100 p-4 flex flex-col md:flex-col shrink-0 cursor-move"
+        class="w-full md:w-1/4 bg-transparent border-b md:border-b-0 md:border-r border-gray-100 p-4 flex flex-col md:flex-col shrink-0 cursor-move"
         @mousedown="onMouseDown"
       >
-        <h3 class="text-xl font-bold text-gray-800 mb-4 md:mb-6 px-2">⚙️ 设置</h3>
+        <h3 class="text-xl font-bold text-gray-900 mb-4 md:mb-6 px-2">设置</h3>
         <nav
           class="flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0"
         >
@@ -1219,112 +1219,112 @@ watch(activeTab, (val) => {
             @click="activeTab = 'style'"
             :class="
               activeTab === 'style'
-                ? 'bg-purple-100 text-purple-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
-            🎨 外观布局
+            外观布局
           </button>
           <button
             @click="activeTab = 'widgets'"
             :class="
               activeTab === 'widgets'
-                ? 'bg-green-100 text-green-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
-            🧩 单开组件
+            单开组件
           </button>
 
           <button
             @click="activeTab = 'universal-window'"
             :class="
               activeTab === 'universal-window'
-                ? 'bg-purple-100 text-purple-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
-            🖥️ 多开组件
+            多开组件
           </button>
           <button
             @click="activeTab = 'docker'"
             :class="
               activeTab === 'docker'
-                ? 'bg-blue-100 text-blue-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
-            🐳 Docker 管理
+            Docker 管理
           </button>
           <button
             @click="activeTab = 'account'"
             :class="
               activeTab === 'account'
-                ? 'bg-orange-100 text-orange-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
           >
-            🔒 账户管理
+            账户管理
           </button>
           <button
             @click="activeTab = 'network'"
             :class="[
-              'px-4 py-2 text-sm font-medium rounded-lg transition-colors text-left flex items-center gap-2',
+              'px-4 py-2 text-sm transition-colors text-left flex items-center gap-2',
               activeTab === 'network'
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-gray-600 hover:bg-gray-50',
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50',
             ]"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full rounded-lg mb-0 md:mb-1"
           >
-            <span>🌐</span>
-            <span>网络判定</span>
+            网络判定
           </button>
           <button
             @click="activeTab = 'lucky-stun'"
             :class="
               activeTab === 'lucky-stun'
-                ? 'bg-blue-100 text-blue-700 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
-            🍀 开放中心
+            开放中心
           </button>
           <button
             @click="activeTab = 'about'"
             :class="
               activeTab === 'about'
-                ? 'bg-gray-200 text-gray-800 font-bold'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'border border-black text-gray-900 font-bold bg-transparent'
+                : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
             class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
           >
-            ℹ️ 关于
+            关于
           </button>
         </nav>
       </div>
 
-      <div class="flex-1 flex flex-col bg-white overflow-hidden">
+      <div class="flex-1 flex flex-col bg-transparent overflow-hidden">
         <div class="flex-1 p-4 overflow-y-auto">
           <div v-if="activeTab === 'style'" class="space-y-4">
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <h4 class="text-lg font-bold mb-4 text-gray-800">基础信息</h4>
+            <div class="bg-white/60 border border-gray-100 rounded-xl p-4">
+              <h4 class="text-base font-bold mb-4 text-gray-900">基础信息</h4>
               <div class="space-y-2">
                 <div>
-                  <label class="text-sm font-bold text-gray-600 mb-1 block">网站标题</label>
+                  <label class="text-sm font-medium text-gray-700 mb-1 block">网站标题</label>
                   <input
                     v-model="store.appConfig.customTitle"
                     type="text"
-                    class="w-full px-2 py-2 border border-gray-200 rounded-xl focus:border-blue-500 outline-none text-sm"
+                    class="w-full px-2 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                   />
                 </div>
                 <div>
-                  <label class="text-sm font-bold text-gray-600 mb-1 block">背景图片</label>
-                  <div class="border border-gray-200 rounded-xl p-2 bg-white">
+                  <label class="text-sm font-medium text-gray-700 mb-1 block">背景图片</label>
+                  <div class="border border-gray-200 rounded-xl p-2 bg-white/60">
                     <IconUploader
                       v-model="store.appConfig.background"
                       @update:modelValue="store.saveData()"
@@ -1344,21 +1344,21 @@ watch(activeTab, (val) => {
                           store.appConfig.background = '';
                           store.saveData();
                         "
-                        class="text-xs text-red-500 hover:underline"
+                        class="text-xs text-gray-500 hover:text-gray-900 px-2 py-1 rounded bg-gray-50 hover:bg-gray-100 transition-colors"
                       >
                         清除背景
                       </button>
                       <button
                         @click="showWallpaperLibrary = true"
-                        class="text-xs text-blue-500 hover:underline font-bold flex items-center gap-1 ml-auto"
+                        class="text-xs text-gray-600 hover:text-gray-900 font-bold flex items-center gap-1 ml-auto px-2 py-1 rounded bg-gray-50 hover:bg-gray-100 transition-colors"
                       >
-                        <span>🖼️</span> 管理壁纸库
+                        管理壁纸库
                       </button>
                     </div>
                   </div>
                 </div>
                 <div>
-                  <label class="text-sm font-bold text-gray-600 mb-1 block">纯色背景</label>
+                  <label class="text-sm font-medium text-gray-700 mb-1 block">纯色背景</label>
                   <div class="flex items-center gap-2">
                     <input
                       type="color"
@@ -1370,24 +1370,24 @@ watch(activeTab, (val) => {
                       @change="store.saveData()"
                       type="text"
                       placeholder="#f3f4f6"
-                      class="flex-1 px-2 py-2 border border-gray-200 rounded-xl focus:border-blue-500 outline-none text-sm"
+                      class="flex-1 px-2 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                     />
                     <button
                       @click="
                         store.appConfig.solidBackgroundColor = '';
                         store.saveData();
                       "
-                      class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors text-sm"
+                      class="px-3 h-8 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 transition-colors text-xs font-medium"
                       title="清除纯色背景"
                     >
-                      ↺
+                      重置
                     </button>
                     <button
                       @click="setSolidColorAsWallpaper"
-                      class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors text-sm"
+                      class="px-3 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors text-xs font-medium"
                       title="设为壁纸"
                     >
-                      🖼️
+                      设为壁纸
                     </button>
                   </div>
                 </div>
@@ -1396,48 +1396,48 @@ watch(activeTab, (val) => {
 
             <WallpaperLibrary v-model:show="showWallpaperLibrary" @select="handleWallpaperSelect" />
 
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <h4 class="text-lg font-bold mb-4 text-gray-800">布局与排版</h4>
+            <div class="bg-white/60 border border-gray-100 rounded-xl p-4">
+              <h4 class="text-base font-bold mb-4 text-gray-900">布局与排版</h4>
               <div class="mb-2">
-                <h5 class="text-sm font-bold text-gray-600 mb-2">顶部栏布局</h5>
+                <h5 class="text-sm font-medium text-gray-700 mb-2">顶部栏布局</h5>
                 <div class="flex gap-2">
                   <button
                     @click="store.appConfig.titleAlign = 'left'"
-                    class="flex-1 p-2 border-2 rounded-xl flex items-center justify-center gap-2"
+                    class="flex-1 p-2 border-2 rounded-xl flex items-center justify-center gap-2 transition-colors"
                     :class="
                       store.appConfig.titleAlign === 'left'
-                        ? 'border-purple-500 bg-purple-50 text-purple-700'
-                        : 'border-gray-200 text-gray-500 bg-white'
+                        ? 'border-gray-900 bg-gray-100 text-gray-900 font-bold'
+                        : 'border-gray-200 text-gray-500 bg-white hover:bg-gray-50'
                     "
                   >
-                    <span>⬅️</span><span class="text-sm font-bold">标准布局</span>
+                    <span class="text-sm">标准布局</span>
                   </button>
                   <button
                     @click="store.appConfig.titleAlign = 'right'"
-                    class="flex-1 p-2 border-2 rounded-xl flex items-center justify-center gap-2"
+                    class="flex-1 p-2 border-2 rounded-xl flex items-center justify-center gap-2 transition-colors"
                     :class="
                       store.appConfig.titleAlign === 'right'
-                        ? 'border-purple-500 bg-purple-50 text-purple-700'
-                        : 'border-gray-200 text-gray-500 bg-white'
+                        ? 'border-gray-900 bg-gray-100 text-gray-900 font-bold'
+                        : 'border-gray-200 text-gray-500 bg-white hover:bg-gray-50'
                     "
                   >
-                    <span class="text-sm font-bold">反转布局</span><span>➡️</span>
+                    <span class="text-sm">反转布局</span>
                   </button>
                 </div>
               </div>
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <h4 class="text-sm font-bold text-gray-600 mb-1">标题大小</h4>
+                  <h4 class="text-sm font-medium text-gray-700 mb-1">标题大小</h4>
                   <input
                     type="range"
                     v-model.number="store.appConfig.titleSize"
                     min="20"
                     max="80"
-                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                   />
                 </div>
                 <div>
-                  <h4 class="text-sm font-bold text-gray-600 mb-1">标题颜色</h4>
+                  <h4 class="text-sm font-medium text-gray-700 mb-1">标题颜色</h4>
                   <div class="flex items-center gap-2">
                     <input
                       type="color"
@@ -1446,15 +1446,15 @@ watch(activeTab, (val) => {
                     />
                     <button
                       @click="store.appConfig.titleColor = '#ffffff'"
-                      class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors text-sm"
+                      class="px-3 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors text-xs font-medium"
                       title="重置颜色"
                     >
-                      ↺
+                      重置
                     </button>
                   </div>
                 </div>
                 <div>
-                  <h4 class="text-sm font-bold text-gray-600 mb-1">分组垂直间距</h4>
+                  <h4 class="text-sm font-medium text-gray-700 mb-1">分组垂直间距</h4>
                   <div class="flex items-center gap-2">
                     <input
                       type="range"
@@ -1462,7 +1462,7 @@ watch(activeTab, (val) => {
                       min="0"
                       max="100"
                       step="5"
-                      class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                      class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                     />
                     <span class="text-xs text-gray-500 w-6">{{
                       store.appConfig.groupGap ?? 30
@@ -1470,7 +1470,7 @@ watch(activeTab, (val) => {
                   </div>
                 </div>
                 <div>
-                  <h4 class="text-sm font-bold text-gray-600 mb-1">黑暗模式</h4>
+                  <h4 class="text-sm font-medium text-gray-700 mb-1">黑暗模式</h4>
                   <div class="flex items-center gap-2">
                     <label class="relative inline-flex items-center cursor-pointer">
                       <input
@@ -1479,17 +1479,17 @@ watch(activeTab, (val) => {
                         class="sr-only peer"
                       />
                       <div
-                        class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"
+                        class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
                       ></div>
                     </label>
                     <span class="text-xs text-gray-500">开启明黄云纹模式</span>
                   </div>
                 </div>
                 <div>
-                  <h4 class="text-sm font-bold text-gray-600 mb-1">鼠标悬停效果</h4>
+                  <h4 class="text-sm font-medium text-gray-700 mb-1">鼠标悬停效果</h4>
                   <select
                     v-model="store.appConfig.mouseHoverEffect"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm bg-white"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm bg-white"
                   >
                     <option value="scale">缩放 (默认)</option>
                     <option value="lift">上浮</option>
@@ -1500,14 +1500,14 @@ watch(activeTab, (val) => {
 
                 <div class="flex items-center justify-between mt-4 border-t pt-4 border-gray-100">
                   <div>
-                    <div class="text-sm font-bold text-gray-700 flex items-center gap-1">
+                    <div class="text-sm font-medium text-gray-700 flex items-center gap-1">
                       自动适配带鱼屏
                       <span
-                        class="text-[10px] px-1 py-0.5 bg-purple-100 text-purple-600 rounded leading-none font-normal"
+                        class="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded leading-none font-normal"
                         >内测中</span
                       >
                     </div>
-                    <div class="text-xs text-gray-400">
+                    <div class="text-xs text-gray-500">
                       检测到 21:9 或 32:9 分辨率时自动开启宽屏模式
                     </div>
                   </div>
@@ -1519,18 +1519,18 @@ watch(activeTab, (val) => {
                       @change="handleUltrawideChange"
                     />
                     <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"
+                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
                     ></div>
                   </label>
                 </div>
               </div>
             </div>
 
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <h4 class="text-lg font-bold mb-4 text-gray-800">页脚设置</h4>
+            <div class="bg-white/60 border border-gray-100 rounded-xl p-4">
+              <h4 class="text-base font-bold mb-4 text-gray-900">页脚设置</h4>
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <label class="text-sm font-bold text-gray-600">显示访客统计</label>
+                  <label class="text-sm font-medium text-gray-700">显示访客统计</label>
                   <label class="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
@@ -1538,69 +1538,71 @@ watch(activeTab, (val) => {
                       class="sr-only peer"
                     />
                     <div
-                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"
+                      class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
                     ></div>
                   </label>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="text-sm font-bold text-gray-600 mb-1 block">页脚高度 (px)</label>
-                    <div class="text-xs text-gray-400 mb-1">0 为自适应</div>
+                    <label class="text-sm font-medium text-gray-700 mb-1 block"
+                      >页脚高度 (px)</label
+                    >
+                    <div class="text-xs text-gray-500 mb-1">0 为自适应</div>
                     <input
                       type="number"
                       v-model="store.appConfig.footerHeight"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                       placeholder="0"
                     />
                   </div>
                   <div>
-                    <label class="text-sm font-bold text-gray-600 mb-1 block"
+                    <label class="text-sm font-medium text-gray-700 mb-1 block"
                       >页脚内容宽度 (px)</label
                     >
-                    <div class="text-xs text-gray-400 mb-1">默认 1280</div>
+                    <div class="text-xs text-gray-500 mb-1">默认 1280</div>
                     <input
                       type="number"
                       v-model="store.appConfig.footerWidth"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                       placeholder="1280"
                     />
                   </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="text-sm font-bold text-gray-600 mb-1 block"
+                    <label class="text-sm font-medium text-gray-700 mb-1 block"
                       >页脚距底部 (px)</label
                     >
-                    <div class="text-xs text-gray-400 mb-1">调整页脚垂直位置</div>
+                    <div class="text-xs text-gray-500 mb-1">调整页脚垂直位置</div>
                     <input
                       type="number"
                       v-model="store.appConfig.footerMarginBottom"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                       placeholder="0"
                     />
                   </div>
                   <div>
-                    <label class="text-sm font-bold text-gray-600 mb-1 block"
+                    <label class="text-sm font-medium text-gray-700 mb-1 block"
                       >页脚字体大小 (px)</label
                     >
-                    <div class="text-xs text-gray-400 mb-1">默认 12px</div>
+                    <div class="text-xs text-gray-500 mb-1">默认 12px</div>
                     <input
                       type="number"
                       v-model="store.appConfig.footerFontSize"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm"
                       placeholder="12"
                     />
                   </div>
                 </div>
                 <div>
-                  <label class="text-sm font-bold text-gray-600 mb-1 block"
+                  <label class="text-sm font-medium text-gray-700 mb-1 block"
                     >自定义页脚内容 (HTML)</label
                   >
                   <textarea
                     v-model="store.appConfig.footerHtml"
                     rows="3"
                     placeholder="可输入备案号等信息，支持 HTML 标签"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-purple-500 outline-none text-sm font-mono"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:border-gray-900 outline-none text-sm font-mono"
                   ></textarea>
                 </div>
               </div>
@@ -1609,30 +1611,22 @@ watch(activeTab, (val) => {
 
           <div v-if="activeTab === 'widgets'" class="space-y-4">
             <div class="flex items-center justify-between mb-4 mr-8">
-              <h4 class="text-lg font-bold text-gray-800 border-l-4 border-green-500 pl-3">
+              <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
                 桌面组件
               </h4>
               <div class="flex items-center gap-3 text-xs mr-[10px]">
                 <button
                   @click="restoreMissingWidgets"
-                  class="text-blue-500 hover:text-blue-700 underline mr-2"
+                  class="text-gray-600 hover:text-gray-900 underline mr-2"
                 >
                   恢复默认组件
                 </button>
                 <button
                   @click="addCustomCssWidget"
-                  class="text-purple-500 hover:text-purple-700 underline mr-2"
+                  class="text-gray-600 hover:text-gray-900 underline mr-2"
                 >
                   + 自定义组件
                 </button>
-                <div class="flex items-center gap-1">
-                  <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                  <span class="text-gray-500">公开</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-                  <span class="text-gray-500">启用</span>
-                </div>
               </div>
             </div>
 
@@ -1642,7 +1636,7 @@ watch(activeTab, (val) => {
                 <div
                   v-if="w.type !== 'iframe' && w.type !== 'countdown' && w.type !== 'docker'"
                   :class="[
-                    'border border-gray-100 rounded-xl bg-white hover:shadow-md transition-all relative',
+                    'border border-gray-100 rounded-xl bg-white/60 hover:shadow-md transition-all relative',
                     w.type === 'player'
                       ? 'col-span-2 md:col-span-4 flex flex-col gap-3 p-4 md:grid md:grid-cols-[auto_1fr_auto] md:items-center md:gap-4'
                       : 'flex flex-col items-center justify-between p-4 aspect-square',
@@ -1651,25 +1645,25 @@ watch(activeTab, (val) => {
                   <button
                     v-if="isUnknownWidget(w.type)"
                     @click="deleteWidget(w.id)"
-                    class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-600 rounded-full text-xs transition-colors z-20"
+                    class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full text-xs transition-colors z-20"
                     title="删除组件"
                   >
                     ✕
                   </button>
                   <template v-if="w.type === 'player'">
-                    <div class="flex items-center gap-3 flex-shrink-0 md:items-start">
+                    <div class="flex items-center gap-3 flex-shrink-0">
                       <div
-                        class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
+                        class="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-sm font-medium text-gray-700 shadow-sm"
                       >
-                        🎵
+                        音
                       </div>
                       <span class="font-bold text-gray-700 text-sm">随机音乐</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                       <label
-                        class="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs rounded-lg cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-1 whitespace-nowrap"
+                        class="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded-lg cursor-pointer hover:bg-gray-200 transition-colors flex items-center gap-1 whitespace-nowrap"
                       >
-                        <span>📤 上传音乐</span>
+                        <span>上传音乐</span>
                         <input
                           type="file"
                           accept="audio/*"
@@ -1681,11 +1675,9 @@ watch(activeTab, (val) => {
                       <button
                         type="button"
                         @click="toggleMusicManager"
-                        class="px-3 py-1.5 bg-gray-50 text-gray-600 text-xs rounded-lg cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-1 whitespace-nowrap"
+                        class="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded-lg cursor-pointer hover:bg-gray-200 transition-colors flex items-center gap-1 whitespace-nowrap"
                       >
-                        {{ musicManagerOpen ? "📁 收起文件" : "📁 文件管理" }} ({{
-                          musicFiles.length
-                        }})
+                        {{ musicManagerOpen ? "收起文件" : "文件管理" }} ({{ musicFiles.length }})
                       </button>
                       <span
                         v-if="uploadStatus"
@@ -1696,14 +1688,14 @@ watch(activeTab, (val) => {
                     </div>
                     <div class="flex flex-col items-stretch gap-2 md:items-end">
                       <div class="flex items-center gap-2 justify-end">
-                        <span class="text-xs text-gray-400 whitespace-nowrap">🔊</span>
+                        <span class="text-xs text-gray-500 whitespace-nowrap">音量</span>
                         <input
                           v-model.number="musicVolumePercent"
                           type="range"
                           min="0"
                           max="100"
                           step="1"
-                          class="w-28 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                          class="w-28 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                         />
                       </div>
                       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1760,7 +1752,7 @@ watch(activeTab, (val) => {
                               @change="store.saveData()"
                               class="sr-only peer" />
                             <div
-                              class="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500"
+                              class="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"
                             ></div
                           ></label>
                         </div>
@@ -1771,23 +1763,23 @@ watch(activeTab, (val) => {
                         <button
                           type="button"
                           @click="fetchMusicFiles"
-                          class="px-3 py-1.5 bg-blue-50 text-blue-600 text-xs rounded-lg cursor-pointer hover:bg-blue-100 transition-colors flex items-center gap-1 whitespace-nowrap"
+                          class="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded-lg cursor-pointer hover:bg-gray-200 transition-colors flex items-center gap-1 whitespace-nowrap"
                           :disabled="isMusicListLoading"
                         >
-                          {{ isMusicListLoading ? "刷新中..." : "🔄 刷新列表" }}
+                          {{ isMusicListLoading ? "刷新中..." : "刷新列表" }}
                         </button>
                         <span v-if="musicManagerStatus" class="text-xs text-red-500">{{
                           musicManagerStatus
                         }}</span>
-                        <span v-else class="text-xs text-gray-400"
+                        <span v-else class="text-xs text-gray-500"
                           >共 {{ musicFiles.length }} 个文件</span
                         >
                       </div>
                       <div
                         class="border border-gray-100 rounded-xl bg-gray-50 p-3 max-h-44 overflow-auto"
                       >
-                        <div v-if="isMusicListLoading" class="text-xs text-gray-400">加载中...</div>
-                        <div v-else-if="musicFiles.length === 0" class="text-xs text-gray-400">
+                        <div v-if="isMusicListLoading" class="text-xs text-gray-500">加载中...</div>
+                        <div v-else-if="musicFiles.length === 0" class="text-xs text-gray-500">
                           暂无音乐文件
                         </div>
                         <div v-else class="space-y-1">
@@ -1799,7 +1791,7 @@ watch(activeTab, (val) => {
                             <span class="flex-1 truncate text-gray-700" :title="f">{{ f }}</span>
                             <button
                               type="button"
-                              class="px-2 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                              class="px-2 py-1 rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                               @click="deleteMusicFile(f)"
                             >
                               删除
@@ -1845,7 +1837,7 @@ watch(activeTab, (val) => {
                                 store.saveData();
                               }
                             "
-                            class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                            class="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                           />
                           <div class="flex items-center justify-between mt-2 gap-2">
                             <label class="text-[10px] text-gray-500">文字颜色</label>
@@ -1880,7 +1872,7 @@ watch(activeTab, (val) => {
                           </div>
                           <button
                             @click.stop="editingOpacityId = null"
-                            class="mt-2 text-xs text-blue-500 hover:text-blue-700 w-full text-center border-t border-gray-100 pt-1"
+                            class="mt-2 text-xs text-gray-600 hover:text-gray-900 w-full text-center border-t border-gray-100 pt-1"
                           >
                             完成
                           </button>
@@ -1888,7 +1880,7 @@ watch(activeTab, (val) => {
                       </template>
                       <template v-else>
                         <div
-                          class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
+                          class="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-sm font-medium text-gray-700 shadow-sm"
                         >
                           <img
                             v-if="w.type === 'music'"
@@ -1898,40 +1890,40 @@ watch(activeTab, (val) => {
                           <template v-else>
                             {{
                               w.type === "clock"
-                                ? "⏰"
+                                ? "时"
                                 : w.type === "weather"
-                                  ? "🌦️"
+                                  ? "天"
                                   : w.type === "clockweather"
-                                    ? "🕒🌦️"
+                                    ? "合"
                                     : w.type === "calendar"
-                                      ? "📅"
+                                      ? "日"
                                       : w.type === "memo"
-                                        ? "📝"
+                                        ? "备"
                                         : w.type === "search"
-                                          ? "🔍"
+                                          ? "搜"
                                           : w.type === "quote"
-                                            ? "💬"
+                                            ? "言"
                                             : w.type === "bookmarks"
-                                              ? "📑"
+                                              ? "藏"
                                               : w.type === "file-transfer"
-                                                ? "📤"
+                                                ? "传"
                                                 : w.type === "todo"
-                                                  ? "✅"
+                                                  ? "待"
                                                   : w.type === "calculator"
-                                                    ? "🧮"
+                                                    ? "算"
                                                     : w.type === "ip"
-                                                      ? "🌐"
+                                                      ? "IP"
                                                       : w.type === "player"
-                                                        ? "🎵"
+                                                        ? "音"
                                                         : w.type === "hot"
-                                                          ? "🔥"
+                                                          ? "热"
                                                           : w.type === "rss"
-                                                            ? "📡"
+                                                            ? "阅"
                                                             : w.type === "sidebar"
-                                                              ? "⬅️"
+                                                              ? "侧"
                                                               : w.type === "custom-css"
-                                                                ? "🎨"
-                                                                : "🖥️"
+                                                                ? "自"
+                                                                : "组"
                             }}
                           </template>
                         </div>
@@ -2038,7 +2030,7 @@ watch(activeTab, (val) => {
                             @change="store.saveData()"
                             class="sr-only peer" />
                           <div
-                            class="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-500"
+                            class="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"
                           ></div
                         ></label>
                       </div>
@@ -2048,9 +2040,9 @@ watch(activeTab, (val) => {
               </template>
             </div>
 
-            <div class="border-2 border-blue-500 rounded-xl p-4 mt-6 bg-white">
-              <h4 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span class="text-2xl">⚙️</span> 高级组件配置
+            <div class="border-2 border-gray-900 rounded-xl p-4 mt-6 bg-white">
+              <h4 class="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+                高级组件配置
               </h4>
               <div class="space-y-8">
                 <RssSettings />
@@ -2062,15 +2054,15 @@ watch(activeTab, (val) => {
 
           <div v-if="activeTab === 'docker'" class="space-y-4">
             <div class="flex items-center justify-between mb-4 mr-8">
-              <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3">
+              <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
                 Docker 管理 (内测中)
               </h4>
               <div v-if="dockerWidget" class="flex items-center gap-3 text-xs mr-[10px]">
                 <button
                   @click="checkDockerConnection"
-                  class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-100 transition-colors font-bold"
+                  class="bg-gray-100 text-gray-900 px-3 py-1 rounded-lg hover:bg-gray-200 transition-colors font-bold"
                 >
-                  ⚡ 测试连接
+                  测试连接
                 </button>
               </div>
             </div>
@@ -2078,7 +2070,7 @@ watch(activeTab, (val) => {
             <!-- Host Status Widget Section -->
             <div class="space-y-3 mb-6 pb-6 border-b border-gray-100">
               <div class="flex items-center justify-between">
-                <span class="text-sm font-bold text-gray-800">宿主机状态组件</span>
+                <span class="text-sm font-bold text-gray-900">宿主机状态组件</span>
                 <div class="flex items-center gap-4">
                   <div
                     v-if="systemStatusWidget && systemStatusWidget.enable"
@@ -2129,7 +2121,7 @@ watch(activeTab, (val) => {
                       class="sr-only peer"
                     />
                     <div
-                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
+                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
                     ></div>
                     <span class="text-sm text-gray-700 ml-3">启用</span>
                   </label>
@@ -2142,7 +2134,7 @@ watch(activeTab, (val) => {
               >
                 <div class="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3">
                   <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-400">使用模拟数据</span>
+                    <span class="text-xs text-gray-500">使用模拟数据</span>
                     <label class="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
@@ -2153,7 +2145,7 @@ watch(activeTab, (val) => {
                         class="sr-only peer"
                       />
                       <div
-                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"
+                        class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
                       ></div>
                     </label>
                   </div>
@@ -2166,7 +2158,7 @@ watch(activeTab, (val) => {
 
             <div v-if="dockerWidget" class="space-y-3">
               <div class="flex items-center justify-between">
-                <span class="text-sm font-bold text-gray-800">Docker 组件</span>
+                <span class="text-sm font-bold text-gray-900">Docker 组件</span>
                 <div class="flex items-center gap-4">
                   <div v-if="dockerWidget.enable" class="flex items-center gap-2 animate-fade-in">
                     <div class="flex items-center gap-2">
@@ -2205,7 +2197,7 @@ watch(activeTab, (val) => {
                       class="sr-only peer"
                     />
                     <div
-                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
+                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
                     ></div>
                     <span class="text-sm text-gray-700 ml-3">启用</span>
                   </label>
@@ -2214,7 +2206,7 @@ watch(activeTab, (val) => {
 
               <div class="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-400">支持启动/停止/重启</span>
+                  <span class="text-xs text-gray-500">支持启动/停止/重启</span>
                   <label class="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
@@ -2223,13 +2215,13 @@ watch(activeTab, (val) => {
                       class="sr-only peer"
                     />
                     <div
-                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"
+                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
                     ></div>
                   </label>
                   <span class="text-[10px] text-gray-500">使用模拟数据</span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-400">自动升级镜像(每2小时)</span>
+                  <span class="text-xs text-gray-500">自动升级镜像(每2小时)</span>
                   <label class="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
@@ -2246,7 +2238,7 @@ watch(activeTab, (val) => {
                       class="sr-only peer"
                     />
                     <div
-                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
+                      class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
                     ></div>
                   </label>
                 </div>
@@ -2265,7 +2257,7 @@ watch(activeTab, (val) => {
                     "
                     type="text"
                     placeholder="例如：192.168.1.10"
-                    class="px-2 py-1 border border-gray-200 rounded text-xs focus:border-blue-500 outline-none"
+                    class="px-2 py-1 border border-gray-200 rounded text-xs focus:border-gray-900 outline-none"
                   />
                 </div>
               </div>
@@ -2278,11 +2270,11 @@ watch(activeTab, (val) => {
               <p class="mb-4">未启用 Docker 组件</p>
               <button
                 @click="enableDockerWidget"
-                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-sm"
+                class="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-black transition-colors shadow-sm"
               >
                 启用 Docker 组件
               </button>
-              <p class="mt-4 text-xs text-gray-400 max-w-xs mx-auto">
+              <p class="mt-4 text-xs text-gray-500 max-w-xs mx-auto">
                 如果您的系统不支持
                 Docker（如旧版本），启用后可以在上方开启"使用模拟数据"以体验功能。
               </p>
@@ -2293,15 +2285,15 @@ watch(activeTab, (val) => {
             <!-- Universal Window Widget Section -->
             <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
               <div class="flex items-center gap-2">
-                <h4 class="text-lg font-bold text-gray-800 border-l-4 border-purple-500 pl-3">
+                <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
                   万能窗口
                 </h4>
-                <span class="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">可多开</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">可多开</span>
                 <button
                   @click="addIframeWidget"
-                  class="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 ml-2"
+                  class="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1 ml-2"
                 >
-                  <span class="text-lg leading-none">+</span> 新增窗口
+                  <span class="text-base leading-none">+</span> 新增窗口
                 </button>
               </div>
             </div>
@@ -2314,9 +2306,9 @@ watch(activeTab, (val) => {
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-4">
                     <div
-                      class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
+                      class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-sm font-medium text-gray-700 shadow-sm"
                     >
-                      🖥️
+                      窗
                     </div>
                     <div class="flex flex-col">
                       <span class="font-bold text-gray-700">万能窗口</span>
@@ -2377,7 +2369,7 @@ watch(activeTab, (val) => {
                     </div>
                   </div>
                 </div>
-                <div class="w-full bg-white p-3 rounded-lg border border-gray-100 space-y-3">
+                <div class="w-full bg-white/60 p-3 rounded-lg border border-gray-100 space-y-3">
                   <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1"
                       >外网/默认地址 (URL)</label
@@ -2386,7 +2378,7 @@ watch(activeTab, (val) => {
                       v-model="w.data.url"
                       type="url"
                       placeholder="例如：https://example.com"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-blue-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-gray-900 outline-none"
                     />
                   </div>
                   <div>
@@ -2402,7 +2394,7 @@ watch(activeTab, (val) => {
                       v-model="w.data.lanUrl"
                       type="url"
                       placeholder="例如：http://192.168.x.x"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-blue-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-gray-900 outline-none"
                     />
                   </div>
                   <p class="text-[10px] text-gray-500 mt-1">
@@ -2424,15 +2416,15 @@ watch(activeTab, (val) => {
             <!-- Countdown Widget Section -->
             <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-4 mt-8">
               <div class="flex items-center gap-2">
-                <h4 class="text-lg font-bold text-gray-800 border-l-4 border-red-500 pl-3">
+                <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
                   倒计时
                 </h4>
-                <span class="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">可多开</span>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">可多开</span>
                 <button
                   @click="addCountdownWidget"
-                  class="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1 ml-2"
+                  class="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1 ml-2"
                 >
-                  <span class="text-lg leading-none">+</span> 新增倒计时
+                  <span class="text-base leading-none">+</span> 新增倒计时
                 </button>
               </div>
             </div>
@@ -2445,9 +2437,9 @@ watch(activeTab, (val) => {
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-4">
                     <div
-                      class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm"
+                      class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-sm font-medium text-gray-700 shadow-sm"
                     >
-                      ⏳
+                      计
                     </div>
                     <div class="flex flex-col">
                       <span class="font-bold text-gray-700">倒计时</span>
@@ -2457,7 +2449,7 @@ watch(activeTab, (val) => {
                   <div class="flex items-center gap-6">
                     <button
                       @click="removeWidget(w.id)"
-                      class="text-red-400 hover:text-red-600 text-xs underline px-2"
+                      class="text-gray-400 hover:text-gray-900 text-xs underline px-2"
                       title="删除此组件"
                     >
                       删除
@@ -2508,14 +2500,14 @@ watch(activeTab, (val) => {
                     </div>
                   </div>
                 </div>
-                <div class="w-full bg-white p-3 rounded-lg border border-gray-100 space-y-3">
+                <div class="w-full bg-white/60 p-3 rounded-lg border border-gray-100 space-y-3">
                   <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">标题</label>
                     <input
                       v-model="w.data.title"
                       type="text"
                       placeholder="例如：春节"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-red-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-gray-900 outline-none"
                     />
                   </div>
                   <div>
@@ -2523,7 +2515,7 @@ watch(activeTab, (val) => {
                     <input
                       v-model="w.data.targetDate"
                       type="datetime-local"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-red-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-gray-900 outline-none"
                     />
                   </div>
                 </div>
@@ -2532,14 +2524,17 @@ watch(activeTab, (val) => {
           </div>
 
           <div v-if="activeTab === 'network'" class="p-4 space-y-4">
-            <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3 mb-4">
+            <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3 mb-4">
               网络环境判定设置
             </h4>
 
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4">
               <div class="flex items-start gap-2 mb-3">
-                <span class="text-blue-500 mt-0.5">ℹ️</span>
-                <p class="text-xs text-blue-700 leading-relaxed">
+                <span
+                  class="text-xs text-gray-500 font-medium border border-gray-200 rounded px-1.5 py-0.5 mt-0.5"
+                  >注</span
+                >
+                <p class="text-xs text-gray-600 leading-relaxed">
                   FlatNas 会自动检测您的网络环境。如果检测到您处于内网（如家庭 Wi-Fi），
                   应用卡片会自动切换到内网地址以提高速度。
                   <br />
@@ -2549,14 +2544,14 @@ watch(activeTab, (val) => {
               </div>
 
               <div class="space-y-3">
-                <label class="block text-sm font-bold text-gray-700">
+                <label class="block text-sm font-medium text-gray-700">
                   自定义内网域名/IP白名单
                 </label>
                 <textarea
                   v-model="store.appConfig.internalDomains"
                   @change="store.saveData()"
                   rows="4"
-                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-blue-500 outline-none font-mono"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:border-gray-900 outline-none font-mono"
                   placeholder="每行一个，支持域名后缀或 IP 段。例如：
 .frp.yourdomain.com
 100.64.
@@ -2569,7 +2564,7 @@ watch(activeTab, (val) => {
             </div>
 
             <div class="bg-gray-50 border border-gray-100 rounded-xl p-4">
-              <h5 class="text-sm font-bold text-gray-700 mb-3">强制模式</h5>
+              <h5 class="text-sm font-medium text-gray-700 mb-3">强制模式</h5>
               <div class="flex items-center gap-4">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
@@ -2577,7 +2572,7 @@ watch(activeTab, (val) => {
                     v-model="store.appConfig.forceNetworkMode"
                     value="auto"
                     @change="store.saveData()"
-                    class="text-blue-500 focus:ring-blue-500"
+                    class="text-gray-900 focus:ring-blue-400 accent-blue-400"
                   />
                   <span class="text-sm text-gray-700">自动判定 (推荐)</span>
                 </label>
@@ -2587,7 +2582,7 @@ watch(activeTab, (val) => {
                     v-model="store.appConfig.forceNetworkMode"
                     value="lan"
                     @change="store.saveData()"
-                    class="text-blue-500 focus:ring-blue-500"
+                    class="text-gray-900 focus:ring-blue-400 accent-blue-400"
                   />
                   <span class="text-sm text-gray-700">强制内网模式</span>
                 </label>
@@ -2597,8 +2592,9 @@ watch(activeTab, (val) => {
                     v-model="store.appConfig.forceNetworkMode"
                     value="wan"
                     @change="store.saveData()"
-                    class="text-blue-500 focus:ring-blue-500"
+                    class="text-gray-900 focus:ring-blue-400 accent-blue-400"
                   />
+
                   <span class="text-sm text-gray-700">强制外网模式</span>
                 </label>
               </div>
@@ -2607,15 +2603,15 @@ watch(activeTab, (val) => {
 
           <div v-if="activeTab === 'lucky-stun'" class="p-4 space-y-4">
             <div class="flex items-center gap-2 mb-4">
-              <h4 class="text-lg font-bold text-gray-800 border-l-4 border-blue-500 pl-3">
+              <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
                 开放中心
               </h4>
             </div>
 
             <!-- Music Widget Settings -->
-            <div id="music-settings" class="bg-pink-50 border border-pink-100 rounded-xl p-4 mb-6">
+            <div id="music-settings" class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-bold text-gray-800">道理鱼音乐设置</h4>
+                <h4 class="text-base font-bold text-gray-900">道理鱼音乐设置</h4>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -2631,7 +2627,7 @@ watch(activeTab, (val) => {
                     class="sr-only peer"
                   />
                   <div
-                    class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-pink-500"
+                    class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
                   ></div>
                 </label>
               </div>
@@ -2642,7 +2638,7 @@ watch(activeTab, (val) => {
                   <input
                     v-model="musicWidget.data.apiUrl"
                     @change="store.saveData()"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                     placeholder="例如：http://192.168.1.10:3000"
                   />
                 </div>
@@ -2654,7 +2650,7 @@ watch(activeTab, (val) => {
                       v-model="musicWidget.data.username"
                       @change="store.saveData()"
                       type="text"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                       placeholder="用户名"
                       autocomplete="off"
                     />
@@ -2665,7 +2661,7 @@ watch(activeTab, (val) => {
                       v-model="musicWidget.data.password"
                       @change="store.saveData()"
                       type="password"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-pink-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                       placeholder="密码"
                       autocomplete="new-password"
                     />
@@ -2675,16 +2671,16 @@ watch(activeTab, (val) => {
                 <div class="flex items-center gap-2 mt-2">
                   <button
                     @click="testMusicAuth"
-                    class="px-3 py-1.5 bg-pink-500 hover:bg-pink-600 text-white text-xs rounded transition-colors flex items-center gap-1"
+                    class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-xs rounded transition-colors flex items-center gap-1"
                     :disabled="isTestingMusicAuth"
                   >
-                    <span v-if="isTestingMusicAuth" class="animate-spin">⏳</span>
+                    <span v-if="isTestingMusicAuth" class="animate-spin text-xs">●</span>
                     {{ isTestingMusicAuth ? "登录中..." : "登录 & 测试连接" }}
                   </button>
                   <span
                     v-if="testMusicAuthResult"
                     class="text-xs"
-                    :class="testMusicAuthResult.success ? 'text-green-600' : 'text-red-600'"
+                    :class="testMusicAuthResult.success ? 'text-gray-600' : 'text-gray-500'"
                   >
                     {{ testMusicAuthResult.message }}
                   </span>
@@ -2695,18 +2691,18 @@ watch(activeTab, (val) => {
 
                 <div
                   v-if="musicWidget.data.token"
-                  class="bg-green-50 border border-green-100 rounded-lg p-3"
+                  class="bg-white border border-gray-200 rounded-lg p-3"
                 >
                   <div class="flex items-center gap-3">
                     <img
                       v-if="musicWidget.data.userProfile?.avatar"
                       :src="getMusicAvatarUrl(musicWidget.data.userProfile.avatar)"
-                      class="w-10 h-10 rounded-full object-cover border border-green-200 bg-white"
+                      class="w-10 h-10 rounded-full object-cover border border-gray-200 bg-white"
                       alt="Avatar"
                     />
                     <div
                       v-else
-                      class="w-10 h-10 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-bold text-sm"
+                      class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-sm"
                     >
                       {{
                         (
@@ -2721,17 +2717,17 @@ watch(activeTab, (val) => {
 
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2">
-                        <span class="text-sm font-bold text-gray-800 truncate">
+                        <span class="text-sm font-bold text-gray-900 truncate">
                           {{
                             musicWidget.data.userProfile?.displayName || musicWidget.data.username
                           }}
                         </span>
                         <button
                           @click="openRenameModal"
-                          class="text-[10px] text-blue-500 hover:underline shrink-0"
+                          class="text-xs text-gray-500 hover:text-gray-900 shrink-0"
                           :disabled="isUpdatingProfile"
                         >
-                          ✏️
+                          编辑
                         </button>
                       </div>
                       <div class="text-[10px] text-gray-500 truncate">
@@ -2754,7 +2750,7 @@ watch(activeTab, (val) => {
                           }
                         }
                       "
-                      class="px-3 py-1.5 bg-white border border-red-200 text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors"
+                      class="px-3 py-1.5 bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors"
                     >
                       登出
                     </button>
@@ -2771,7 +2767,7 @@ watch(activeTab, (val) => {
                           name="music-size"
                           :checked="selectedMusicSize.cols === 1 && selectedMusicSize.rows === 1"
                           @change="selectedMusicSize = { cols: 1, rows: 1 }"
-                          class="text-pink-500"
+                          class="text-gray-900 accent-blue-400"
                         />
                         <span class="text-sm">迷你 (1x1)</span>
                       </label>
@@ -2781,7 +2777,7 @@ watch(activeTab, (val) => {
                           name="music-size"
                           :checked="selectedMusicSize.cols === 2 && selectedMusicSize.rows === 3"
                           @change="selectedMusicSize = { cols: 2, rows: 3 }"
-                          class="text-pink-500"
+                          class="text-gray-900 accent-blue-400"
                         />
                         <span class="text-sm">标准 (2x3)</span>
                       </label>
@@ -2792,7 +2788,7 @@ watch(activeTab, (val) => {
                         musicWidget.rowSpan !== selectedMusicSize.rows
                       "
                       @click="setMusicSize(selectedMusicSize.cols, selectedMusicSize.rows)"
-                      class="px-3 py-1 bg-pink-500 text-white text-xs rounded hover:bg-pink-600 transition-colors animate-fade-in"
+                      class="px-3 py-1 bg-gray-900 text-white text-xs rounded hover:bg-gray-800 transition-colors animate-fade-in"
                     >
                       确定
                     </button>
@@ -2802,8 +2798,8 @@ watch(activeTab, (val) => {
             </div>
 
             <!-- Custom CSS Section -->
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
-              <h4 class="text-lg font-bold mb-4 text-gray-800">自定义 CSS</h4>
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
+              <h4 class="text-base font-bold mb-4 text-gray-900">自定义 CSS</h4>
               <div>
                 <ScriptManager
                   v-if="store.appConfig.customCssList"
@@ -2822,14 +2818,14 @@ watch(activeTab, (val) => {
             </div>
 
             <!-- Custom JS Section -->
-            <div class="bg-purple-50 border border-purple-100 rounded-xl p-4 mb-6">
-              <h4 class="text-lg font-bold mb-4 text-gray-800">自定义 JS</h4>
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
+              <h4 class="text-base font-bold mb-4 text-gray-900">自定义 JS</h4>
 
               <div
                 v-if="!store.appConfig.customJsDisclaimerAgreed"
-                class="p-4 bg-white rounded-lg border border-red-200 shadow-sm"
+                class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm"
               >
-                <h5 class="font-bold text-red-600 mb-2 flex items-center gap-2">⚠️ 安全免责声明</h5>
+                <h5 class="font-bold text-gray-700 mb-2 flex items-center gap-2">安全免责声明</h5>
                 <div class="text-sm text-gray-600 mb-3 leading-relaxed">
                   使用自定义 JavaScript 功能允许您向页面注入任意代码。这可能导致：
                   <ul class="list-disc list-inside ml-2 mt-1 space-y-1 text-xs">
@@ -2845,7 +2841,7 @@ watch(activeTab, (val) => {
                   <input
                     type="checkbox"
                     v-model="store.appConfig.customJsDisclaimerAgreed"
-                    class="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                    class="w-4 h-4 text-gray-900 rounded border-gray-300 focus:ring-blue-400 accent-blue-400"
                   />
                   <span class="text-sm font-medium text-gray-700"
                     >我已阅读并同意上述风险，确认启用此功能</span
@@ -2869,7 +2865,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <span>提示：JS 代码将在页面加载时执行。可与自定义 CSS 配合实现高级交互。</span>
                   <button
                     @click="store.appConfig.customJsDisclaimerAgreed = false"
-                    class="text-xs text-red-400 hover:text-red-600 underline"
+                    class="text-xs text-gray-500 hover:text-gray-600 underline"
                   >
                     撤销免责声明并禁用
                   </button>
@@ -2878,9 +2874,9 @@ document.querySelector('.card-item').addEventListener('click', () => {
             </div>
 
             <!-- Weather Service Settings -->
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-bold text-gray-800">天气服务设置</h4>
+                <h4 class="text-base font-bold text-gray-900">天气服务设置</h4>
               </div>
               <div class="space-y-3">
                 <div>
@@ -2891,7 +2887,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                         type="radio"
                         v-model="store.appConfig.weatherSource"
                         value="wttr"
-                        class="text-blue-500"
+                        class="text-gray-900 accent-blue-400"
                       />
                       <span class="text-sm">Wttr.in (默认)</span>
                     </label>
@@ -2900,7 +2896,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                         type="radio"
                         v-model="store.appConfig.weatherSource"
                         value="amap"
-                        class="text-blue-500"
+                        class="text-gray-900 accent-blue-400"
                       />
                       <span class="text-sm">高德地图 (AMap)</span>
                     </label>
@@ -2909,7 +2905,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                         type="radio"
                         v-model="store.appConfig.weatherSource"
                         value="qweather"
-                        class="text-blue-500"
+                        class="text-gray-900 accent-blue-400"
                       />
                       <span class="text-sm">和风天气 (QWeather)</span>
                     </label>
@@ -2920,7 +2916,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <label class="block text-xs font-bold text-gray-600 mb-1">高德 API Key</label>
                   <input
                     v-model="store.appConfig.amapKey"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                     placeholder="请输入高德 Web 服务 Key"
                   />
                   <p class="text-[10px] text-gray-500 mt-1">
@@ -2928,7 +2924,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <a
                       href="https://console.amap.com/dev/key/app"
                       target="_blank"
-                      class="text-blue-500 underline"
+                      class="text-gray-600 underline hover:text-gray-900"
                       >高德开放平台</a
                     >
                     申请 Web 服务 Key。
@@ -2943,7 +2939,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <label class="block text-xs font-bold text-gray-600 mb-1">Project ID</label>
                     <input
                       v-model="store.appConfig.qweatherProjectId"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                       placeholder="请输入 Project ID"
                     />
                   </div>
@@ -2951,7 +2947,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <label class="block text-xs font-bold text-gray-600 mb-1">Key ID</label>
                     <input
                       v-model="store.appConfig.qweatherKeyId"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                       placeholder="请输入 Key ID"
                     />
                   </div>
@@ -2959,7 +2955,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <label class="block text-xs font-bold text-gray-600 mb-1">Private Key</label>
                     <textarea
                       v-model="store.appConfig.qweatherPrivateKey"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none min-h-[80px]"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none min-h-[80px]"
                       placeholder="请输入 Private Key (需包含 -----BEGIN PRIVATE KEY----- 头尾)"
                     ></textarea>
                   </div>
@@ -2968,7 +2964,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <a
                       href="https://console.qweather.com/"
                       target="_blank"
-                      class="text-blue-500 underline"
+                      class="text-gray-600 underline hover:text-gray-900"
                       >和风天气控制台</a
                     >
                     获取 JWT 凭证。
@@ -2976,16 +2972,16 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <div class="flex items-center gap-2 mt-2">
                     <button
                       @click="testQWeather"
-                      class="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors flex items-center gap-1"
+                      class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-xs rounded transition-colors flex items-center gap-1"
                       :disabled="isTestingWeather"
                     >
-                      <span v-if="isTestingWeather" class="animate-spin">⏳</span>
+                      <span v-if="isTestingWeather" class="animate-spin text-xs">●</span>
                       {{ isTestingWeather ? "测试中..." : "测试连接" }}
                     </button>
                     <span
                       v-if="testWeatherResult"
                       class="text-xs"
-                      :class="testWeatherResult.success ? 'text-green-600' : 'text-red-600'"
+                      :class="testWeatherResult.success ? 'text-gray-600' : 'text-gray-500'"
                     >
                       {{ testWeatherResult.message }}
                     </span>
@@ -2996,7 +2992,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <label class="block text-xs font-bold text-gray-600 mb-1">自定义天气源 URL</label>
                   <input
                     v-model="store.appConfig.weatherApiUrl"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                     placeholder="默认使用内置源，输入 URL 以自定义"
                   />
                   <p class="text-[10px] text-gray-500 mt-1">
@@ -3008,18 +3004,18 @@ document.querySelector('.card-item').addEventListener('click', () => {
             </div>
 
             <!-- Webhook Settings -->
-            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <div class="bg-gray-50 border border-gray-100 rounded-xl p-4">
               <div class="flex items-center justify-between mb-4">
-                <h4 class="text-lg font-bold text-gray-800">Webhook 设置 (内测中)</h4>
+                <h4 class="text-base font-bold text-gray-900">Webhook 设置 (内测中)</h4>
               </div>
 
               <div class="mb-6">
-                <h5 class="font-bold text-blue-800 mb-2">Webhook 地址</h5>
-                <div class="flex items-center gap-2 bg-white p-2 rounded border border-blue-200">
+                <h5 class="font-bold text-gray-900 mb-2">Webhook 地址</h5>
+                <div class="flex items-center gap-2 bg-white/60 p-2 rounded border border-gray-200">
                   <code class="text-xs text-gray-600 flex-1 break-all">{{ getWebhookUrl() }}</code>
                   <button
                     @click="copyWebhookUrl"
-                    class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold"
+                    class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold transition-colors"
                   >
                     复制
                   </button>
@@ -3028,7 +3024,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   请在 STUN 穿透配置中，将全局 Webhook 的地址设置为上述地址，并使用以下配置：
                 </p>
 
-                <div class="mt-3 space-y-3 bg-white p-3 rounded-lg border border-blue-100">
+                <div class="mt-3 space-y-3 bg-white/60 p-3 rounded-lg border border-gray-200">
                   <div>
                     <div class="flex items-center gap-2 mb-1">
                       <span class="text-xs font-bold text-gray-700">请求头 (Header)</span>
@@ -3056,39 +3052,39 @@ document.querySelector('.card-item').addEventListener('click', () => {
               </div>
 
               <div class="space-y-3">
-                <h5 class="font-bold text-gray-800">最新状态</h5>
+                <h5 class="font-bold text-gray-900">最新状态</h5>
                 <div
                   v-if="store.luckyStunData && store.luckyStunData.data"
                   class="grid grid-cols-2 gap-3"
                 >
-                  <div class="bg-white p-3 rounded-lg border border-blue-100">
+                  <div class="bg-white/60 p-3 rounded-lg border border-gray-200">
                     <div class="text-xs text-gray-500 mb-1">状态</div>
                     <div
                       class="font-bold"
                       :class="
                         store.luckyStunData.data.stun === 'success'
-                          ? 'text-green-600'
-                          : 'text-red-500'
+                          ? 'text-gray-900'
+                          : 'text-gray-500'
                       "
                     >
                       {{ store.luckyStunData.data.stun || "未知" }}
                     </div>
                   </div>
-                  <div class="bg-white p-3 rounded-lg border border-blue-100">
+                  <div class="bg-white/60 p-3 rounded-lg border border-gray-200">
                     <div class="text-xs text-gray-500 mb-1">公网 IP</div>
-                    <div class="font-bold text-gray-800 font-mono break-all">
+                    <div class="font-bold text-gray-900 font-mono break-all">
                       {{ store.luckyStunData.data.ip || "-" }}
                     </div>
                   </div>
-                  <div class="bg-white p-3 rounded-lg border border-blue-100">
+                  <div class="bg-white/60 p-3 rounded-lg border border-gray-200">
                     <div class="text-xs text-gray-500 mb-1">端口</div>
-                    <div class="font-bold text-gray-800">
+                    <div class="font-bold text-gray-900">
                       {{ store.luckyStunData.data.port || "-" }}
                     </div>
                   </div>
-                  <div class="bg-white p-3 rounded-lg border border-blue-100">
+                  <div class="bg-white/60 p-3 rounded-lg border border-gray-200">
                     <div class="text-xs text-gray-500 mb-1">更新时间</div>
-                    <div class="text-xs text-gray-800">
+                    <div class="text-xs text-gray-900">
                       {{ formatTime(store.luckyStunData.ts) }}
                     </div>
                   </div>
@@ -3104,7 +3100,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
               <div class="flex justify-end mt-4">
                 <button
                   @click="store.fetchLuckyStunData"
-                  class="text-sm text-blue-500 hover:underline flex items-center gap-1 font-bold"
+                  class="text-sm text-gray-500 hover:text-gray-900 hover:underline flex items-center gap-1 font-bold transition-colors"
                 >
                   <span>🔄</span> 刷新数据
                 </button>
@@ -3114,34 +3110,34 @@ document.querySelector('.card-item').addEventListener('click', () => {
 
           <div v-if="activeTab === 'account'" class="min-h-full flex flex-col justify-center">
             <div v-if="!store.isLogged" class="text-center">
-              <h4 class="text-xl font-bold mb-6 text-gray-800">管理员登录</h4>
+              <h4 class="text-xl font-bold mb-6 text-gray-900">管理员登录</h4>
               <input
                 v-model="passwordInput"
                 type="password"
                 placeholder="密码..."
-                class="w-full max-w-xs px-4 py-3 border border-gray-200 rounded-xl mb-4 mx-auto text-center"
+                class="w-full max-w-xs px-4 py-3 border border-gray-200 rounded-xl mb-4 mx-auto text-center focus:border-gray-900 outline-none"
                 @keyup.enter="handleLogin"
               />
               <button
                 @click="handleLogin"
-                class="bg-orange-500 text-white px-10 py-3 rounded-xl font-bold"
+                class="bg-gray-900 text-white px-10 py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors"
               >
                 登 录
               </button>
             </div>
             <div v-else class="max-w-sm mx-auto w-full">
-              <div class="bg-blue-50 p-5 rounded-xl border border-blue-100 mb-6">
-                <h5 class="text-sm font-bold text-blue-800 mb-3">📦 备份与恢复</h5>
+              <div class="bg-gray-50 p-5 rounded-xl border border-gray-100 mb-6">
+                <h5 class="text-sm font-bold text-gray-900 mb-3">📦 备份与恢复</h5>
                 <div class="grid grid-cols-2 gap-3">
                   <button
                     @click="handleExport"
-                    class="col-span-2 bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-lg text-sm font-bold"
+                    class="col-span-2 bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-50 transition-colors"
                   >
                     📤 导出配置
                   </button>
                   <button
                     @click="triggerImport"
-                    class="col-span-2 bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                    class="col-span-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors"
                   >
                     📥 导入配置
                   </button>
@@ -3153,7 +3149,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   </button>
                   <button
                     @click="handleReset"
-                    class="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                    class="bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors"
                   >
                     🧹 恢复初始化
                   </button>
@@ -3168,9 +3164,9 @@ document.querySelector('.card-item').addEventListener('click', () => {
               </div>
               <div
                 v-if="store.username === 'admin'"
-                class="bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6"
+                class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6"
               >
-                <h5 class="text-sm font-bold text-purple-800 mb-3">⚙️ 系统模式</h5>
+                <h5 class="text-sm font-bold text-gray-900 mb-3">系统模式</h5>
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-gray-700"
                     >当前模式：{{
@@ -3179,12 +3175,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   >
                   <button
                     @click="toggleAuthMode"
-                    class="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all"
-                    :class="
-                      store.systemConfig.authMode === 'single'
-                        ? 'bg-purple-500 hover:bg-purple-600'
-                        : 'bg-blue-500 hover:bg-blue-600'
-                    "
+                    class="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all bg-gray-900 hover:bg-gray-800"
                   >
                     切换为{{
                       store.systemConfig.authMode === "single" ? "多用户模式" : "单用户模式"
@@ -3207,25 +3198,25 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <input
                       v-model="versionLabel"
                       placeholder="版本备注（可选）"
-                      class="flex-1 px-3 py-2 rounded-lg border border-purple-300 text-sm"
+                      class="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
                     />
                     <button
                       @click="saveVersion"
-                      class="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all bg-purple-600 hover:bg-purple-700"
+                      class="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all bg-gray-900 hover:bg-gray-800"
                     >
                       保存为版本
                     </button>
                   </div>
-                  <div class="text-[10px] text-purple-600 mb-2">保存位置：data/config_versions</div>
+                  <div class="text-[10px] text-gray-500 mb-2">保存位置：data/config_versions</div>
                   <div class="max-h-40 overflow-y-auto space-y-1">
                     <div v-if="loadingVersions" class="text-xs text-gray-500">加载中...</div>
                     <div
                       v-for="v in versions"
                       :key="v.id"
-                      class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-purple-100"
+                      class="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200"
                     >
                       <div class="flex-1">
-                        <div class="text-sm font-medium text-gray-800 truncate">
+                        <div class="text-sm font-medium text-gray-900 truncate">
                           {{ v.label || "未命名版本" }}
                         </div>
                         <div class="text-[10px] text-gray-500">
@@ -3236,13 +3227,13 @@ document.querySelector('.card-item').addEventListener('click', () => {
                       <div class="flex gap-2">
                         <button
                           @click="restoreVersion(v.id)"
-                          class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+                          class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
                         >
                           恢复
                         </button>
                         <button
                           @click="deleteVersion(v.id)"
-                          class="text-xs px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600"
+                          class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
                         >
                           删除
                         </button>
@@ -3252,7 +3243,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </div>
               </div>
               <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6">
-                <h5 class="text-sm font-bold text-gray-700 mb-1">🔑 修改密码</h5>
+                <h5 class="text-sm font-medium text-gray-700 mb-1">🔑 修改密码</h5>
                 <p class="text-xs text-gray-500 mb-2">点击修改后请输入原来密码</p>
                 <div class="flex gap-2">
                   <div class="relative flex-1">
@@ -3260,7 +3251,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                       v-model="newPasswordInput"
                       :type="showPassword ? 'text' : 'password'"
                       placeholder="新密码..."
-                      class="w-full px-3 py-2 rounded-lg border border-gray-300 pr-10"
+                      class="w-full px-3 py-2 rounded-lg border border-gray-300 pr-10 focus:border-gray-900 outline-none"
                     />
                     <button
                       @click="showPassword = !showPassword"
@@ -3308,7 +3299,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   </div>
                   <button
                     @click="handleChangePassword"
-                    class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm"
+                    class="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 transition-colors"
                   >
                     修改
                   </button>
@@ -3316,7 +3307,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
               </div>
               <button
                 @click="store.logout"
-                class="w-full bg-red-50 text-red-600 py-3 rounded-xl font-bold border border-red-100"
+                class="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold border border-gray-200 hover:bg-gray-200 transition-colors"
               >
                 退出登录
               </button>
@@ -3324,9 +3315,9 @@ document.querySelector('.card-item').addEventListener('click', () => {
               <!-- Admin User Management UI -->
               <div
                 v-if="store.username === 'admin' && store.systemConfig.authMode === 'multi'"
-                class="mt-6 bg-blue-50 p-5 rounded-xl border border-blue-200"
+                class="mt-6 bg-gray-50 p-5 rounded-xl border border-gray-200"
               >
-                <h5 class="text-sm font-bold text-blue-800 mb-3">👥 用户管理 (Admin)</h5>
+                <h5 class="text-sm font-bold text-gray-900 mb-3">👥 用户管理 (Admin)</h5>
 
                 <!-- Add User -->
                 <div class="flex flex-col gap-2 mb-4">
@@ -3334,18 +3325,18 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <input
                       v-model="newUser"
                       placeholder="用户名"
-                      class="flex-1 px-3 py-2 rounded-lg border border-blue-300 text-sm"
+                      class="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
                     />
                     <input
                       v-model="newPwd"
                       type="password"
                       placeholder="密码"
-                      class="flex-1 px-3 py-2 rounded-lg border border-blue-300 text-sm"
+                      class="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
                     />
                   </div>
                   <button
                     @click="handleAddUser"
-                    class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700"
+                    class="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors"
                   >
                     添加用户
                   </button>
@@ -3356,16 +3347,16 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <div
                     v-for="u in userList"
                     :key="u"
-                    class="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-blue-100"
+                    class="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-gray-200"
                   >
                     <span class="text-sm text-gray-700 font-medium">
                       {{ u }}
-                      <span v-if="u === 'admin'" class="text-xs text-blue-500">(管理员)</span>
+                      <span v-if="u === 'admin'" class="text-xs text-gray-500">(管理员)</span>
                     </span>
                     <button
                       v-if="u !== 'admin'"
                       @click="handleDeleteUser(u)"
-                      class="text-red-500 hover:text-red-700 text-xs font-bold px-2"
+                      class="text-gray-400 hover:text-gray-600 text-xs font-bold px-2"
                     >
                       删除
                     </button>
@@ -3373,22 +3364,22 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </div>
 
                 <!-- License Management -->
-                <div class="mt-4 pt-4 border-t border-blue-200">
-                  <h6 class="text-xs font-bold text-blue-800 mb-2">🔑 授权密钥 (License Key)</h6>
+                <div class="mt-4 pt-4 border-t border-gray-200">
+                  <h6 class="text-xs font-bold text-gray-900 mb-2">🔑 授权密钥 (License Key)</h6>
                   <div class="flex gap-2">
                     <input
                       v-model="licenseKey"
                       placeholder="输入密钥解除限制..."
-                      class="flex-1 px-3 py-2 rounded-lg border border-blue-300 text-sm"
+                      class="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
                     />
                     <button
                       @click="handleUploadLicense"
-                      class="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-green-700 whitespace-nowrap"
+                      class="bg-gray-900 text-white px-3 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 whitespace-nowrap transition-colors"
                     >
                       导入
                     </button>
                   </div>
-                  <p class="text-[10px] text-blue-600 mt-1">
+                  <p class="text-[10px] text-gray-500 mt-1">
                     导入有效密钥可解除5个用户的注册限制。
                   </p>
                 </div>
@@ -3400,12 +3391,12 @@ document.querySelector('.card-item').addEventListener('click', () => {
             class="min-h-full flex flex-row items-start justify-between p-8 gap-8 -mt-4"
           >
             <div class="flex-[0.618] text-left space-y-4 self-center">
-              <h4 class="text-2xl font-bold text-gray-800 mb-1">关于 FlatNas</h4>
+              <h4 class="text-2xl font-bold text-gray-900 mb-1">关于 FlatNas</h4>
               <div class="flex items-center justify-start gap-2">
                 <span class="text-2xl text-gray-400 font-mono">v{{ store.currentVersion }}</span>
                 <span
                   v-if="store.hasUpdate && store.isLogged"
-                  class="w-2 h-2 bg-red-500 rounded-full cursor-pointer"
+                  class="w-2 h-2 bg-gray-900 rounded-full cursor-pointer"
                   title="发现新版本"
                   @click="store.checkUpdate"
                 ></span>
@@ -3416,14 +3407,18 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 <a
                   href="https://flatnas.top/"
                   target="_blank"
-                  class="text-blue-500 hover:underline"
+                  class="text-gray-600 underline hover:text-gray-900"
                 >
                   https://flatnas.top/
                 </a>
               </div>
               <div class="text-xs text-gray-500">
                 飞牛百科：
-                <a href="http://qdnas.icu/" target="_blank" class="text-blue-500 hover:underline">
+                <a
+                  href="http://qdnas.icu/"
+                  target="_blank"
+                  class="text-gray-600 underline hover:text-gray-900"
+                >
                   http://qdnas.icu/
                 </a>
               </div>
@@ -3433,7 +3428,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 <a
                   href="https://nasicon.top/"
                   target="_blank"
-                  class="text-blue-500 hover:underline"
+                  class="text-gray-600 underline hover:text-gray-900"
                 >
                   https://nasicon.top/
                 </a>
@@ -3443,7 +3438,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 <a
                   href="https://2.nasicon.top/"
                   target="_blank"
-                  class="text-blue-500 hover:underline"
+                  class="text-gray-600 underline hover:text-gray-900"
                 >
                   https://2.nasicon.top/
                 </a>
@@ -3453,7 +3448,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 <a
                   href="https://4.nasicon.top/"
                   target="_blank"
-                  class="text-blue-500 hover:underline"
+                  class="text-gray-600 underline hover:text-gray-900"
                 >
                   https://4.nasicon.top/
                 </a>
@@ -3465,12 +3460,12 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   class="hover:opacity-80 transition-opacity"
                   title="GitHub"
                 >
-                  <img src="/icons/github.svg" alt="GitHub" class="w-6 h-6" />
+                  <img src="/icons/github.svg" alt="GitHub" class="w-6 h-6 transition-all" />
                 </a>
                 <a
                   href="https://gitee.com/gjx0808/FlatNas"
                   target="_blank"
-                  class="text-[#C71D23] hover:opacity-80 transition-opacity"
+                  class="text-gray-700 hover:text-gray-900 hover:opacity-80 transition-opacity"
                   title="Gitee"
                 >
                   <svg
@@ -3495,19 +3490,19 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   <img
                     src="/icons/Docker+Docker+docker.com.png"
                     alt="Docker"
-                    class="w-6 h-6 object-contain scale-110"
+                    class="w-6 h-6 object-contain scale-110 transition-all"
                   />
                 </a>
               </div>
             </div>
 
             <div class="flex-[0.382] flex flex-col items-center gap-4">
-              <div class="text-sm font-bold text-gray-700">☕ 投喂作者</div>
+              <div class="text-sm font-medium text-gray-700">☕ 投喂作者</div>
               <div class="flex flex-col gap-4">
                 <div class="flex flex-col items-center gap-2">
                   <img
                     src="/alipay.jpg"
-                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain"
+                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain transition-all"
                     alt="支付宝"
                   />
                   <span class="text-[10px] text-gray-500">支付宝</span>
@@ -3515,7 +3510,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 <div class="flex flex-col items-center gap-2">
                   <img
                     src="/wechat.jpg"
-                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain"
+                    class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain transition-all"
                     alt="微信"
                   />
                   <span class="text-[10px] text-gray-500">微信</span>
@@ -3542,10 +3537,10 @@ document.querySelector('.card-item').addEventListener('click', () => {
       class="bg-white rounded-xl shadow-xl p-6 w-96 border border-gray-100 transform scale-100 animate-fade-in"
     >
       <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
-          ⚠️
+        <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-2xl">
+          !
         </div>
-        <h3 class="text-lg font-bold text-gray-800">切换模式警告</h3>
+        <h3 class="text-base font-bold text-gray-900">切换模式警告</h3>
       </div>
 
       <p class="text-sm text-gray-600 mb-6 leading-relaxed">
@@ -3565,7 +3560,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
             showMultiUserWarning = false;
             performAuthModeSwitch('multi');
           "
-          class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md"
+          class="flex-1 px-4 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors shadow-md"
         >
           确认切换
         </button>
@@ -3581,7 +3576,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
     <div
       class="bg-white rounded-xl shadow-xl p-6 w-80 border border-gray-100 transform scale-100 animate-fade-in"
     >
-      <h3 class="text-lg font-bold text-gray-800 mb-2">确认删除</h3>
+      <h3 class="text-base font-bold text-gray-900 mb-2">确认删除</h3>
       <p class="text-sm text-gray-500 mb-6">确定要删除这个万能窗口吗？此操作无法撤销。</p>
       <div class="flex gap-3">
         <button
@@ -3592,7 +3587,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
         </button>
         <button
           @click="confirmRemoveWidget"
-          class="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-bold hover:bg-red-600 transition-colors"
+          class="flex-1 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-gray-800 transition-colors"
         >
           删除
         </button>
@@ -3605,13 +3600,13 @@ document.querySelector('.card-item').addEventListener('click', () => {
     class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
   >
     <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-4 border border-gray-100">
-      <div class="text-base font-bold text-gray-800">修改昵称</div>
+      <div class="text-base font-bold text-gray-900">修改昵称</div>
       <div class="text-xs text-gray-500 mt-1">将同步更新到道理鱼音乐账户资料</div>
 
       <input
         v-model="newDisplayName"
         type="text"
-        class="mt-3 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+        class="mt-3 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
         placeholder="请输入新的昵称"
         @keyup.enter="updateDisplayName"
       />
@@ -3626,7 +3621,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
         <button
           @click="updateDisplayName"
           :disabled="isUpdatingProfile"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          class="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
           {{ isUpdatingProfile ? "保存中..." : "保存" }}
         </button>
@@ -3650,3 +3645,4 @@ document.querySelector('.card-item').addEventListener('click', () => {
   }
 }
 </style>
+

@@ -3,6 +3,8 @@ export interface NavItem {
   title: string;
   url: string;
   lanUrl?: string;
+  backupUrls?: string[];
+  backupLanUrls?: string[];
   icon: string;
   // Horizontal mode custom text lines
   description1?: string;

@@ -1895,7 +1895,7 @@ watch(syncPlayerState, (enabled) => {
                   :value="playerState.currentTime"
                   @input="onSeek"
                   @change="onSeekCommit"
-                  class="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-500 min-w-0"
+                  class="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-400 min-w-0"
                 />
                 <span class="tabular-nums w-9">{{ formatTime(playerState.duration) }}</span>
               </div>
@@ -2390,7 +2390,7 @@ watch(syncPlayerState, (enabled) => {
                   step="0.05"
                   :value="playerState.volume"
                   @input="onVolumeChange"
-                  class="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  class="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-blue-400"
                 />
               </div>
             </div>

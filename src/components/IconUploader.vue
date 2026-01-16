@@ -179,7 +179,7 @@ const confirmCrop = () => {
             step="0.1"
             :value="zoom"
             @input="onZoomChange"
-            class="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            class="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-blue-400"
           />
           <span class="text-gray-400 text-xs font-mono w-10 text-right"
             >{{ Math.round(zoom * 100) }}%</span

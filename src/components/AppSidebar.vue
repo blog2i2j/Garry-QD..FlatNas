@@ -42,11 +42,68 @@ const scrollToGroup = (groupId: string) => {
   }
 };
 
+const activeCategory = ref<BookmarkCategory | null>(null);
+const showAddCategoryModal = ref(false);
+const newCategoryTitle = ref("");
+const addCategoryInputRef = ref<HTMLInputElement | null>(null);
+
+const handleCategoryClick = (category: BookmarkCategory) => {
+  if (activeCategory.value?.id === category.id) {
+    activeCategory.value = null;
+  } else {
+    activeCategory.value = category;
+  }
+};
+
+const openAddCategoryModal = () => {
+  if (!store.isLogged) return;
+  newCategoryTitle.value = "";
+  showAddCategoryModal.value = true;
+  nextTick(() => {
+    addCategoryInputRef.value?.focus();
+  });
+};
+
+const confirmAddCategory = () => {
+  if (!store.isLogged || !newCategoryTitle.value) return;
+
+  let widget = store.widgets.find((w) => w.type === "bookmarks");
+  if (!widget) {
+    widget = {
+      id: "w" + Date.now(),
+      type: "bookmarks",
+      enable: true,
+      isPublic: false,
+      data: [],
+    };
+    store.widgets.push(widget);
+  }
+
+  if (!widget.data) widget.data = [];
+  (widget.data as BookmarkCategory[]).push({
+    id: Date.now().toString(),
+    title: newCategoryTitle.value,
+    collapsed: false,
+    children: [],
+  });
+
+  store.saveData();
+  showAddCategoryModal.value = false;
+};
+
 // --- Bookmarks ---
 const bookmarks = computed(() => {
   // 查找所有收藏夹组件，无论是否启用（enable）
   const widgets = store.widgets.filter((w) => w.type === "bookmarks");
   return widgets.flatMap((w) => (w.data as BookmarkCategory[]) || []);
+});
+
+const bookmarkGroups = computed(() => {
+  return bookmarks.value.filter((c) => c.title !== "默认收藏");
+});
+
+const ungroupedCategory = computed(() => {
+  return bookmarks.value.find((c) => c.title === "默认收藏");
 });
 
 const handleImportClick = () => {
@@ -124,6 +181,9 @@ const handleDeleteCategory = (categoryId: string) => {
       const index = (widget.data as BookmarkCategory[]).findIndex((c) => c.id === categoryId);
       if (index !== -1) {
         (widget.data as BookmarkCategory[]).splice(index, 1);
+        if (activeCategory.value?.id === categoryId) {
+          activeCategory.value = null;
+        }
         store.saveData();
         return;
       }
@@ -194,9 +254,17 @@ onUnmounted(() => {
   }
 });
 
+const selectedCategoryForAdd = ref<string>("");
+
 const openAddModal = () => {
   if (!store.isLogged) return;
   newBookmarkUrl.value = "";
+  // 默认选中当前激活的分组
+  if (activeCategory.value) {
+    selectedCategoryForAdd.value = activeCategory.value.id;
+  } else {
+    selectedCategoryForAdd.value = "";
+  }
   showAddModal.value = true;
   nextTick(() => {
     addInputRef.value?.focus();
@@ -230,7 +298,7 @@ const confirmEditBookmark = async () => {
           // Auto fetch icon if empty
           if (!item.icon) {
             try {
-              item.icon = `https://api.iowen.cn/favicon/${new URL(item.url).hostname}.png`;
+              item.icon = `https://api.uomg.com/api/get.favicon?url=${new URL(item.url).hostname}`;
             } catch {
               // ignore
             }
@@ -238,6 +306,7 @@ const confirmEditBookmark = async () => {
 
           store.saveData();
           showEditModal.value = false;
+          // Refresh active category if needed (not strictly necessary as it's reactive)
           return;
         }
       }
@@ -247,6 +316,7 @@ const confirmEditBookmark = async () => {
 };
 
 const confirmAddBookmark = async () => {
+  let targetCategory: BookmarkCategory | undefined;
   if (!store.isLogged) return;
   const url = newBookmarkUrl.value;
   if (!url) return;
@@ -272,16 +342,24 @@ const confirmAddBookmark = async () => {
   if (!widget.data) widget.data = [];
   const categories = widget.data as BookmarkCategory[];
 
-  // Use first category or create one
-  let targetCategory = categories[0];
+  if (!selectedCategoryForAdd.value) {
+    targetCategory = categories.find((c) => c.title === "默认收藏");
+    if (!targetCategory) {
+      targetCategory = {
+        id: Date.now().toString(),
+        title: "默认收藏",
+        collapsed: false,
+        children: [],
+      };
+      categories.unshift(targetCategory);
+    }
+  } else {
+    targetCategory = categories.find((c) => c.id === selectedCategoryForAdd.value);
+  }
+
   if (!targetCategory) {
-    targetCategory = {
-      id: Date.now().toString(),
-      title: "默认分类",
-      collapsed: false,
-      children: [],
-    };
-    categories.push(targetCategory);
+    alert("未找到选中的分组");
+    return;
   }
 
   // Try to fetch meta
@@ -301,7 +379,7 @@ const confirmAddBookmark = async () => {
 
   if (!icon) {
     try {
-      icon = `https://api.iowen.cn/favicon/${new URL(finalUrl).hostname}.png`;
+      icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(finalUrl)}`;
     } catch {
       // ignore
     }
@@ -315,6 +393,8 @@ const confirmAddBookmark = async () => {
   });
 
   store.saveData();
+  // Force update UI
+  activeCategory.value = { ...targetCategory };
 };
 
 onMounted(() => {
@@ -482,28 +562,156 @@ const menuItems = computed(() => {
     >
       <!-- Bookmarks View -->
       <template v-if="viewMode === 'bookmarks'">
-        <template v-if="bookmarks.length > 0">
-          <div
-            v-for="category in bookmarks"
-            :key="category.id"
-            class="space-y-1"
-            :class="{ 'flex flex-col items-center w-full': isCollapsed }"
-          >
-            <!-- Category Title -->
-            <div
-              v-if="!isCollapsed"
-              @click="toggleCategory(category)"
-              class="w-full px-2 py-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black opacity-70 hover:opacity-100 transition-opacity cursor-pointer group/header drop-shadow-[0_1px_2px_rgba(255,255,255,0.4)]"
-            >
-              <span class="truncate flex-1">{{ category.title }}</span>
+        <template
+          v-if="
+            bookmarkGroups.length > 0 ||
+            (ungroupedCategory && ungroupedCategory.children.length > 0)
+          "
+        >
+          <!-- Groups Area -->
+          <div v-if="bookmarkGroups.length > 0" class="space-y-1 mb-2">
+            <template v-for="category in bookmarkGroups" :key="category.id">
+              <!-- Category Title (Click to open flyout) -->
+              <div
+                @click="handleCategoryClick(category)"
+                class="w-full px-2 py-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black transition-all cursor-pointer group/header rounded-lg hover:bg-white/10"
+                :class="[
+                  activeCategory?.id === category.id
+                    ? 'bg-white/20 opacity-100'
+                    : 'opacity-70 hover:opacity-100',
+                  { 'flex-col justify-center': isCollapsed },
+                ]"
+              >
+                <div
+                  class="flex items-center gap-2 flex-1 min-w-0"
+                  :class="{ 'justify-center': isCollapsed }"
+                >
+                  <div
+                    v-if="isCollapsed"
+                    class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/5 flex items-center justify-center text-[10px] font-bold"
+                  >
+                    {{ category.title.substring(0, 2) }}
+                  </div>
+                  <span v-if="!isCollapsed" class="truncate">{{ category.title }}</span>
+                </div>
 
-              <div class="flex items-center gap-2">
-                <!-- Delete Button -->
+                <div v-if="!isCollapsed" class="flex items-center gap-2">
+                  <!-- Delete Button -->
+                  <button
+                    v-if="store.isLogged"
+                    @click.stop="handleDeleteCategory(category.id)"
+                    class="p-0.5 rounded-full opacity-0 group-hover/header:opacity-100 transition-opacity hover:bg-red-500/10 text-red-500"
+                    title="删除分组"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-3.5 h-3.5"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                      />
+                    </svg>
+                  </button>
+
+                  <!-- Chevron (Right) -->
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="2"
+                    stroke="currentColor"
+                    class="w-3 h-3 transition-transform duration-200"
+                    :class="{ 'rotate-90': activeCategory?.id === category.id }"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M8.25 4.5l7.5 7.5-7.5 7.5"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Divider -->
+          <div
+            v-if="bookmarkGroups.length > 0 && ungroupedCategory?.children.length"
+            class="border-t border-black/5 my-2 mx-2"
+          ></div>
+
+          <!-- Ungrouped Bookmarks Area -->
+          <div v-if="ungroupedCategory?.children.length" class="space-y-1">
+            <div
+              v-for="item in ungroupedCategory.children"
+              :key="item.id"
+              class="w-full px-2 py-2 flex items-center justify-between text-black transition-all cursor-pointer group/item rounded-lg hover:bg-white/10"
+              :class="{ 'flex-col justify-center': isCollapsed }"
+            >
+              <a
+                :href="item.url"
+                target="_blank"
+                class="flex items-center gap-2 flex-1 min-w-0 w-full"
+                :class="{ 'justify-center': isCollapsed }"
+              >
+                <!-- Icon -->
+                <div
+                  class="flex-shrink-0 w-4 h-4 rounded flex items-center justify-center overflow-hidden"
+                >
+                  <img
+                    v-if="item.icon"
+                    :src="item.icon"
+                    class="w-full h-full object-contain"
+                    alt=""
+                  />
+                  <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
+                    item.title.substring(0, 1).toUpperCase()
+                  }}</span>
+                </div>
+
+                <!-- Title -->
+                <span
+                  v-if="!isCollapsed"
+                  class="truncate text-sm opacity-80 group-hover/item:opacity-100 font-medium"
+                  >{{ item.title }}</span
+                >
+              </a>
+
+              <!-- Actions -->
+              <div
+                v-if="!isCollapsed && store.isLogged"
+                class="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity"
+              >
                 <button
-                  v-if="store.isLogged"
-                  @click.stop="handleDeleteCategory(category.id)"
-                  class="p-0.5 rounded-full opacity-0 group-hover/header:opacity-100 transition-opacity hover:bg-red-500/10 text-red-500"
-                  title="删除分组"
+                  @click.stop="openEditModal(item)"
+                  class="p-0.5 rounded hover:bg-blue-500/20 text-blue-500"
+                  title="编辑"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-3.5 h-3.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                    />
+                  </svg>
+                </button>
+                <button
+                  @click.stop="handleDeleteBookmark(ungroupedCategory!, item.id)"
+                  class="p-0.5 rounded hover:bg-red-500/20 text-red-500"
+                  title="删除"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -520,127 +728,6 @@ const menuItems = computed(() => {
                     />
                   </svg>
                 </button>
-
-                <!-- Chevron -->
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke-width="2"
-                  stroke="currentColor"
-                  class="w-3 h-3 transition-transform duration-200"
-                  :class="{ '-rotate-90': category.collapsed }"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                  />
-                </svg>
-              </div>
-            </div>
-
-            <!-- Items -->
-            <div
-              v-show="!category.collapsed || isCollapsed"
-              :class="{ 'flex flex-col items-center w-full space-y-1': isCollapsed }"
-            >
-              <div
-                v-for="item in category.children"
-                :key="item.id"
-                class="w-full flex items-center gap-2 transition-all group relative hover:bg-white/25 text-black"
-                :class="[
-                  isCollapsed ? 'justify-center w-10 h-10 p-0 rounded-xl' : 'p-1.5 rounded-lg',
-                ]"
-              >
-                <a
-                  :href="item.url"
-                  target="_blank"
-                  class="flex-1 flex items-center min-w-0"
-                  :class="isCollapsed ? 'justify-center w-full h-full' : 'gap-2'"
-                >
-                  <!-- Icon -->
-                  <div
-                    class="flex-shrink-0 flex items-center justify-center overflow-hidden"
-                    :class="isCollapsed ? 'w-5 h-5' : 'w-6 h-6'"
-                  >
-                    <img
-                      v-if="item.icon"
-                      :src="item.icon"
-                      class="max-w-full max-h-full object-contain"
-                      alt=""
-                    />
-                    <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
-                      item.title.substring(0, 2).toUpperCase()
-                    }}</span>
-                  </div>
-
-                  <!-- Label -->
-                  <span
-                    class="font-medium whitespace-nowrap transition-all duration-300 origin-left truncate text-sm"
-                    :class="isCollapsed ? 'hidden' : 'opacity-100 w-auto flex-1'"
-                  >
-                    {{ item.title }}
-                  </span>
-                </a>
-
-                <!-- Edit/Delete Buttons (Visible on Hover & Logged In) -->
-                <div
-                  v-if="store.isLogged && !isCollapsed"
-                  class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <button
-                    @click.stop="openEditModal(item)"
-                    class="p-1 rounded-full hover:bg-blue-500/20 text-blue-400"
-                    title="编辑书签"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="w-3 h-3"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    @click.stop="handleDeleteBookmark(category, item.id)"
-                    class="p-1 rounded-full hover:bg-red-500/20 text-red-400"
-                    title="删除书签"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="w-3 h-3"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <div
-                  v-if="isCollapsed"
-                  class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-100"
-                >
-                  {{ item.title }}
-                  <!-- Arrow -->
-                  <div
-                    class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
-                  ></div>
-                </div>
               </div>
             </div>
           </div>
@@ -664,9 +751,9 @@ const menuItems = computed(() => {
         </div>
         <div v-if="store.isLogged && !isCollapsed" class="flex justify-center p-2 mt-auto">
           <button
-            @click="openAddModal"
+            @click="openAddCategoryModal"
             class="p-2 rounded-lg transition-colors group relative w-full flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
-            title="快速添加书签"
+            title="添加分组"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -678,8 +765,159 @@ const menuItems = computed(() => {
             >
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            <span class="text-xs font-medium">添加书签</span>
+            <span class="text-xs font-medium">添加分组</span>
           </button>
+        </div>
+
+        <!-- Flyout -->
+        <div
+          v-if="activeCategory && (!isCollapsed || isMobile)"
+          @wheel.stop
+          class="absolute left-full top-0 bottom-0 w-72 bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl flex flex-col z-40 transition-all duration-300 animate-fade-in ml-2 rounded-r-xl my-0 overflow-hidden"
+          :class="
+            store.appConfig.background ? 'text-black bg-white/60 border-white/40' : 'text-black'
+          "
+        >
+          <div class="p-3 border-b border-black/5 flex justify-between items-center shrink-0">
+            <span class="font-bold truncate text-sm flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4 opacity-70"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
+                />
+              </svg>
+              {{ activeCategory.title }}
+            </span>
+            <button
+              @click="activeCategory = null"
+              class="p-1 hover:bg-black/5 rounded transition-colors"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            <div
+              v-for="item in activeCategory.children"
+              :key="item.id"
+              class="w-full flex items-center gap-2 transition-all group relative hover:bg-black/5 text-inherit p-2 rounded-lg"
+            >
+              <a :href="item.url" target="_blank" class="flex-1 flex items-center gap-2 min-w-0">
+                <!-- Icon -->
+                <div
+                  class="flex-shrink-0 flex items-center justify-center overflow-hidden w-6 h-6 rounded bg-black/5"
+                >
+                  <img
+                    v-if="item.icon"
+                    :src="item.icon"
+                    class="max-w-full max-h-full object-contain"
+                    alt=""
+                    @error="
+                      item.icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(item.url)}`
+                    "
+                  />
+                  <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
+                    item.title.substring(0, 2).toUpperCase()
+                  }}</span>
+                </div>
+
+                <!-- Label -->
+                <span class="font-medium truncate text-sm flex-1">
+                  {{ item.title }}
+                </span>
+              </a>
+
+              <!-- Edit/Delete Buttons -->
+              <div
+                v-if="store.isLogged"
+                class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <button
+                  @click.stop="openEditModal(item)"
+                  class="p-1 rounded hover:bg-blue-500/20 text-blue-400"
+                  title="编辑"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-3.5 h-3.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                    />
+                  </svg>
+                </button>
+                <button
+                  @click.stop="handleDeleteBookmark(activeCategory!, item.id)"
+                  class="p-1 rounded hover:bg-red-500/20 text-red-400"
+                  title="删除"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke-width="1.5"
+                    stroke="currentColor"
+                    class="w-3.5 h-3.5"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="activeCategory.children.length === 0"
+              class="flex flex-col items-center justify-center py-8 opacity-40 gap-2"
+            >
+              <span class="text-xs">暂无书签</span>
+            </div>
+          </div>
+
+          <div v-if="store.isLogged" class="p-3 border-t border-black/5 shrink-0">
+            <button
+              @click="openAddModal"
+              class="w-full p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              添加书签
+            </button>
+          </div>
         </div>
       </template>
 
@@ -909,38 +1147,69 @@ const menuItems = computed(() => {
       <div v-if="showAddModal" class="fixed inset-0 z-[100] pointer-events-none">
         <div class="absolute left-[264px] top-1/2 -translate-y-1/2 pointer-events-auto">
           <div
-            class="rounded-xl p-4 w-[320px] shadow-2xl space-y-3 animate-fade-in border backdrop-blur-md transition-colors duration-300"
+            class="rounded-xl p-4 w-[320px] shadow-2xl space-y-3 animate-fade-in border backdrop-blur-xl transition-colors duration-300"
             :class="
               store.appConfig.background
-                ? 'bg-black/60 border-white/10'
+                ? 'bg-white/60 border-white/40'
                 : 'bg-white border-gray-100'
             "
           >
             <h3
               class="font-bold text-sm"
-              :class="store.appConfig.background ? 'text-white' : 'text-gray-800'"
+              :class="store.appConfig.background ? 'text-black' : 'text-gray-800'"
             >
               添加书签
             </h3>
-            <input
-              ref="addInputRef"
-              v-model="newBookmarkUrl"
-              placeholder="请输入网址 (https://...)"
-              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
-              :class="
-                store.appConfig.background
-                  ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
-                  : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
-              "
-              @keyup.enter="confirmAddBookmark"
-            />
-            <div class="flex justify-end gap-2">
+            <div class="space-y-3">
+              <div>
+                <label
+                  class="text-xs opacity-70 mb-1 block"
+                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
+                  >网址</label
+                >
+                <input
+                  ref="addInputRef"
+                  v-model="newBookmarkUrl"
+                  placeholder="请输入网址 (https://...)"
+                  class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+                  :class="
+                    store.appConfig.background
+                      ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
+                      : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+                  "
+                  @keyup.enter="confirmAddBookmark()"
+                />
+              </div>
+
+              <div>
+                <label
+                  class="text-xs opacity-70 mb-1 block"
+                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
+                  >分组</label
+                >
+                <select
+                  v-model="selectedCategoryForAdd"
+                  class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors appearance-none"
+                  :class="
+                    store.appConfig.background
+                      ? 'bg-white/40 border-white/40 text-black focus:bg-white/60 focus:border-white/60'
+                      : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+                  "
+                >
+                  <option value="">默认 (未分组)</option>
+                  <option v-for="cat in bookmarks" :key="cat.id" :value="cat.id" class="text-black">
+                    {{ cat.title }}
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
               <button
                 @click="showAddModal = false"
                 class="px-3 py-1.5 text-xs rounded-lg transition-colors"
                 :class="
                   store.appConfig.background
-                    ? 'text-white/60 hover:bg-white/10 hover:text-white'
+                    ? 'text-black/60 hover:bg-white/20 hover:text-black'
                     : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                 "
               >
@@ -961,16 +1230,16 @@ const menuItems = computed(() => {
       <div v-if="showEditModal" class="fixed inset-0 z-[100] pointer-events-none">
         <div class="absolute left-[264px] top-1/2 -translate-y-1/2 pointer-events-auto">
           <div
-            class="rounded-xl p-4 w-[320px] shadow-2xl space-y-3 animate-fade-in border backdrop-blur-md transition-colors duration-300"
+            class="rounded-xl p-4 w-[320px] shadow-2xl space-y-3 animate-fade-in border backdrop-blur-xl transition-colors duration-300"
             :class="
               store.appConfig.background
-                ? 'bg-black/60 border-white/10'
+                ? 'bg-white/60 border-white/40'
                 : 'bg-white border-gray-100'
             "
           >
             <h3
               class="font-bold text-sm"
-              :class="store.appConfig.background ? 'text-white' : 'text-gray-800'"
+              :class="store.appConfig.background ? 'text-black' : 'text-gray-800'"
             >
               编辑书签
             </h3>
@@ -979,7 +1248,7 @@ const menuItems = computed(() => {
               <div>
                 <label
                   class="text-xs opacity-70 mb-1 block"
-                  :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
                   >标题</label
                 >
                 <input
@@ -988,7 +1257,7 @@ const menuItems = computed(() => {
                   class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
                   :class="
                     store.appConfig.background
-                      ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                      ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
                       : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
                   "
                   @keyup.enter="confirmEditBookmark"
@@ -997,7 +1266,7 @@ const menuItems = computed(() => {
               <div>
                 <label
                   class="text-xs opacity-70 mb-1 block"
-                  :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
                   >链接</label
                 >
                 <input
@@ -1005,7 +1274,7 @@ const menuItems = computed(() => {
                   class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
                   :class="
                     store.appConfig.background
-                      ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                      ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
                       : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
                   "
                   @keyup.enter="confirmEditBookmark"
@@ -1014,7 +1283,7 @@ const menuItems = computed(() => {
               <div>
                 <label
                   class="text-xs opacity-70 mb-1 block"
-                  :class="store.appConfig.background ? 'text-white' : 'text-gray-600'"
+                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
                   >图标 URL (可选)</label
                 >
                 <div class="flex gap-2">
@@ -1034,7 +1303,7 @@ const menuItems = computed(() => {
                     class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
                     :class="
                       store.appConfig.background
-                        ? 'bg-white/5 border-white/20 text-white placeholder-white/40 focus:bg-white/10 focus:border-white/30'
+                        ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
                         : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
                     "
                     @keyup.enter="confirmEditBookmark"
@@ -1049,7 +1318,7 @@ const menuItems = computed(() => {
                 class="px-3 py-1.5 text-xs rounded-lg transition-colors"
                 :class="
                   store.appConfig.background
-                    ? 'text-white/60 hover:bg-white/10 hover:text-white'
+                    ? 'text-black/60 hover:bg-white/20 hover:text-black'
                     : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                 "
               >
@@ -1060,6 +1329,58 @@ const menuItems = computed(() => {
                 class="px-3 py-1.5 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-sm"
               >
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Category Modal -->
+      <div v-if="showAddCategoryModal" class="fixed inset-0 z-[100] pointer-events-none">
+        <div class="absolute left-[264px] top-1/2 -translate-y-1/2 pointer-events-auto">
+          <div
+            class="rounded-xl p-4 w-[320px] shadow-2xl space-y-3 animate-fade-in border backdrop-blur-xl transition-colors duration-300"
+            :class="
+              store.appConfig.background
+                ? 'bg-white/60 border-white/40'
+                : 'bg-white border-gray-100'
+            "
+          >
+            <h3
+              class="font-bold text-sm"
+              :class="store.appConfig.background ? 'text-black' : 'text-gray-800'"
+            >
+              添加分组
+            </h3>
+            <input
+              ref="addCategoryInputRef"
+              v-model="newCategoryTitle"
+              placeholder="请输入分组名称"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+              :class="
+                store.appConfig.background
+                  ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
+                  : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+              "
+              @keyup.enter="confirmAddCategory"
+            />
+            <div class="flex justify-end gap-2">
+              <button
+                @click="showAddCategoryModal = false"
+                class="px-3 py-1.5 text-xs rounded-lg transition-colors"
+                :class="
+                  store.appConfig.background
+                    ? 'text-black/60 hover:bg-white/20 hover:text-black'
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                "
+              >
+                取消
+              </button>
+              <button
+                @click="confirmAddCategory"
+                class="px-3 py-1.5 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-sm"
+              >
+                添加
               </button>
             </div>
           </div>
