@@ -5,6 +5,7 @@ import { useStorage } from "@vueuse/core";
 import type { WidgetConfig, BookmarkItem, BookmarkCategory } from "@/types";
 import { useMainStore } from "../stores/main";
 import { isInternalDomain, processSecurityUrl } from "../utils/security";
+import { parseBookmarks } from "../utils/bookmark";
 
 const props = defineProps<{ widget: WidgetConfig }>();
 const store = useMainStore();
@@ -18,10 +19,12 @@ const filteredData = computed(() => {
   return (props.widget.data || [])
     .map((cat: BookmarkCategory) => {
       const catMatches = cat.title.toLowerCase().includes(query);
-      const matchingChildren = cat.children.filter(
-        (item: BookmarkItem) =>
-          item.title.toLowerCase().includes(query) || item.url.toLowerCase().includes(query),
-      );
+      const matchingChildren = cat.children.filter((item: BookmarkCategory | BookmarkItem) => {
+        if ("url" in item) {
+          return item.title.toLowerCase().includes(query) || item.url.toLowerCase().includes(query);
+        }
+        return item.title.toLowerCase().includes(query);
+      });
 
       if (catMatches || matchingChildren.length > 0) {
         return {
@@ -79,57 +82,55 @@ const handleFileUpload = (event: Event) => {
   const reader = new FileReader();
   reader.onload = (e) => {
     const content = e.target?.result as string;
-    parseBookmarks(content);
+    try {
+      const newItems = parseBookmarks(content);
+      if (newItems.length > 0) {
+        if (!props.widget.data) props.widget.data = [];
+
+        // 分离文件夹和独立的书签
+        const folders: BookmarkCategory[] = [];
+        const links: BookmarkItem[] = [];
+
+        for (const item of newItems) {
+          if ("url" in item) {
+            links.push(item as BookmarkItem);
+          } else {
+            folders.push(item as BookmarkCategory);
+          }
+        }
+
+        // 1. 文件夹直接添加到根目录
+        (props.widget.data as BookmarkCategory[]).push(...folders);
+
+        // 2. 独立书签添加到“默认收藏”
+        if (links.length > 0) {
+          let defaultCat = (props.widget.data as BookmarkCategory[]).find(
+            (c) => c.title === "默认收藏",
+          );
+          if (!defaultCat) {
+            defaultCat = {
+              id: Date.now().toString() + "_default",
+              title: "默认收藏",
+              collapsed: false,
+              children: [],
+            };
+            (props.widget.data as BookmarkCategory[]).push(defaultCat);
+          }
+          defaultCat.children.push(...links);
+        }
+
+        alert(`成功导入 ${newItems.length} 个书签`);
+      } else {
+        alert("未找到可导入的书签");
+      }
+    } catch (error) {
+      console.error("Import failed", error);
+      alert("导入失败，请检查文件格式");
+    }
   };
   reader.readAsText(file);
   // Reset input so the same file can be selected again if needed
   if (event.target) (event.target as HTMLInputElement).value = "";
-};
-
-const parseBookmarks = (html: string) => {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, "text/html");
-    const links = doc.querySelectorAll("a");
-
-    const newItems: BookmarkItem[] = [];
-    links.forEach((link) => {
-      const url = link.href;
-      if (!url.startsWith("http")) return; // Skip non-http links (e.g. chrome://)
-
-      let icon = link.getAttribute("icon");
-      if (!icon) {
-        try {
-          icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(url)}`;
-        } catch {
-          icon = "";
-        }
-      }
-
-      newItems.push({
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
-        title: link.textContent || url,
-        url: url,
-        icon: icon,
-      });
-    });
-
-    if (newItems.length > 0) {
-      if (!props.widget.data) props.widget.data = [];
-      props.widget.data.push({
-        id: Date.now().toString(),
-        title: `导入收藏 ${new Date().toLocaleDateString()}`,
-        collapsed: false,
-        children: newItems,
-      });
-      alert(`成功导入 ${newItems.length} 个书签`);
-    } else {
-      alert("未找到可导入的书签");
-    }
-  } catch (error) {
-    console.error("Import failed", error);
-    alert("导入失败，请检查文件格式");
-  }
 };
 
 // 添加分类
@@ -231,8 +232,10 @@ const confirmSubmit = () => {
     }
 
     if (editingLinkId.value) {
-      const target = cat.children.find((l: BookmarkItem) => l.id === editingLinkId.value);
-      if (target) {
+      const target = cat.children.find(
+        (l: BookmarkItem | BookmarkCategory) => l.id === editingLinkId.value,
+      );
+      if (target && "url" in target) {
         target.title = newTitle.value;
         target.url = finalUrl;
         target.icon = newIcon.value;
@@ -268,7 +271,7 @@ const deleteItem = (catId: string, linkId?: string) => {
 
   if (linkId) {
     const childIndex = props.widget.data[catIndex].children.findIndex(
-      (c: BookmarkItem) => c.id === linkId,
+      (c: BookmarkItem | BookmarkCategory) => c.id === linkId,
     );
     if (childIndex > -1) {
       props.widget.data[catIndex].children.splice(childIndex, 1);

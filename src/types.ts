@@ -228,13 +228,15 @@ export interface BookmarkItem {
   title: string;
   url: string;
   icon?: string;
+  type?: "link";
 }
 
 export interface BookmarkCategory {
   id: string;
   title: string;
   collapsed?: boolean;
-  children: BookmarkItem[];
+  children: (BookmarkItem | BookmarkCategory)[];
+  type?: "category";
 }
 
 export interface TodoItem {

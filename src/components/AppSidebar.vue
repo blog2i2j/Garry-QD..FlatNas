@@ -43,6 +43,21 @@ const scrollToGroup = (groupId: string) => {
 };
 
 const activeCategory = ref<BookmarkCategory | null>(null);
+const activePath = ref<BookmarkCategory[]>([]);
+
+const currentFolder = computed(() => {
+  if (activePath.value.length === 0) return activeCategory.value;
+  return activePath.value[activePath.value.length - 1];
+});
+
+const navigateTo = (category: BookmarkCategory) => {
+  activePath.value.push(category);
+};
+
+const navigateToLevel = (index: number) => {
+  activePath.value = activePath.value.slice(0, index + 1);
+};
+
 const showAddCategoryModal = ref(false);
 const newCategoryTitle = ref("");
 const addCategoryInputRef = ref<HTMLInputElement | null>(null);
@@ -50,13 +65,18 @@ const addCategoryInputRef = ref<HTMLInputElement | null>(null);
 const handleCategoryClick = (category: BookmarkCategory) => {
   if (activeCategory.value?.id === category.id) {
     activeCategory.value = null;
+    activePath.value = [];
   } else {
     activeCategory.value = category;
+    activePath.value = [category];
   }
 };
 
-const openAddCategoryModal = () => {
+const targetParentCategory = ref<BookmarkCategory | null>(null);
+
+const openAddCategoryModal = (parent: BookmarkCategory | null = null) => {
   if (!store.isLogged) return;
+  targetParentCategory.value = parent;
   newCategoryTitle.value = "";
   showAddCategoryModal.value = true;
   nextTick(() => {
@@ -67,25 +87,32 @@ const openAddCategoryModal = () => {
 const confirmAddCategory = () => {
   if (!store.isLogged || !newCategoryTitle.value) return;
 
-  let widget = store.widgets.find((w) => w.type === "bookmarks");
-  if (!widget) {
-    widget = {
-      id: "w" + Date.now(),
-      type: "bookmarks",
-      enable: true,
-      isPublic: false,
-      data: [],
-    };
-    store.widgets.push(widget);
-  }
-
-  if (!widget.data) widget.data = [];
-  (widget.data as BookmarkCategory[]).push({
+  const newCat: BookmarkCategory = {
     id: Date.now().toString(),
     title: newCategoryTitle.value,
     collapsed: false,
     children: [],
-  });
+    type: "category",
+  };
+
+  if (targetParentCategory.value) {
+    targetParentCategory.value.children.push(newCat);
+  } else {
+    let widget = store.widgets.find((w) => w.type === "bookmarks");
+    if (!widget) {
+      widget = {
+        id: "w" + Date.now(),
+        type: "bookmarks",
+        enable: true,
+        isPublic: false,
+        data: [],
+      };
+      store.widgets.push(widget);
+    }
+
+    if (!widget.data) widget.data = [];
+    (widget.data as BookmarkCategory[]).push(newCat);
+  }
 
   store.saveData();
   showAddCategoryModal.value = false;
@@ -113,6 +140,13 @@ const onCategoryContextMenu = (e: MouseEvent, category: BookmarkCategory) => {
 
 const closeContextMenu = () => {
   showContextMenu.value = false;
+};
+
+const handleContextRename = () => {
+  if (contextMenuTargetCategory.value) {
+    openEditModal(contextMenuTargetCategory.value);
+  }
+  closeContextMenu();
 };
 
 const handleContextDelete = () => {
@@ -171,12 +205,35 @@ const handleFileUpload = (event: Event) => {
 
         if (!widget.data) widget.data = [];
 
-        widget.data.push({
-          id: Date.now().toString(),
-          title: `导入收藏 ${new Date().toLocaleDateString()}`,
-          collapsed: false,
-          children: newItems,
-        });
+        // 分离文件夹和独立的书签
+        const folders: BookmarkCategory[] = [];
+        const links: BookmarkItem[] = [];
+
+        for (const item of newItems) {
+          if ("url" in item) {
+            links.push(item as BookmarkItem);
+          } else {
+            folders.push(item as BookmarkCategory);
+          }
+        }
+
+        // 1. 文件夹直接添加到根目录
+        (widget.data as BookmarkCategory[]).push(...folders);
+
+        // 2. 独立书签添加到“默认收藏”
+        if (links.length > 0) {
+          let defaultCat = (widget.data as BookmarkCategory[]).find((c) => c.title === "默认收藏");
+          if (!defaultCat) {
+            defaultCat = {
+              id: Date.now().toString() + "_default",
+              title: "默认收藏",
+              collapsed: false,
+              children: [],
+            };
+            (widget.data as BookmarkCategory[]).push(defaultCat);
+          }
+          defaultCat.children.push(...links);
+        }
 
         // Save store
         store.saveData();
@@ -193,11 +250,6 @@ const handleFileUpload = (event: Event) => {
   reader.readAsText(file);
   // Reset input
   if (event.target) (event.target as HTMLInputElement).value = "";
-};
-
-const toggleCategory = (category: BookmarkCategory) => {
-  category.collapsed = !category.collapsed;
-  if (store.isLogged) store.saveData();
 };
 
 const handleDeleteBookmark = (category: BookmarkCategory, itemId: string) => {
@@ -221,6 +273,20 @@ const handleDeleteCategory = (categoryId: string) => {
       }
     }
   }
+};
+
+const getLinkUrl = (item: BookmarkItem | BookmarkCategory): string => {
+  if ("url" in item) {
+    return item.url;
+  }
+  return "#";
+};
+
+const getLinkIcon = (item: BookmarkItem | BookmarkCategory): string | undefined => {
+  if ("url" in item) {
+    return item.icon;
+  }
+  return undefined;
 };
 
 // --- Keyboard Shortcuts ---
@@ -303,11 +369,22 @@ const openAddModal = () => {
   });
 };
 
-const openEditModal = (item: BookmarkItem) => {
+const editingItemType = ref<"link" | "category">("link");
+
+const openEditModal = (item: BookmarkItem | BookmarkCategory) => {
   editingBookmarkId.value = item.id;
   editingBookmarkTitle.value = item.title;
-  editingBookmarkUrl.value = item.url;
-  editingBookmarkIcon.value = item.icon || "";
+
+  if ("url" in item) {
+    editingItemType.value = "link";
+    editingBookmarkUrl.value = item.url;
+    editingBookmarkIcon.value = item.icon || "";
+  } else {
+    editingItemType.value = "category";
+    editingBookmarkUrl.value = "";
+    editingBookmarkIcon.value = "";
+  }
+
   showEditModal.value = true;
   nextTick(() => {
     editInputRef.value?.focus();
@@ -315,32 +392,57 @@ const openEditModal = (item: BookmarkItem) => {
 };
 
 const confirmEditBookmark = async () => {
-  if (!editingBookmarkId.value || !editingBookmarkUrl.value) return;
+  if (!editingBookmarkId.value) return;
+  if (editingItemType.value === "link" && !editingBookmarkUrl.value) return;
+
+  const updateItem = (item: BookmarkItem | BookmarkCategory) => {
+    item.title = editingBookmarkTitle.value || item.title;
+    if (editingItemType.value === "link" && "url" in item) {
+      item.url = editingBookmarkUrl.value;
+      item.icon = editingBookmarkIcon.value || item.icon;
+
+      // Auto fetch icon if empty
+      if (!item.icon) {
+        try {
+          item.icon = `https://api.uomg.com/api/get.favicon?url=${new URL(item.url).hostname}`;
+        } catch {
+          // ignore
+        }
+      }
+    }
+  };
+
+  const findAndEdit = (items: (BookmarkItem | BookmarkCategory)[]): boolean => {
+    for (const item of items) {
+      if (item.id === editingBookmarkId.value) {
+        updateItem(item);
+        return true;
+      }
+      if ("children" in item && item.children) {
+        if (findAndEdit(item.children)) return true;
+      }
+    }
+    return false;
+  };
 
   // Find the bookmark and update it
   for (const widget of store.widgets) {
     if (widget.type === "bookmarks" && widget.data) {
-      for (const cat of widget.data as BookmarkCategory[]) {
-        const item = cat.children.find((c) => c.id === editingBookmarkId.value);
-        if (item) {
-          item.title = editingBookmarkTitle.value || item.title;
-          item.url = editingBookmarkUrl.value;
-          item.icon = editingBookmarkIcon.value || item.icon;
+      const data = widget.data as BookmarkCategory[];
+      // Check top level first
+      const topLevel = data.find((c) => c.id === editingBookmarkId.value);
+      if (topLevel) {
+        updateItem(topLevel);
+        store.saveData();
+        showEditModal.value = false;
+        return;
+      }
 
-          // Auto fetch icon if empty
-          if (!item.icon) {
-            try {
-              item.icon = `https://api.uomg.com/api/get.favicon?url=${new URL(item.url).hostname}`;
-            } catch {
-              // ignore
-            }
-          }
-
-          store.saveData();
-          showEditModal.value = false;
-          // Refresh active category if needed (not strictly necessary as it's reactive)
-          return;
-        }
+      // Recursive search
+      if (findAndEdit(data)) {
+        store.saveData();
+        showEditModal.value = false;
+        return;
       }
     }
   }
@@ -440,65 +542,16 @@ onUnmounted(() => {
 const toggle = () => {
   emit("update:collapsed", !props.collapsed);
 };
-
-const handleLogout = async () => {
-  if (confirm("确定要退出登录吗？")) {
-    await store.logout();
-  }
-};
-
-// --- Menu Items ---
-const menuItems = computed(() => {
-  const items = [
-    {
-      id: "home",
-      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>',
-      label: "首页",
-      action: () => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      },
-      shortcut: "Home",
-    },
-    {
-      id: "edit",
-      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>',
-      label: "编辑模式",
-      action: () => props.onOpenEdit(),
-      shortcut: "",
-    },
-    {
-      id: "settings",
-      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.212 1.281c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.212-1.281z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>',
-      label: "设置",
-      action: () => props.onOpenSettings(),
-      shortcut: "",
-    },
-  ];
-
-  if (store.isLogged) {
-    items.push({
-      id: "logout",
-      icon: '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" /></svg>',
-      label: "退出登录",
-      action: handleLogout,
-      shortcut: "",
-    });
-  }
-
-  return items;
-});
 </script>
 
 <template>
   <div
-    class="flex flex-col transition-all duration-200 z-50 fixed max-h-[90vh] rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
+    class="flex flex-col transition-all duration-200 z-50 fixed max-h-[85vh] rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
     :class="[
       isMobile && isCollapsed
         ? 'w-auto h-auto rounded-lg bottom-6 left-6 top-auto'
         : 'top-4 left-4 backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
-      isCollapsed && !isMobile
-        ? 'w-[48px] !top-1/2 !-translate-y-1/2 max-h-[calc(100vh-2rem)]'
-        : '',
+      isCollapsed && !isMobile ? 'w-[48px] !top-1/2 !-translate-y-1/2 max-h-[85vh]' : '',
       isCollapsed ? (isMobile ? 'w-auto' : 'w-[48px]') : 'w-64',
     ]"
     @mouseenter="isHovered = true"
@@ -536,60 +589,66 @@ const menuItems = computed(() => {
           />
         </svg>
       </button>
-      <button
-        v-if="store.isLogged && !isCollapsed && viewMode === 'bookmarks'"
-        @click="openAddModal"
-        class="p-1.5 rounded-xl transition-all group relative bg-white/10 backdrop-blur-[8px] border border-white/15 hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 text-black"
-        title="快速添加书签"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-6 h-6"
+      <div class="flex items-center gap-2">
+        <button
+          v-if="store.isLogged && !isCollapsed && viewMode === 'bookmarks'"
+          @click="handleImportClick"
+          class="p-1.5 rounded-xl transition-all group relative bg-white/10 backdrop-blur-[8px] border border-white/15 hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 text-black"
+          title="导入书签"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-      </button>
-      <button
-        @click="toggle"
-        class="p-1.5 transition-all group relative backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15"
-        :class="[
-          isCollapsed
-            ? 'w-12 h-12 flex justify-center items-center rounded-full text-white bg-white/20 border-white/30 shadow-lg'
-            : 'rounded-xl text-black bg-white/10 border-white/15',
-        ]"
-        title="Ctrl+B 切换侧边栏"
-      >
-        <svg
-          v-if="isCollapsed"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-5 h-5"
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+            />
+          </svg>
+        </button>
+        <button
+          @click="toggle"
+          class="p-1.5 transition-all group relative backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15"
+          :class="[
+            isCollapsed
+              ? 'w-12 h-12 flex justify-center items-center rounded-full text-white bg-white/20 border-white/30 shadow-lg'
+              : 'rounded-xl text-black bg-white/10 border-white/15',
+          ]"
+          title="Ctrl+B 切换侧边栏"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-          />
-        </svg>
-        <svg
-          v-else
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-6 h-6"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-        </svg>
-      </button>
+          <svg
+            v-if="isCollapsed"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+            />
+          </svg>
+          <svg
+            v-else
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Main Content -->
@@ -674,7 +733,7 @@ const menuItems = computed(() => {
               :class="{ 'flex-col justify-center': isCollapsed }"
             >
               <a
-                :href="item.url"
+                :href="getLinkUrl(item)"
                 target="_blank"
                 class="flex items-center gap-2 flex-1 min-w-0 w-full"
                 :class="{ 'justify-center': isCollapsed }"
@@ -684,8 +743,8 @@ const menuItems = computed(() => {
                   class="flex-shrink-0 w-4 h-4 rounded flex items-center justify-center overflow-hidden"
                 >
                   <img
-                    v-if="item.icon"
-                    :src="item.icon"
+                    v-if="getLinkIcon(item)"
+                    :src="getLinkIcon(item)"
                     class="w-full h-full object-contain"
                     alt=""
                   />
@@ -768,25 +827,6 @@ const menuItems = computed(() => {
           </svg>
           <span class="text-xs">暂无书签</span>
         </div>
-        <div v-if="store.isLogged && !isCollapsed" class="flex justify-center p-2">
-          <button
-            @click="openAddCategoryModal"
-            class="p-2 rounded-lg transition-colors group relative w-full flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
-            title="添加分组"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            <span class="text-xs font-medium">添加分组</span>
-          </button>
-        </div>
 
         <!-- Mobile Backdrop for Flyout -->
         <div
@@ -808,26 +848,27 @@ const menuItems = computed(() => {
           ]"
         >
           <div class="p-3 border-b border-black/5 flex justify-between items-center shrink-0">
-            <span class="font-bold truncate text-base md:text-sm flex items-center gap-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-4 h-4 opacity-70"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
-                />
-              </svg>
-              {{ activeCategory.title }}
-            </span>
+            <div
+              class="flex items-center gap-1 overflow-x-auto no-scrollbar mask-gradient-right flex-1 min-w-0 mr-2"
+            >
+              <template v-for="(cat, index) in activePath" :key="cat.id">
+                <span v-if="index > 0" class="text-gray-400 text-xs shrink-0">/</span>
+                <button
+                  @click="navigateToLevel(index)"
+                  class="text-sm font-bold whitespace-nowrap hover:underline shrink-0"
+                  :class="
+                    index === activePath.length - 1
+                      ? 'text-black cursor-default no-underline'
+                      : 'text-gray-500'
+                  "
+                >
+                  {{ cat.title }}
+                </button>
+              </template>
+            </div>
             <button
               @click="activeCategory = null"
-              class="p-2 md:p-1 hover:bg-black/5 rounded transition-colors"
+              class="p-2 md:p-1 hover:bg-black/5 rounded transition-colors shrink-0"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -843,96 +884,173 @@ const menuItems = computed(() => {
           </div>
 
           <div class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-            <div
-              v-for="item in activeCategory.children"
-              :key="item.id"
-              class="w-full flex items-center gap-2 transition-all group relative hover:bg-black/5 text-inherit p-2 rounded-lg"
+            <VueDraggable
+              v-if="currentFolder"
+              v-model="currentFolder.children"
+              class="space-y-1 min-h-[50px]"
+              :animation="150"
+              group="bookmarks"
+              @end="store.saveData()"
             >
-              <a :href="item.url" target="_blank" class="flex-1 flex items-center gap-2 min-w-0">
-                <!-- Icon -->
-                <div
-                  class="flex-shrink-0 flex items-center justify-center overflow-hidden w-6 h-6 rounded bg-black/5"
-                >
-                  <img
-                    v-if="item.icon"
-                    :src="item.icon"
-                    class="max-w-full max-h-full object-contain"
-                    alt=""
-                    @error="
-                      item.icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(item.url)}`
-                    "
-                  />
-                  <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
-                    item.title.substring(0, 2).toUpperCase()
-                  }}</span>
-                </div>
-
-                <!-- Label -->
-                <span class="font-medium truncate text-base md:text-sm flex-1">
-                  {{ item.title }}
-                </span>
-              </a>
-
-              <!-- Edit/Delete Buttons -->
               <div
-                v-if="store.isLogged"
-                class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                v-for="item in currentFolder.children"
+                :key="item.id"
+                class="w-full flex items-center gap-2 transition-all group relative hover:bg-black/5 text-inherit p-2 rounded-lg cursor-pointer"
+                @click="
+                  item.type === 'category' || 'children' in item
+                    ? navigateTo(item as BookmarkCategory)
+                    : null
+                "
               >
-                <button
-                  @click.stop="openEditModal(item)"
-                  class="p-1 rounded hover:bg-blue-500/20 text-blue-400"
-                  title="编辑"
-                >
+                <!-- Folder Item -->
+                <template v-if="item.type === 'category' || 'children' in item">
+                  <div
+                    class="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded bg-yellow-100/50 text-yellow-600"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-4 h-4"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                      />
+                    </svg>
+                  </div>
+                  <span class="font-medium truncate text-base md:text-sm flex-1">{{
+                    item.title
+                  }}</span>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke-width="1.5"
                     stroke="currentColor"
-                    class="w-3.5 h-3.5"
+                    class="w-4 h-4 opacity-40"
                   >
                     <path
                       stroke-linecap="round"
                       stroke-linejoin="round"
-                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                      d="M8.25 4.5l7.5 7.5-7.5 7.5"
                     />
                   </svg>
-                </button>
-                <button
-                  @click.stop="handleDeleteBookmark(activeCategory!, item.id)"
-                  class="p-1 rounded hover:bg-red-500/20 text-red-400"
-                  title="删除"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1.5"
-                    stroke="currentColor"
-                    class="w-3.5 h-3.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
+                </template>
 
-            <div
-              v-if="activeCategory.children.length === 0"
-              class="flex flex-col items-center justify-center py-8 opacity-40 gap-2"
-            >
-              <span class="text-xs">暂无书签</span>
-            </div>
+                <!-- Link Item -->
+                <template v-else>
+                  <a
+                    :href="item.url"
+                    target="_blank"
+                    class="flex-1 flex items-center gap-2 min-w-0"
+                    @click.stop
+                  >
+                    <!-- Icon -->
+                    <div
+                      class="flex-shrink-0 flex items-center justify-center overflow-hidden w-6 h-6 rounded bg-black/5"
+                    >
+                      <img
+                        v-if="item.icon"
+                        :src="item.icon"
+                        class="max-w-full max-h-full object-contain"
+                        alt=""
+                        @error="
+                          item.icon = `https://www.favicon.vip/get.php?url=${encodeURIComponent(item.url)}`
+                        "
+                      />
+                      <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
+                        item.title.substring(0, 2).toUpperCase()
+                      }}</span>
+                    </div>
+
+                    <!-- Label -->
+                    <span class="font-medium truncate text-base md:text-sm flex-1">
+                      {{ item.title }}
+                    </span>
+                  </a>
+                </template>
+
+                <!-- Edit/Delete Buttons -->
+                <div
+                  v-if="store.isLogged"
+                  class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <button
+                    @click.stop="openEditModal(item)"
+                    class="p-1 rounded hover:bg-blue-500/20 text-blue-400"
+                    title="编辑"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-3.5 h-3.5"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    @click.stop="handleDeleteBookmark(currentFolder!, item.id)"
+                    class="p-1 rounded hover:bg-red-500/20 text-red-400"
+                    title="删除"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke-width="1.5"
+                      stroke="currentColor"
+                      class="w-3.5 h-3.5"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="currentFolder && currentFolder.children.length === 0"
+                class="flex flex-col items-center justify-center py-8 opacity-40 gap-2"
+              >
+                <span class="text-xs">暂无内容</span>
+              </div>
+            </VueDraggable>
           </div>
 
-          <div v-if="store.isLogged" class="p-3 border-t border-black/5 shrink-0">
+          <div v-if="store.isLogged" class="p-3 border-t border-black/5 shrink-0 flex gap-2">
+            <button
+              @click="openAddCategoryModal(currentFolder)"
+              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              添加分组
+            </button>
             <button
               @click="openAddModal"
-              class="w-full p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -1070,103 +1188,47 @@ const menuItems = computed(() => {
       </template>
     </div>
 
-    <!-- Bottom Toolbar (Menu Items + Import) -->
-    <div v-if="!isCollapsed && !isMobile" class="p-2 border-t border-white/15">
-      <div class="flex flex-wrap items-center justify-center gap-1">
-        <!-- Add Bookmark Button (Collapsed) -->
-        <button
-          v-if="isCollapsed"
-          @click="openAddModal"
-          class="p-2 rounded-xl transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
-          title="快速添加书签"
+    <div
+      v-if="store.isLogged && !isCollapsed && viewMode === 'bookmarks'"
+      class="flex justify-between p-2 gap-2 border-t border-white/10"
+    >
+      <button
+        @click="openAddCategoryModal(null)"
+        class="p-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
+        title="添加分组"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-5 h-5"
         >
-          <div class="w-5 h-5 flex-shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          </div>
-          <!-- Tooltip -->
-          <div
-            class="absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg pointer-events-none whitespace-nowrap z-[60] flex items-center gap-2 shadow-lg transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
-          >
-            添加书签
-            <div
-              class="absolute right-full top-1/2 -translate-y-1/2 border-8 border-transparent border-r-black/80"
-            ></div>
-          </div>
-        </button>
-
-        <!-- Menu Items -->
-        <button
-          v-for="item in !isCollapsed ? menuItems : []"
-          :key="item.id"
-          @click="item.action"
-          class="p-2 rounded-lg transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
-          :title="item.label"
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        <span class="text-xs font-medium">添加分组</span>
+      </button>
+      <button
+        @click="openAddModal"
+        class="p-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
+        title="添加书签"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-5 h-5"
         >
-          <div class="w-5 h-5 flex-shrink-0" v-html="item.icon"></div>
-
-          <div
-            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
-          >
-            {{ item.label }}
-            <!-- Arrow -->
-            <div
-              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-black/80"
-            ></div>
-          </div>
-        </button>
-
-        <!-- Import Button -->
-        <button
-          v-if="store.isLogged && !isCollapsed"
-          @click="handleImportClick"
-          class="p-2 rounded-lg transition-all group relative text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
-          title="导入书签"
-        >
-          <div class="w-5 h-5 flex-shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-5 h-5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
-              />
-            </svg>
-          </div>
-
-          <div
-            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none whitespace-nowrap z-[60] transition-opacity duration-200 backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100"
-          >
-            导入书签
-            <div
-              class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-black/80"
-            ></div>
-          </div>
-
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".html"
-            class="hidden"
-            @change="handleFileUpload"
-          />
-        </button>
-      </div>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        <span class="text-xs font-medium">添加书签</span>
+      </button>
     </div>
+
+    <input ref="fileInput" type="file" accept=".html" class="hidden" @change="handleFileUpload" />
 
     <Teleport to="body">
       <!-- Add Bookmark Modal -->
@@ -1267,7 +1329,7 @@ const menuItems = computed(() => {
               class="font-bold text-sm"
               :class="store.appConfig.background ? 'text-black' : 'text-gray-800'"
             >
-              编辑书签
+              {{ editingItemType === "category" ? "编辑分组" : "编辑书签" }}
             </h3>
 
             <div class="space-y-2">
@@ -1289,44 +1351,16 @@ const menuItems = computed(() => {
                   @keyup.enter="confirmEditBookmark"
                 />
               </div>
-              <div>
-                <label
-                  class="text-xs opacity-70 mb-1 block"
-                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
-                  >链接</label
-                >
-                <input
-                  v-model="editingBookmarkUrl"
-                  class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
-                  :class="
-                    store.appConfig.background
-                      ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
-                      : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
-                  "
-                  @keyup.enter="confirmEditBookmark"
-                />
-              </div>
-              <div>
-                <label
-                  class="text-xs opacity-70 mb-1 block"
-                  :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
-                  >图标 URL (可选)</label
-                >
-                <div class="flex gap-2">
-                  <div
-                    class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden border border-gray-200/50"
+              <template v-if="editingItemType === 'link'">
+                <div>
+                  <label
+                    class="text-xs opacity-70 mb-1 block"
+                    :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
+                    >链接</label
                   >
-                    <img
-                      v-if="editingBookmarkIcon"
-                      :src="editingBookmarkIcon"
-                      class="w-5 h-5 object-contain"
-                      @error="editingBookmarkIcon = ''"
-                    />
-                    <span v-else class="text-[10px] text-gray-400">icon</span>
-                  </div>
                   <input
-                    v-model="editingBookmarkIcon"
-                    class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+                    v-model="editingBookmarkUrl"
+                    class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
                     :class="
                       store.appConfig.background
                         ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
@@ -1335,7 +1369,37 @@ const menuItems = computed(() => {
                     @keyup.enter="confirmEditBookmark"
                   />
                 </div>
-              </div>
+                <div>
+                  <label
+                    class="text-xs opacity-70 mb-1 block"
+                    :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
+                    >图标 URL (可选)</label
+                  >
+                  <div class="flex gap-2">
+                    <div
+                      class="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden border border-gray-200/50"
+                    >
+                      <img
+                        v-if="editingBookmarkIcon"
+                        :src="editingBookmarkIcon"
+                        class="w-5 h-5 object-contain"
+                        @error="editingBookmarkIcon = ''"
+                      />
+                      <span v-else class="text-[10px] text-gray-400">icon</span>
+                    </div>
+                    <input
+                      v-model="editingBookmarkIcon"
+                      class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors"
+                      :class="
+                        store.appConfig.background
+                          ? 'bg-white/40 border-white/40 text-black placeholder-black/40 focus:bg-white/60 focus:border-white/60'
+                          : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+                      "
+                      @keyup.enter="confirmEditBookmark"
+                    />
+                  </div>
+                </div>
+              </template>
             </div>
 
             <div class="flex justify-end gap-2">
@@ -1422,6 +1486,26 @@ const menuItems = computed(() => {
         :style="{ top: contextMenuPosition.y + 'px', left: contextMenuPosition.x + 'px' }"
         @click.stop
       >
+        <button
+          @click="handleContextRename"
+          class="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-black/5 transition-colors flex items-center gap-2"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-4 h-4"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+            />
+          </svg>
+          重命名
+        </button>
         <button
           @click="handleContextDelete"
           class="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"

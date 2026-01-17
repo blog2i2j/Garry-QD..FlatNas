@@ -1,4 +1,4 @@
-﻿﻿﻿<script setup lang="ts">
+﻿﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
@@ -64,6 +64,13 @@ const handleWallpaperSelect = (payload: { url: string; type: string } | string) 
 };
 
 const activeTab = ref("style");
+const handleNavWheel = (e: WheelEvent) => {
+  if (window.innerWidth < 768) {
+    const container = e.currentTarget as HTMLElement;
+    container.scrollLeft += e.deltaY;
+  }
+};
+
 const dockerWidget = computed(() => store.widgets.find((w) => w.type === "docker"));
 const systemStatusWidget = computed(() => store.widgets.find((w) => w.type === "system-status"));
 const musicWidget = computed(() => store.widgets.find((w) => w.type === "music"));
@@ -1244,14 +1251,7 @@ watch(activeTab, (val) => {
           @mousemove="onNavMouseMove"
           @mouseup="onNavMouseUp"
           @mouseleave="onNavMouseUp"
-          @wheel.passive="
-            (e) => {
-              if (window.innerWidth < 768) {
-                const container = e.currentTarget as HTMLElement;
-                container.scrollLeft += e.deltaY;
-              }
-            }
-          "
+          @wheel.passive="handleNavWheel"
         >
           <button
             @click="activeTab = 'style'"

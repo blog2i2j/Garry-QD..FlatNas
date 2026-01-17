@@ -46,7 +46,7 @@ const SizeSelector = defineAsyncComponent(() => import("./SizeSelector.vue"));
 const store = useMainStore();
 useWallpaperRotation();
 const { width, height } = useWindowSize();
-const isHeaderRowLayout = computed(() => width.value >= 1024);
+const isHeaderRowLayout = computed(() => width.value >= 1280);
 
 const empireBackgroundUrl = `data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4af37' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E`;
 
@@ -1853,7 +1853,9 @@ onMounted(() => {
         class="mx-auto transition-all duration-300"
         :class="store.isExpandedMode ? 'max-w-[95%]' : 'max-w-7xl'"
       >
-        <div class="flex flex-col lg:flex-row lg:justify-between items-center mb-10 gap-6 relative">
+        <div
+          class="flex flex-col xl:flex-row xl:justify-between items-center mb-10 gap-6 relative flatnas-header-container"
+        >
           <div
             class="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 flex-shrink-0 z-30 transition-all duration-500"
             :style="{ order: isHeaderRowLayout && store.appConfig.titleAlign === 'right' ? 2 : 0 }"
@@ -1918,8 +1920,8 @@ onMounted(() => {
 
           <div
             v-if="checkVisible(store.widgets.find((w) => w.id === 'w5'))"
-            class="w-full lg:absolute lg:left-1/2 lg:-translate-x-1/2 z-50 transition-all duration-300"
-            :class="store.isExpandedMode ? 'lg:w-[32rem]' : 'lg:w-64'"
+            class="w-full xl:absolute xl:left-1/2 xl:-translate-x-1/2 z-50 transition-all duration-300"
+            :class="store.isExpandedMode ? 'xl:w-[32rem]' : 'xl:w-64'"
           >
             <form
               class="mx-auto shadow-lg hover:shadow-xl transition-shadow rounded-full bg-white/90 backdrop-blur-md border border-white/40 flex items-center p-1 flatnas-search-form"
@@ -2709,9 +2711,14 @@ onMounted(() => {
     <!-- Footer -->
     <footer
       class="w-full z-10 relative shrink-0 px-8 transition-all flex items-center pb-[env(safe-area-inset-bottom)]"
-      :class="
-        !store.appConfig.footerHeight ? 'pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]' : ''
-      "
+      :class="[
+        !store.appConfig.footerHeight ? 'pt-6' : '',
+        isMobile
+          ? 'pb-[calc(6rem+env(safe-area-inset-bottom))]'
+          : !store.appConfig.footerHeight
+            ? 'pb-[calc(1.5rem+env(safe-area-inset-bottom))]'
+            : '',
+      ]"
       :style="{
         height: store.appConfig.footerHeight ? store.appConfig.footerHeight + 'px' : 'auto',
         marginBottom: (store.appConfig.footerMarginBottom || 0) + 'px',
@@ -2719,13 +2726,17 @@ onMounted(() => {
     >
       <div
         class="mx-auto flex justify-between items-center w-full"
+        :class="{ 'flex-col gap-6': isMobile }"
         :style="{
           maxWidth: (store.appConfig.footerWidth || 1280) + 'px',
           fontSize: (store.appConfig.footerFontSize || 12) + 'px',
         }"
       >
         <!-- Left: Visitor Stats -->
-        <div class="flex-1 flex items-center justify-start gap-4">
+        <div
+          class="flex-1 flex items-center justify-start gap-4"
+          :class="{ '!justify-center order-last': isMobile }"
+        >
           <!-- Connection Status -->
           <div
             v-if="false"
@@ -2780,10 +2791,11 @@ onMounted(() => {
         </div>
 
         <!-- Right: Quote -->
-        <div class="flex-1 flex justify-end">
+        <div class="flex-1 flex justify-end" :class="{ '!justify-center order-first': isMobile }">
           <div
             v-if="checkVisible(store.widgets.find((w) => w.id === 'w7'))"
             class="text-right max-w-md cursor-pointer hover:opacity-80 transition-opacity select-none"
+            :class="{ '!text-center': isMobile }"
             @click="fetchHitokoto"
             title="点击刷新"
           >
