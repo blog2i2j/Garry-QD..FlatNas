@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+﻿﻿﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
@@ -1164,6 +1164,31 @@ const onMouseUp = () => {
   window.removeEventListener("mouseup", onMouseUp);
 };
 
+// Nav Dragging Logic
+const navRef = ref<HTMLElement | null>(null);
+const isNavDragging = ref(false);
+const navStartX = ref(0);
+const navScrollLeft = ref(0);
+
+const onNavMouseDown = (e: MouseEvent) => {
+  if (!navRef.value) return;
+  isNavDragging.value = true;
+  navStartX.value = e.pageX - navRef.value.offsetLeft;
+  navScrollLeft.value = navRef.value.scrollLeft;
+};
+
+const onNavMouseMove = (e: MouseEvent) => {
+  if (!isNavDragging.value || !navRef.value) return;
+  e.preventDefault();
+  const x = e.pageX - navRef.value.offsetLeft;
+  const walk = (x - navStartX.value) * 2;
+  navRef.value.scrollLeft = navScrollLeft.value - walk;
+};
+
+const onNavMouseUp = () => {
+  isNavDragging.value = false;
+};
+
 watch(
   () => props.show,
   (val) => {
@@ -1213,7 +1238,20 @@ watch(activeTab, (val) => {
       >
         <h3 class="text-xl font-bold text-gray-900 mb-4 md:mb-6 px-2">设置</h3>
         <nav
-          class="flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0"
+          ref="navRef"
+          class="flex flex-row md:flex-col gap-2 md:gap-0 md:space-y-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0 no-drag cursor-grab active:cursor-grabbing"
+          @mousedown="onNavMouseDown"
+          @mousemove="onNavMouseMove"
+          @mouseup="onNavMouseUp"
+          @mouseleave="onNavMouseUp"
+          @wheel.passive="
+            (e) => {
+              if (window.innerWidth < 768) {
+                const container = e.currentTarget as HTMLElement;
+                container.scrollLeft += e.deltaY;
+              }
+            }
+          "
         >
           <button
             @click="activeTab = 'style'"
@@ -1222,7 +1260,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             外观布局
           </button>
@@ -1233,7 +1271,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             单开组件
           </button>
@@ -1245,7 +1283,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             多开组件
           </button>
@@ -1256,7 +1294,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             Docker 管理
           </button>
@@ -1267,7 +1305,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors"
           >
             账户管理
           </button>
@@ -1279,7 +1317,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50',
             ]"
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full rounded-lg mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 rounded-lg mb-0 md:mb-1"
           >
             网络判定
           </button>
@@ -1290,7 +1328,7 @@ watch(activeTab, (val) => {
                 ? 'border border-black text-gray-900 font-bold bg-transparent'
                 : 'border border-transparent text-gray-600 hover:bg-gray-50'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors mb-0 md:mb-1"
           >
             开放中心
           </button>
@@ -1298,10 +1336,10 @@ watch(activeTab, (val) => {
             @click="activeTab = 'about'"
             :class="
               activeTab === 'about'
-                ? 'border border-black text-gray-900 font-bold bg-transparent'
-                : 'border border-transparent text-gray-600 hover:bg-gray-50'
+                ? 'border border-red-500 text-red-600 font-bold bg-red-50'
+                : 'border border-transparent text-red-500 hover:bg-red-50 font-medium'
             "
-            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-4 py-2 rounded-lg text-sm transition-colors"
+            class="whitespace-nowrap md:whitespace-normal w-auto md:w-full shrink-0 text-left px-4 py-2 rounded-lg text-sm transition-colors"
           >
             关于
           </button>
@@ -1344,13 +1382,13 @@ watch(activeTab, (val) => {
                           store.appConfig.background = '';
                           store.saveData();
                         "
-                        class="text-xs text-gray-500 hover:text-gray-900 px-2 py-1 rounded bg-gray-50 hover:bg-gray-100 transition-colors"
+                        class="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded bg-red-50 hover:bg-red-100 transition-colors"
                       >
                         清除背景
                       </button>
                       <button
                         @click="showWallpaperLibrary = true"
-                        class="text-xs text-gray-600 hover:text-gray-900 font-bold flex items-center gap-1 ml-auto px-2 py-1 rounded bg-gray-50 hover:bg-gray-100 transition-colors"
+                        class="text-xs text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1 ml-auto px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 transition-colors"
                       >
                         管理壁纸库
                       </button>
@@ -1384,7 +1422,7 @@ watch(activeTab, (val) => {
                     </button>
                     <button
                       @click="setSolidColorAsWallpaper"
-                      class="px-3 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors text-xs font-medium"
+                      class="px-3 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 transition-colors text-xs font-medium"
                       title="设为壁纸"
                     >
                       设为壁纸
@@ -1446,7 +1484,7 @@ watch(activeTab, (val) => {
                     />
                     <button
                       @click="store.appConfig.titleColor = '#ffffff'"
-                      class="px-3 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors text-xs font-medium"
+                      class="px-3 h-8 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 transition-colors text-xs font-medium"
                       title="重置颜色"
                     >
                       重置
@@ -3645,4 +3683,3 @@ document.querySelector('.card-item').addEventListener('click', () => {
   }
 }
 </style>
-

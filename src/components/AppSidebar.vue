@@ -98,6 +98,38 @@ const bookmarks = computed(() => {
   return widgets.flatMap((w) => (w.data as BookmarkCategory[]) || []);
 });
 
+// --- Context Menu ---
+const showContextMenu = ref(false);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuTargetCategory = ref<BookmarkCategory | null>(null);
+
+const onCategoryContextMenu = (e: MouseEvent, category: BookmarkCategory) => {
+  if (!store.isLogged) return;
+  e.preventDefault();
+  contextMenuTargetCategory.value = category;
+  contextMenuPosition.value = { x: e.clientX, y: e.clientY };
+  showContextMenu.value = true;
+};
+
+const closeContextMenu = () => {
+  showContextMenu.value = false;
+};
+
+const handleContextDelete = () => {
+  if (contextMenuTargetCategory.value) {
+    handleDeleteCategory(contextMenuTargetCategory.value.id);
+  }
+  closeContextMenu();
+};
+
+onMounted(() => {
+  document.addEventListener("click", closeContextMenu);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", closeContextMenu);
+});
+
 const bookmarkGroups = computed(() => {
   return bookmarks.value.filter((c) => c.title !== "默认收藏");
 });
@@ -459,9 +491,11 @@ const menuItems = computed(() => {
 
 <template>
   <div
-    class="flex flex-col transition-all duration-200 z-50 fixed left-4 max-h-[90vh] rounded-xl backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20 text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
+    class="flex flex-col transition-all duration-200 z-50 fixed max-h-[90vh] rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
     :class="[
-      isMobile && isCollapsed ? 'w-auto h-auto rounded-lg top-2 left-2 bottom-auto' : 'top-4',
+      isMobile && isCollapsed
+        ? 'w-auto h-auto rounded-lg bottom-6 left-6 top-auto'
+        : 'top-4 left-4 backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
       isCollapsed && !isMobile
         ? 'w-[48px] !top-1/2 !-translate-y-1/2 max-h-[calc(100vh-2rem)]'
         : '',
@@ -472,9 +506,10 @@ const menuItems = computed(() => {
   >
     <!-- Toggle Button -->
     <div
+      v-if="!isCollapsed || isMobile"
       class="flex items-center text-black"
       :class="[
-        isMobile && isCollapsed ? 'p-1' : 'px-3 py-4 border-b',
+        isMobile && isCollapsed ? 'p-0' : 'px-3 py-4 border-b',
         'border-white/15',
         isCollapsed ? 'justify-center' : 'justify-between',
       ]"
@@ -520,8 +555,12 @@ const menuItems = computed(() => {
       </button>
       <button
         @click="toggle"
-        class="p-1.5 rounded-xl transition-all group relative bg-white/10 backdrop-blur-[8px] border border-white/15 hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 text-black"
-        :class="[isCollapsed ? 'w-10 h-10 flex justify-center items-center' : '']"
+        class="p-1.5 transition-all group relative backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15"
+        :class="[
+          isCollapsed
+            ? 'w-12 h-12 flex justify-center items-center rounded-full text-white bg-white/20 border-white/30 shadow-lg'
+            : 'rounded-xl text-black bg-white/10 border-white/15',
+        ]"
         title="Ctrl+B 切换侧边栏"
       >
         <svg
@@ -574,6 +613,7 @@ const menuItems = computed(() => {
               <!-- Category Title (Click to open flyout) -->
               <div
                 @click="handleCategoryClick(category)"
+                @contextmenu.prevent="onCategoryContextMenu($event, category)"
                 class="w-full px-2 py-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black transition-all cursor-pointer group/header rounded-lg hover:bg-white/10"
                 :class="[
                   activeCategory?.id === category.id
@@ -592,33 +632,12 @@ const menuItems = computed(() => {
                   >
                     {{ category.title.substring(0, 2) }}
                   </div>
-                  <span v-if="!isCollapsed" class="truncate">{{ category.title }}</span>
+                  <span v-if="!isCollapsed" class="truncate text-base md:text-xs">{{
+                    category.title
+                  }}</span>
                 </div>
 
                 <div v-if="!isCollapsed" class="flex items-center gap-2">
-                  <!-- Delete Button -->
-                  <button
-                    v-if="store.isLogged"
-                    @click.stop="handleDeleteCategory(category.id)"
-                    class="p-0.5 rounded-full opacity-0 group-hover/header:opacity-100 transition-opacity hover:bg-red-500/10 text-red-500"
-                    title="删除分组"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="w-3.5 h-3.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                      />
-                    </svg>
-                  </button>
-
                   <!-- Chevron (Right) -->
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -626,7 +645,7 @@ const menuItems = computed(() => {
                     viewBox="0 0 24 24"
                     stroke-width="2"
                     stroke="currentColor"
-                    class="w-3 h-3 transition-transform duration-200"
+                    class="w-5 h-5 md:w-3 md:h-3 transition-transform duration-200"
                     :class="{ 'rotate-90': activeCategory?.id === category.id }"
                   >
                     <path
@@ -732,7 +751,7 @@ const menuItems = computed(() => {
             </div>
           </div>
         </template>
-        <div v-else class="flex flex-col items-center justify-center h-full opacity-40 gap-2">
+        <div v-else class="flex flex-col items-center justify-center py-8 opacity-40 gap-2">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
@@ -749,7 +768,7 @@ const menuItems = computed(() => {
           </svg>
           <span class="text-xs">暂无书签</span>
         </div>
-        <div v-if="store.isLogged && !isCollapsed" class="flex justify-center p-2 mt-auto">
+        <div v-if="store.isLogged && !isCollapsed" class="flex justify-center p-2">
           <button
             @click="openAddCategoryModal"
             class="p-2 rounded-lg transition-colors group relative w-full flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
@@ -769,17 +788,27 @@ const menuItems = computed(() => {
           </button>
         </div>
 
+        <!-- Mobile Backdrop for Flyout -->
+        <div
+          v-if="isMobile && activeCategory"
+          class="fixed inset-0 z-30 bg-black/10 backdrop-blur-[1px]"
+          @click="activeCategory = null"
+        ></div>
+
         <!-- Flyout -->
         <div
           v-if="activeCategory && (!isCollapsed || isMobile)"
           @wheel.stop
-          class="absolute left-full top-0 bottom-0 w-72 bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl flex flex-col z-40 transition-all duration-300 animate-fade-in ml-2 rounded-r-xl my-0 overflow-hidden"
-          :class="
-            store.appConfig.background ? 'text-black bg-white/60 border-white/40' : 'text-black'
-          "
+          class="bg-white/90 backdrop-blur-xl border-l border-white/20 shadow-2xl flex flex-col z-40 transition-all duration-300 animate-fade-in overflow-hidden"
+          :class="[
+            isMobile
+              ? 'fixed inset-x-4 top-24 bottom-24 rounded-xl border border-white/20'
+              : 'absolute left-full top-0 bottom-0 w-72 ml-2 rounded-r-xl my-0',
+            store.appConfig.background ? 'text-black bg-white/60 border-white/40' : 'text-black',
+          ]"
         >
           <div class="p-3 border-b border-black/5 flex justify-between items-center shrink-0">
-            <span class="font-bold truncate text-sm flex items-center gap-2">
+            <span class="font-bold truncate text-base md:text-sm flex items-center gap-2">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -798,7 +827,7 @@ const menuItems = computed(() => {
             </span>
             <button
               @click="activeCategory = null"
-              class="p-1 hover:bg-black/5 rounded transition-colors"
+              class="p-2 md:p-1 hover:bg-black/5 rounded transition-colors"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -806,7 +835,7 @@ const menuItems = computed(() => {
                 viewBox="0 0 24 24"
                 stroke-width="1.5"
                 stroke="currentColor"
-                class="w-4 h-4"
+                class="w-6 h-6 md:w-4 md:h-4"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -839,7 +868,7 @@ const menuItems = computed(() => {
                 </div>
 
                 <!-- Label -->
-                <span class="font-medium truncate text-sm flex-1">
+                <span class="font-medium truncate text-base md:text-sm flex-1">
                   {{ item.title }}
                 </span>
               </a>
@@ -1042,10 +1071,7 @@ const menuItems = computed(() => {
     </div>
 
     <!-- Bottom Toolbar (Menu Items + Import) -->
-    <div
-      v-if="!isCollapsed || (isCollapsed && viewMode === 'bookmarks' && store.isLogged)"
-      class="p-2 border-t border-white/15"
-    >
+    <div v-if="!isCollapsed && !isMobile" class="p-2 border-t border-white/15">
       <div class="flex flex-wrap items-center justify-center gap-1">
         <!-- Add Bookmark Button (Collapsed) -->
         <button
@@ -1386,6 +1412,58 @@ const menuItems = computed(() => {
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <!-- Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="showContextMenu"
+        class="fixed z-[9999] bg-white/90 backdrop-blur-xl border border-white/20 shadow-xl rounded-lg overflow-hidden py-1 min-w-[120px]"
+        :style="{ top: contextMenuPosition.y + 'px', left: contextMenuPosition.x + 'px' }"
+        @click.stop
+      >
+        <button
+          @click="handleContextDelete"
+          class="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-4 h-4"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+            />
+          </svg>
+          删除分组
+        </button>
+      </div>
+    </Teleport>
+
+    <!-- Mobile Collapse Button (Restores original toggle position) -->
+    <Teleport to="body">
+      <button
+        v-if="isMobile && !isCollapsed"
+        @click="toggle"
+        class="fixed bottom-6 left-6 z-[60] p-1.5 transition-all group backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 w-12 h-12 flex justify-center items-center rounded-full text-white bg-white/20 border-white/30 shadow-lg"
+        title="收起侧边栏"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-5 h-5"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+      </button>
     </Teleport>
   </div>
 </template>

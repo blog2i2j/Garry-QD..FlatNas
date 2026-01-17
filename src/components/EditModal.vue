@@ -1211,6 +1211,18 @@ const submit = async () => {
                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-400"
                 />
               </div>
+              <div class="col-span-2 text-right">
+                <button
+                  @click="
+                    form.backgroundImage = '';
+                    form.backgroundBlur = 6;
+                    form.backgroundMask = 0.3;
+                  "
+                  class="text-xs text-red-500 hover:text-red-700 underline"
+                >
+                  移除背景
+                </button>
+              </div>
             </div>
           </div>
         </div>
