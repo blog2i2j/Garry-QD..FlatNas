@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, computed, watch, onUnmounted } from "vue";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "../stores/main";
-import { useDebounceFn } from "@vueuse/core";
 import cityData from "@/assets/city-data.json";
 
 const props = defineProps<{ widget: WidgetConfig }>();
@@ -74,9 +73,9 @@ const initCascadingSelect = () => {
   }
 
   const path = findPath(provinces.value, currentCity);
-  if (path.length > 0) selectedProvince.value = path[0];
-  if (path.length > 1) selectedCity.value = path[1];
-  if (path.length > 2) selectedDistrict.value = path[2];
+  if (path.length > 0) selectedProvince.value = path[0]!;
+  if (path.length > 1) selectedCity.value = path[1]!;
+  if (path.length > 2) selectedDistrict.value = path[2]!;
 };
 
 interface Cast {
@@ -159,6 +158,7 @@ const weatherBgClass = computed(() => {
 
 const init = async () => {
   if (!props.widget.data) {
+    // eslint-disable-next-line vue/no-mutating-props
     props.widget.data = {
       city: "", // Default empty to trigger IP location
       apiKey: "",
@@ -229,6 +229,7 @@ const fetchWeather = async () => {
     if (liveData.status === "1" && liveData.lives && liveData.lives.length > 0) {
       liveWeather.value = liveData.lives[0];
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
     errorMsg.value = e.message || "网络请求失败";
   } finally {
@@ -237,8 +238,11 @@ const fetchWeather = async () => {
 };
 
 const saveConfig = () => {
+  // eslint-disable-next-line vue/no-mutating-props
   if (!props.widget.data) props.widget.data = {};
+  // eslint-disable-next-line vue/no-mutating-props
   props.widget.data.city = configForm.value.city;
+  // eslint-disable-next-line vue/no-mutating-props
   props.widget.data.apiKey = configForm.value.apiKey;
   store.saveData();
   isConfiguring.value = false;
@@ -261,6 +265,11 @@ onMounted(init);
 
 // Auto refresh every hour
 const timer = setInterval(fetchWeather, 3600000);
+
+onUnmounted(() => {
+  clearInterval(timer);
+});
+
 // Watch global key changes
 watch(
   () => store.appConfig.amapKey,

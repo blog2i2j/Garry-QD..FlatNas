@@ -666,16 +666,35 @@ const toggle = () => {
 </script>
 
 <template>
+  <!-- Mobile Backdrop -->
+  <div
+    v-if="isMobile && !isCollapsed"
+    class="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm transition-opacity duration-300"
+    @click="toggle"
+  ></div>
+
   <div
     ref="sidebarRef"
-    class="flex flex-col transition-all duration-200 z-50 fixed rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
+    class="flex flex-col transition-all duration-300 fixed text-black"
     :class="[
-      isMobile && isCollapsed
-        ? 'w-auto h-auto rounded-lg left-6'
-        : 'left-4 backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
-      isCollapsed ? (isMobile ? 'w-auto' : isHiddenMode ? 'w-[20px]' : 'w-[48px]') : 'w-64',
+      isMobile
+        ? [
+            'z-40',
+            isCollapsed
+              ? '-translate-x-full opacity-0 pointer-events-none'
+              : 'translate-x-0 opacity-100',
+            'top-0 left-0 bottom-24 w-64',
+            'bg-white/80 backdrop-blur-xl border-r border-b border-white/20 shadow-2xl rounded-br-2xl',
+            'pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)]',
+          ]
+        : [
+            'z-50 rounded-xl left-4',
+            'md:before:absolute md:before:-inset-10 md:before:content-[\'\'] md:before:bg-transparent md:before:z-[-1]',
+            'backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
+            isCollapsed ? (isHiddenMode ? 'w-[20px]' : 'w-[48px]') : 'w-64',
+          ],
     ]"
-    :style="{ height: isMobile && isCollapsed ? 'auto' : sidebarHeight, top: sidebarTop }"
+    :style="!isMobile ? { height: sidebarHeight, top: sidebarTop } : {}"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
   >
@@ -841,7 +860,10 @@ const toggle = () => {
     <div
       ref="scrollContainer"
       class="flex-1 overflow-y-auto py-2 space-y-1 px-1 overscroll-contain custom-scrollbar"
-      :class="{ 'no-scrollbar': isCollapsed, 'flex flex-col items-center': isCollapsed }"
+      :class="{
+        'no-scrollbar': isCollapsed,
+        'flex flex-col items-center': isCollapsed,
+      }"
       v-show="(!isMobile || !isCollapsed) && !(isCollapsed && isHiddenMode)"
     >
       <!-- Bookmarks View -->
