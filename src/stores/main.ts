@@ -1,5 +1,6 @@
 import { ref, computed, watch } from "vue";
 import { defineStore } from "pinia";
+import { useStorage } from "@vueuse/core";
 import { io } from "socket.io-client";
 import type {
   NavItem,
@@ -65,6 +66,37 @@ export const useMainStore = defineStore("main", () => {
     }
   };
 
+  const fetchSystemConfig = async () => {
+    try {
+      const res = await fetch("/api/system-config");
+      if (res.ok) {
+        systemConfig.value = await res.json();
+      }
+    } catch (e) {
+      console.error("Failed to fetch system config", e);
+    }
+  };
+
+  const updateSystemConfig = async (newConfig: Partial<typeof systemConfig.value>) => {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token.value) headers["Authorization"] = `Bearer ${token.value}`;
+      const res = await fetch("/api/system-config", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(newConfig),
+      });
+      if (res.ok) {
+        systemConfig.value = await res.json();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
   const groups = ref<NavGroup[]>([]);
   const items = computed(() => groups.value.flatMap((g) => g.items));
   const rssFeeds = ref<RssFeed[]>([]);
@@ -87,17 +119,8 @@ export const useMainStore = defineStore("main", () => {
     return headers;
   };
 
-  const createDefaultItems = () =>
-    Array.from({ length: 10 }, (_, i) => ({
-      id: `def-${Date.now()}-${i}`,
-      title: "待添加",
-      url: "",
-      icon: "",
-      isPublic: true,
-    }));
-
   // Version Check
-  const currentVersion = "1.0.68";
+  const currentVersion = "1.0.69";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -134,6 +157,24 @@ export const useMainStore = defineStore("main", () => {
     } catch {
       // ignore
     }
+  };
+
+  // Resource version for cache busting
+  const resourceVersion = useStorage("flat-nas-resource-version", Date.now());
+
+  const refreshResources = () => {
+    resourceVersion.value = Date.now();
+  };
+
+  /**
+   * 为资源 URL 添加时间戳参数，防止缓存（用于同名覆盖场景）
+   */
+  const getAssetUrl = (url?: string) => {
+    if (!url) return "";
+    if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+    const connector = url.includes("?") ? "&" : "?";
+    // 使用全局资源版本号，避免频繁重绘导致闪屏
+    return `${url}${connector}t=${resourceVersion.value}`;
   };
 
   const widgets = ref<WidgetConfig[]>([]);
@@ -206,39 +247,6 @@ export const useMainStore = defineStore("main", () => {
     mouseHoverEffect: "scale",
   });
 
-  const fetchSystemConfig = async () => {
-    try {
-      const res = await fetch("/api/system-config");
-      if (res.ok) {
-        const data = await res.json();
-        systemConfig.value = data;
-      }
-    } catch (e) {
-      console.error("Failed to fetch system config", e);
-    }
-  };
-
-  const updateSystemConfig = async (newConfig: { authMode: string }) => {
-    try {
-      const res = await fetch("/api/system-config", {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify(newConfig),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          systemConfig.value = data.systemConfig;
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      console.error("Failed to update system config", e);
-      return false;
-    }
-  };
-
   const CACHE_KEY = "flat-nas-data-cache";
 
   const saveToCache = (data: Record<string, unknown>) => {
@@ -296,11 +304,8 @@ export const useMainStore = defineStore("main", () => {
       saveData();
     } else if (data.groups) {
       groups.value = data.groups;
-      if (groups.value.length === 0) {
-        groups.value.push({ id: "g1", title: "常用", items: createDefaultItems(), preset: true });
-      }
     } else {
-      groups.value = [{ id: "g1", title: "常用", items: createDefaultItems(), preset: true }];
+      groups.value = [];
     }
 
     if (Array.isArray(data.widgets)) {
@@ -490,8 +495,32 @@ export const useMainStore = defineStore("main", () => {
     if (data.rssFeeds) rssFeeds.value = data.rssFeeds;
     if (data.rssCategories) rssCategories.value = data.rssCategories;
 
+    // Fetch custom scripts separately
+    fetchCustomScripts();
+
     checkUpdate();
     saveToCache(data);
+  };
+
+  const fetchCustomScripts = async () => {
+    try {
+      const headers = getHeaders();
+      // Skip if no token (public view might rely on embedded scripts or default config)
+      if (!token.value) return;
+
+      const res = await fetch("/api/custom-scripts", { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (Array.isArray(data.css)) appConfig.value.customCssList = data.css;
+          if (Array.isArray(data.js)) appConfig.value.customJsList = data.js;
+          // Apply immediately
+          updateCustomScripts(false); // false = don't save back to server yet
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch custom scripts", e);
+    }
   };
 
   const fetchAndProcessData = async () => {
@@ -502,6 +531,12 @@ export const useMainStore = defineStore("main", () => {
       const res = await fetch(`/api/data`, { headers });
       if (!res.ok) return;
       const data = await res.json();
+
+      // Double check if user has started editing while we were fetching
+      if (saveTimer !== null || isSaving.value) {
+        return;
+      }
+
       handleDataUpdate(data);
     } catch (e) {
       console.error("Fetch data failed", e);
@@ -511,6 +546,10 @@ export const useMainStore = defineStore("main", () => {
   const init = async () => {
     if (isInitializing) return;
     isInitializing = true;
+
+    // Try to load from cache first for better UX (Stale-While-Revalidate)
+    loadFromCache();
+
     try {
       const res = await fetch("/api/data", { headers: getHeaders() });
       if (res.ok) {
@@ -606,6 +645,9 @@ export const useMainStore = defineStore("main", () => {
           return;
         }
 
+        // Optimistic cache save to ensure data persistence even if network fails
+        saveToCache(body);
+
         const res = await fetch("/api/save", {
           method: "POST",
           headers: getHeaders(),
@@ -617,7 +659,6 @@ export const useMainStore = defineStore("main", () => {
           if (body.password) {
             password.value = "";
           }
-          saveToCache(body);
         }
 
         if (res.status === 401) {
@@ -917,7 +958,26 @@ export const useMainStore = defineStore("main", () => {
     { deep: true },
   );
 
-  const updateCustomScripts = () => {
+  const saveCustomScripts = async () => {
+    try {
+      if (!isLogged.value) return;
+      const res = await fetch("/api/custom-scripts", {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({
+          css: appConfig.value.customCssList || [],
+          js: appConfig.value.customJsList || [],
+        }),
+      });
+      if (!res.ok) {
+        console.error("Failed to save custom scripts");
+      }
+    } catch (e) {
+      console.error("Error saving custom scripts", e);
+    }
+  };
+
+  const updateCustomScripts = (doSave = true) => {
     if (appConfig.value.customCssList) {
       appConfig.value.customCss = appConfig.value.customCssList
         .filter((item) => item.enable)
@@ -930,7 +990,10 @@ export const useMainStore = defineStore("main", () => {
         .map((item) => `// ${item.name}\n${item.content}`)
         .join("\n\n");
     }
-    saveData();
+    if (doSave) {
+      saveData();
+      saveCustomScripts();
+    }
   };
 
   return {
@@ -977,6 +1040,9 @@ export const useMainStore = defineStore("main", () => {
     uploadLicense,
     luckyStunData,
     fetchLuckyStunData,
+    getAssetUrl,
+    refreshResources,
+    resourceVersion,
     updateCustomScripts,
   };
 });

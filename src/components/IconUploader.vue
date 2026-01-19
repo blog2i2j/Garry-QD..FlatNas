@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { VueCropper } from "vue-cropper";
 import "vue-cropper/dist/index.css";
 import WallpaperLibrary from "./WallpaperLibrary.vue";
+import { useMainStore } from "../stores/main";
 
 const props = withDefaults(
   defineProps<{
@@ -20,6 +21,7 @@ const props = withDefaults(
   },
 );
 const emit = defineEmits(["update:modelValue"]);
+const store = useMainStore();
 
 const showCropper = ref(false);
 const showLibrary = ref(false);
@@ -117,7 +119,7 @@ const confirmCrop = () => {
       -->
       <div v-if="modelValue" class="absolute inset-0 z-0 overflow-hidden">
         <img
-          :src="modelValue"
+          :src="store.getAssetUrl(modelValue)"
           class="w-full h-full object-cover transition-all duration-300"
           :style="previewStyle"
         />

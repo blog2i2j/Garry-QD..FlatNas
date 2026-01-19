@@ -17,6 +17,7 @@ import SystemStatusWidget from "./SystemStatusWidget.vue";
 import CustomCssWidget from "./CustomCssWidget.vue";
 import FileTransferWidget from "./FileTransferWidget.vue";
 import MusicWidget from "./MusicWidget.vue";
+import AmapWeatherWidget from "./AmapWeatherWidget.vue";
 
 defineProps<{
   widget: WidgetConfig;
@@ -32,12 +33,17 @@ defineProps<{
   <CalculatorWidget v-else-if="widget.type === 'calculator'" :widget="widget" />
   <div
     v-else-if="widget.type === 'ip'"
-    class="flex items-center justify-center h-full text-gray-500 text-xs"
+    class="w-full h-full flex items-center justify-center bg-white rounded-2xl shadow-sm text-gray-500 text-xs"
   >
-    IP Widget (TODO)
+    IP Widget
   </div>
   <CountdownWidget v-else-if="widget.type === 'countdown'" :widget="widget" />
-  <IframeWidget v-else-if="widget.type === 'iframe'" :widget="widget" />
+  <IframeWidget
+    v-else-if="widget.type === 'iframe'"
+    :widget="widget"
+    :is-lan-mode="false"
+    :is-edit-mode="false"
+  />
   <BookmarkWidget v-else-if="widget.type === 'bookmarks'" :widget="widget" />
   <HotWidget v-else-if="widget.type === 'hot'" :widget="widget" />
   <ClockWeatherWidget v-else-if="widget.type === 'clockweather'" :widget="widget" />
@@ -47,7 +53,5 @@ defineProps<{
   <CustomCssWidget v-else-if="widget.type === 'custom-css'" :widget="widget" />
   <FileTransferWidget v-else-if="widget.type === 'file-transfer'" :widget="widget" />
   <MusicWidget v-else-if="widget.type === 'music'" :widget="widget" />
-  <div v-else class="flex items-center justify-center h-full bg-red-50 text-red-500 text-xs p-2">
-    Unknown: {{ widget.type }} ({{ widget.id }})
-  </div>
+  <AmapWeatherWidget v-else-if="widget.type === 'amap-weather'" :widget="widget" />
 </template>

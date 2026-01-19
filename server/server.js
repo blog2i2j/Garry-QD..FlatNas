@@ -406,7 +406,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const RSS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const RSS_CACHE = new Map(); // url -> { data, ts }
+
 const HOT_CACHE = {
   weibo: { ts: 0, data: [] },
   news: { ts: 0, data: [] },
@@ -1008,6 +1011,78 @@ app.get("/api/ali-icons", async (req, res) => {
   } catch (error) {
     console.error("[Proxy Error] Failed to fetch AliYun icons:", error);
     res.status(500).json({ error: "Failed to fetch icons" });
+  }
+});
+
+// Proxy for Amap Weather
+const AMAP_PROXY_CACHE = new Map();
+const AMAP_WEATHER_TTL = 20 * 60 * 1000; // 20 minutes
+const AMAP_IP_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+app.get("/api/amap/weather", async (req, res) => {
+  try {
+    const { city, key, extensions } = req.query;
+    if (!key) {
+      return res.status(400).json({ error: "Missing API Key" });
+    }
+
+    const cacheKey = `weather:${city}:${key}:${extensions || "all"}`;
+    const cached = AMAP_PROXY_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < AMAP_WEATHER_TTL) {
+      return res.json(cached.data);
+    }
+
+    const url = `https://restapi.amap.com/v3/weather/weatherInfo?city=${city}&key=${key}&extensions=${extensions || "all"}`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Amap API Error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.status === "1") {
+      AMAP_PROXY_CACHE.set(cacheKey, { data, ts: Date.now() });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error("[Proxy Error] Failed to fetch Amap weather:", error);
+    res.status(500).json({ error: "Failed to fetch weather data" });
+  }
+});
+
+// Proxy for Amap IP Location
+app.get("/api/amap/ip", async (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key) {
+      return res.status(400).json({ error: "Missing API Key" });
+    }
+
+    const cacheKey = `ip:${key}`;
+    const cached = AMAP_PROXY_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < AMAP_IP_TTL) {
+      return res.json(cached.data);
+    }
+
+    const url = `https://restapi.amap.com/v3/ip?key=${key}`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Amap API Error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.status === "1") {
+      AMAP_PROXY_CACHE.set(cacheKey, { data, ts: Date.now() });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error("[Proxy Error] Failed to fetch Amap IP location:", error);
+    res.status(500).json({ error: "Failed to fetch IP location data" });
   }
 });
 
@@ -2490,28 +2565,37 @@ app.get("/api/lucky/stun", (req, res) => {
 
 // Weather Helper
 async function fetchWeatherFromWttr(city) {
-  const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`);
-  if (!response.ok) throw new Error("Weather API error");
-  const data = await response.json();
-  const current = data.current_condition[0];
-  const text = current.lang_zh?.[0]?.value || current.weatherDesc[0].value;
-  return {
-    temp: current.temp_C,
-    text: text,
-    city: city,
-    humidity: current.humidity,
-    windDir: current.winddir16Point,
-    windSpeed: current.windspeedKmph,
-    feelsLike: current.FeelsLikeC,
-    today: data.weather?.[0]
-      ? {
-          min: data.weather[0].mintempC,
-          max: data.weather[0].maxtempC,
-          uv: data.weather[0].uvIndex,
-        }
-      : null,
-    forecast: data.weather || [],
-  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+  try {
+    const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=zh`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("Weather API error " + response.status);
+    const data = await response.json();
+    const current = data.current_condition[0];
+    const text = current.lang_zh?.[0]?.value || current.weatherDesc[0].value;
+    return {
+      temp: current.temp_C,
+      text: text,
+      city: city || "Unknown",
+      humidity: current.humidity,
+      windDir: current.winddir16Point,
+      windSpeed: current.windspeedKmph,
+      feelsLike: current.FeelsLikeC,
+      today: data.weather?.[0]
+        ? {
+            min: data.weather[0].mintempC,
+            max: data.weather[0].maxtempC,
+            uv: data.weather[0].uvIndex,
+          }
+        : null,
+      forecast: data.weather || [],
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function incrementAmapCount() {
@@ -2614,6 +2698,22 @@ async function fetchWeatherFromAMap(city, key) {
 
 const QWEATHER_GEO_CACHE = new Map(); // CityName -> LocationID
 const QWEATHER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Helper: Retry Wrapper
+async function withRetry(fn, retries = 2, delay = 60000) {
+  let lastError;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
 
 function base64UrlEncode(str) {
   return Buffer.from(str)
@@ -2759,31 +2859,61 @@ async function fetchWeatherFromQWeather(city, projectId, keyId, privateKey) {
   };
 }
 
-// Weather
-app.get("/api/weather", async (req, res) => {
-  const city = req.query.city || "";
-  const source = req.query.source || "wttr";
-  const key = req.query.key || "";
-  const projectId = req.query.projectId || "";
-  const keyId = req.query.keyId || "";
-  const privateKey = req.query.privateKey || "";
+// Weather Cache
+const WEATHER_CACHE = new Map(); // Key -> { data, ts }
+const WEATHER_CACHE_WTTR_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const WEATHER_CACHE_OTHER_TTL = 30 * 60 * 1000; // 30 minutes
 
-  // Allow "auto" or empty city to mean "local"
-  // if (!city) return res.status(400).json({ error: "City is required" });
+async function fetchWeatherWithCache(params) {
+  const { city, source, key, projectId, keyId, privateKey } = params;
+  // Create a stable cache key
+  const cacheKey = JSON.stringify({
+    city: city || "",
+    source: source || "wttr",
+    key: key || "",
+    projectId: projectId || "",
+    keyId: keyId || "",
+    privateKey: privateKey || "",
+  });
 
+  const ttl = source === "wttr" || !source ? WEATHER_CACHE_WTTR_TTL : WEATHER_CACHE_OTHER_TTL;
+
+  // Check Cache
+  const cached = WEATHER_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < ttl) {
+    return cached.data;
+  }
+
+  let data;
   try {
-    let data;
     if (source === "amap" && key) {
-      data = await fetchWeatherFromAMap(city, key);
+      data = await withRetry(() => fetchWeatherFromAMap(city, key));
     } else if (source === "qweather") {
-      data = await fetchWeatherFromQWeather(city, projectId, keyId, privateKey);
+      data = await withRetry(() => fetchWeatherFromQWeather(city, projectId, keyId, privateKey));
     } else {
       // Default to wttr.in
-      // If city is empty/auto for wttr, it uses requester IP automatically
       const queryCity = !city || city === "auto" || city === "本地" ? "" : city;
-      data = await fetchWeatherFromWttr(queryCity);
+      data = await withRetry(() => fetchWeatherFromWttr(queryCity));
     }
+  } catch (err) {
+    if (cached) {
+      console.warn(
+        `[Weather] Fetch failed for ${city || "local"}, using stale cache. Error: ${err.message}`,
+      );
+      return cached.data;
+    }
+    throw err;
+  }
 
+  // Save to Cache
+  WEATHER_CACHE.set(cacheKey, { data, ts: Date.now() });
+  return data;
+}
+
+// Weather
+app.get("/api/weather", async (req, res) => {
+  try {
+    const data = await fetchWeatherWithCache(req.query);
     res.json({ success: true, data });
   } catch (e) {
     console.error("Weather Error:", e.message);
@@ -2852,9 +2982,11 @@ app.get("/api/hot/weibo", async (req, res) => {
     if (!force && HOT_CACHE.weibo.data.length && Date.now() - HOT_CACHE.weibo.ts < CACHE_TTL_MS) {
       return res.json(HOT_CACHE.weibo.data);
     }
-    const r = await fetch("https://weibo.com/ajax/side/hotSearch", {
-      headers: { "User-Agent": "Mozilla/5.0...", Referer: "https://weibo.com/" },
-    });
+    const r = await withRetry(() =>
+      fetch("https://weibo.com/ajax/side/hotSearch", {
+        headers: { "User-Agent": "Mozilla/5.0...", Referer: "https://weibo.com/" },
+      }),
+    );
     const j = await r.json();
     const items = (j.data.realtime || []).map((x) => ({
       title: x.word,
@@ -2871,7 +3003,9 @@ app.get("/api/hot/weibo", async (req, res) => {
 app.get("/api/hot/news", async (req, res) => {
   // ... (simplified for brevity, assume similar to before)
   try {
-    const feed = await rssParser.parseURL("https://www.chinanews.com.cn/rss/scroll-news.xml");
+    const feed = await withRetry(() =>
+      rssParser.parseURL("https://www.chinanews.com.cn/rss/scroll-news.xml"),
+    );
     const items = (feed.items || [])
       .slice(0, 50)
       .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));
@@ -2883,11 +3017,36 @@ app.get("/api/hot/news", async (req, res) => {
 });
 
 // Serve music files statically
-app.use("/music", express.static(MUSIC_DIR));
-app.use("/backgrounds", express.static(BACKGROUNDS_DIR));
-app.use("/mobile_backgrounds", express.static(MOBILE_BACKGROUNDS_DIR));
-app.use("/icon-cache", express.static(ICON_CACHE_DIR));
-app.use("/public", express.static(PUBLIC_DIR));
+const immutableOptions = {
+  maxAge: "1y",
+  setHeaders: (res) => {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  },
+};
+
+const negotiatedOptions = {
+  setHeaders: (res) => {
+    // no-cache means "must revalidate with server before using cache" (ETag/Last-Modified)
+    res.setHeader("Cache-Control", "no-cache");
+  },
+};
+
+// Music: Large files, usually static, but if user replaces file with same name,
+// they might expect update. However, for performance on seeking, immutable is better.
+// But given user feedback about "overwrite", let's use negotiatedOptions for Music too to be safe?
+// Actually, music files are large. Revalidating every time is cheap (304), but
+// if we want "instant" seek without network check, immutable is best.
+// Let's stick to immutable for Music as it's not "volatile" like avatars.
+// Users rarely "edit" an mp3 file in place. They usually upload new ones.
+app.use("/music", express.static(MUSIC_DIR, immutableOptions));
+
+// Volatile directories: User uploads, avatars, backgrounds (might be overwritten)
+app.use("/backgrounds", express.static(BACKGROUNDS_DIR, negotiatedOptions));
+app.use("/mobile_backgrounds", express.static(MOBILE_BACKGROUNDS_DIR, negotiatedOptions));
+app.use("/public", express.static(PUBLIC_DIR, negotiatedOptions));
+
+// Icon Cache: Hash-based filenames (immutable by design) -> Strong Cache
+app.use("/icon-cache", express.static(ICON_CACHE_DIR, immutableOptions));
 
 // Get backgrounds list
 app.get("/api/backgrounds", async (req, res) => {
@@ -3082,6 +3241,82 @@ async function getMusicFilesRecursively(dir, baseDir = "") {
 }
 
 // Get music list
+app.get("/api/songs", async (req, res) => {
+  try {
+    const files = await getMusicFilesRecursively(MUSIC_DIR);
+    const musicFiles = files.filter((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return [".mp3", ".wav", ".ogg", ".m4a", ".flac"].includes(ext);
+    });
+
+    const tracks = musicFiles.map((file) => {
+      const relativePath = path.relative(MUSIC_DIR, file);
+      // Use base64 of relative path as ID to be safe in URLs
+      const id = Buffer.from(relativePath).toString("base64");
+      const filename = path.basename(file, path.extname(file));
+      const parentDir = path.dirname(relativePath);
+      const album = parentDir === "." ? "Unknown Album" : path.basename(parentDir);
+
+      return {
+        id,
+        title: filename,
+        artist: "Unknown Artist",
+        album: album,
+        duration: 0,
+        coverUrl: null,
+      };
+    });
+
+    res.json(tracks);
+  } catch (err) {
+    console.error("Failed to fetch songs", err);
+    res.status(500).json({ error: "Failed to fetch songs" });
+  }
+});
+
+app.get("/api/songs/:id/stream", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) return res.status(400).send("Missing ID");
+
+    const relativePath = Buffer.from(id, "base64").toString("utf-8");
+
+    // Security checks
+    if (relativePath.includes("..") || path.isAbsolute(relativePath)) {
+      return res.status(403).send("Invalid path");
+    }
+
+    const filePath = path.join(MUSIC_DIR, relativePath);
+
+    // Ensure file is within MUSIC_DIR
+    const resolvedPath = path.resolve(filePath);
+    if (!resolvedPath.startsWith(path.resolve(MUSIC_DIR))) {
+      return res.status(403).send("Invalid path");
+    }
+
+    if (!existsSync(resolvedPath)) {
+      return res.status(404).send("File not found");
+    }
+
+    // Set content type based on extension
+    const ext = path.extname(resolvedPath).toLowerCase();
+    const mimeTypes = {
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".ogg": "audio/ogg",
+      ".m4a": "audio/mp4",
+      ".flac": "audio/flac",
+    };
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+
+    res.sendFile(resolvedPath);
+  } catch (err) {
+    console.error("Stream error", err);
+    res.status(500).send("Stream error");
+  }
+});
+
 app.get("/api/music-list", async (req, res) => {
   try {
     const files = await getMusicFilesRecursively(MUSIC_DIR);
@@ -3160,7 +3395,80 @@ app.post("/api/music/upload", authenticateToken, upload.array("files"), (req, re
 
 // Visitor Track
 const VISITOR_FILE = path.join(DATA_DIR, "visitors.json");
+const CUSTOM_SCRIPTS_FILE = path.join(DATA_DIR, "custom_scripts.json");
 let visitorStats = { total: 0, today: 0, lastDate: "" };
+
+// Custom Scripts API
+app.get("/api/custom-scripts", authenticateToken, async (req, res) => {
+  const username = req.user.username;
+  try {
+    let allScripts = {};
+    try {
+      const content = await fs.readFile(CUSTOM_SCRIPTS_FILE, "utf-8");
+      allScripts = JSON.parse(content);
+    } catch {
+      // File doesn't exist or invalid
+    }
+
+    // Migration: If root has css/js (legacy global format), move to admin
+    if (Array.isArray(allScripts.css) || Array.isArray(allScripts.js)) {
+      if (!allScripts["admin"]) {
+        allScripts["admin"] = {
+          css: allScripts.css || [],
+          js: allScripts.js || [],
+        };
+      }
+      delete allScripts.css;
+      delete allScripts.js;
+      // Save migrated structure
+      await atomicWrite(CUSTOM_SCRIPTS_FILE, JSON.stringify(allScripts, null, 2));
+    }
+
+    const userScripts = allScripts[username] || { css: [], js: [] };
+    res.json({ success: true, ...userScripts });
+  } catch (err) {
+    console.error("Failed to read custom scripts", err);
+    res.status(500).json({ error: "Failed to read custom scripts" });
+  }
+});
+
+app.post("/api/custom-scripts", authenticateToken, async (req, res) => {
+  const username = req.user.username;
+  const { css, js } = req.body;
+
+  if (!Array.isArray(css) || !Array.isArray(js)) {
+    return res.status(400).json({ error: "Invalid format" });
+  }
+
+  try {
+    let allScripts = {};
+    try {
+      const content = await fs.readFile(CUSTOM_SCRIPTS_FILE, "utf-8");
+      allScripts = JSON.parse(content);
+    } catch {
+      // File doesn't exist, create new
+    }
+
+    // Migration check (just in case)
+    if (Array.isArray(allScripts.css) || Array.isArray(allScripts.js)) {
+      if (!allScripts["admin"]) {
+        allScripts["admin"] = {
+          css: allScripts.css || [],
+          js: allScripts.js || [],
+        };
+      }
+      delete allScripts.css;
+      delete allScripts.js;
+    }
+
+    allScripts[username] = { css, js };
+    await atomicWrite(CUSTOM_SCRIPTS_FILE, JSON.stringify(allScripts, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Failed to save custom scripts", err);
+    res.status(500).json({ error: "Failed to save custom scripts" });
+  }
+});
 
 // Load stats
 (async () => {
@@ -3506,14 +3814,32 @@ app.get("/api/rss/parse", async (req, res) => {
   if (!url) return res.status(400).json({ error: "URL is required" });
 
   try {
+    // Check Cache
+    const cached = RSS_CACHE.get(url);
+    if (cached && Date.now() - cached.ts < RSS_CACHE_TTL) {
+      return res.json(cached.data);
+    }
+
     // Set a timeout for the RSS request
     const feed = await Promise.race([
       rssParser.parseURL(url),
       new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
     ]);
+
+    // Save to Cache
+    RSS_CACHE.set(url, { data: feed, ts: Date.now() });
+
     res.json(feed);
   } catch (err) {
     console.error(`Failed to parse RSS: ${url}`, err);
+
+    // Fallback to Stale Cache
+    const cached = RSS_CACHE.get(url);
+    if (cached) {
+      console.warn(`[RSS] Using stale cache for ${url}`);
+      return res.json(cached.data);
+    }
+
     res.status(500).json({ error: "Failed to parse RSS feed" });
   }
 });
@@ -3524,10 +3850,21 @@ const INDEX_HTML = path.join(DIST_DIR, "index.html");
 
 try {
   await fs.access(INDEX_HTML);
-  app.use(express.static(DIST_DIR));
+  app.use(
+    express.static(DIST_DIR, {
+      setHeaders: (res, path) => {
+        if (path.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000");
+        }
+      },
+    }),
+  );
 
   // Handle SPA routing - return index.html for all other routes
   app.get(/(.*)/, (req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(INDEX_HTML);
   });
 } catch {
@@ -3544,34 +3881,46 @@ io.on("connection", (socket) => {
   socket.on("rss:fetch", async ({ url }) => {
     try {
       if (!url) throw new Error("URL required");
+
+      // Check Cache
+      const cached = RSS_CACHE.get(url);
+      if (cached && Date.now() - cached.ts < RSS_CACHE_TTL) {
+        socket.emit("rss:data", { url, data: cached.data });
+        return;
+      }
+
       const feed = await Promise.race([
         rssParser.parseURL(url),
         new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
       ]);
+
+      // Save to Cache
+      RSS_CACHE.set(url, { data: feed, ts: Date.now() });
+
       socket.emit("rss:data", { url, data: feed });
     } catch (err) {
       console.error(`RSS Socket Error [${url}]:`, err.message);
+
+      // Fallback to Stale Cache
+      const cached = RSS_CACHE.get(url);
+      if (cached) {
+        console.warn(`[RSS] Socket using stale cache for ${url}`);
+        socket.emit("rss:data", { url, data: cached.data });
+        return;
+      }
+
       socket.emit("rss:error", { url, error: err.message });
     }
   });
 
   // Weather Fetch
-  socket.on("weather:fetch", async ({ city, source, key, projectId, keyId, privateKey }) => {
+  socket.on("weather:fetch", async (params) => {
     try {
-      let data;
-      if (source === "amap" && key) {
-        data = await fetchWeatherFromAMap(city, key);
-      } else if (source === "qweather") {
-        data = await fetchWeatherFromQWeather(city, projectId, keyId, privateKey);
-      } else {
-        const queryCity = !city || city === "auto" || city === "本地" ? "" : city;
-        data = await fetchWeatherFromWttr(queryCity);
-      }
-
-      socket.emit("weather:data", { city, data });
+      const data = await fetchWeatherWithCache(params);
+      socket.emit("weather:data", { city: params.city, data });
     } catch (err) {
-      console.error(`Weather Socket Error [${city}]:`, err.message);
-      socket.emit("weather:error", { city, error: err.message });
+      console.error(`Weather Socket Error [${params.city}]:`, err.message);
+      socket.emit("weather:error", { city: params.city, error: err.message });
     }
   });
 
@@ -3701,9 +4050,11 @@ io.on("connection", (socket) => {
 
       let items = [];
       if (type === "weibo") {
-        const r = await fetch("https://weibo.com/ajax/side/hotSearch", {
-          headers: { "User-Agent": "Mozilla/5.0...", Referer: "https://weibo.com/" },
-        });
+        const r = await withRetry(() =>
+          fetch("https://weibo.com/ajax/side/hotSearch", {
+            headers: { "User-Agent": "Mozilla/5.0...", Referer: "https://weibo.com/" },
+          }),
+        );
         const j = await r.json();
         items = (j.data.realtime || []).map((x) => ({
           title: x.word,
@@ -3712,13 +4063,15 @@ io.on("connection", (socket) => {
         }));
         HOT_CACHE.weibo = { ts: Date.now(), data: items };
       } else if (type === "news") {
-        const feed = await rssParser.parseURL("https://www.chinanews.com.cn/rss/scroll-news.xml");
+        const feed = await withRetry(() =>
+          rssParser.parseURL("https://www.chinanews.com.cn/rss/scroll-news.xml"),
+        );
         items = (feed.items || [])
           .slice(0, 50)
           .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));
         HOT_CACHE.news = { ts: Date.now(), data: items };
       } else if (type === "huxiu") {
-        const feed = await rssParser.parseURL("https://www.huxiu.com/rss/0.xml");
+        const feed = await withRetry(() => rssParser.parseURL("https://www.huxiu.com/rss/0.xml"));
         items = (feed.items || [])
           .slice(0, 50)
           .map((i) => ({ title: i.title, url: i.link, time: i.pubDate }));

@@ -51,7 +51,7 @@ export function useWallpaperRotation() {
       // Extract name from URL: /backgrounds/name.jpg or /mobile_backgrounds/name.jpg
       const prefix = type === "pc" ? "/backgrounds/" : "/mobile_backgrounds/";
       // Be careful with URL encoding if used, but usually it's plain
-      
+
       let currentName = "";
       if (currentUrl === "/default-wallpaper.svg") {
         currentName = "default-wallpaper.svg";

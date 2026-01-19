@@ -23,8 +23,38 @@ const isCollapsed = computed(() => {
   if (isMobile.value) return props.collapsed;
   return props.collapsed && !isHovered.value;
 });
+const isHiddenMode = ref(false);
+
+const toggleHiddenMode = () => {
+  isHiddenMode.value = !isHiddenMode.value;
+  if (isHiddenMode.value) {
+    emit("update:collapsed", true);
+  }
+};
 const fileInput = ref<HTMLInputElement | null>(null);
 const viewMode = ref<"bookmarks" | "groups">(store.appConfig.sidebarViewMode || "bookmarks");
+
+const sidebarHeight = ref("69.4vh");
+const sidebarTop = ref("0px");
+const sidebarRef = ref<HTMLElement | null>(null);
+
+const updateLayout = async () => {
+  sidebarHeight.value = `${window.innerHeight * 0.694}px`;
+  await nextTick();
+  if (sidebarRef.value) {
+    const top = (window.innerHeight - sidebarRef.value.offsetHeight) / 2;
+    sidebarTop.value = `${top}px`;
+  }
+};
+
+onMounted(() => {
+  window.addEventListener("resize", updateLayout);
+  updateLayout();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", updateLayout);
+});
 
 const toggleViewMode = () => {
   viewMode.value = viewMode.value === "bookmarks" ? "groups" : "bookmarks";
@@ -62,17 +92,32 @@ const showAddCategoryModal = ref(false);
 const newCategoryTitle = ref("");
 const addCategoryInputRef = ref<HTMLInputElement | null>(null);
 
-const handleCategoryClick = (category: BookmarkCategory) => {
-  if (activeCategory.value?.id === category.id) {
+const handleCategoryClick = (category: BookmarkCategory | BookmarkItem) => {
+  // Guard clause: If it's a link (not a category), open it and do nothing else
+  if (!("children" in category) && (category as { type?: string }).type !== "category") {
+    const item = category as BookmarkItem;
+    if (item.url) {
+      window.open(item.url, "_blank");
+    }
+    return;
+  }
+
+  const cat = category as BookmarkCategory;
+
+  if (activeCategory.value?.id === cat.id) {
     activeCategory.value = null;
     activePath.value = [];
   } else {
-    activeCategory.value = category;
-    activePath.value = [category];
+    activeCategory.value = cat;
+    activePath.value = [cat];
   }
 };
 
 const targetParentCategory = ref<BookmarkCategory | null>(null);
+
+const goHome = () => {
+  window.location.href = "/";
+};
 
 const openAddCategoryModal = (parent: BookmarkCategory | null = null) => {
   if (!store.isLogged) return;
@@ -129,11 +174,40 @@ const bookmarks = computed(() => {
 const showContextMenu = ref(false);
 const contextMenuPosition = ref({ x: 0, y: 0 });
 const contextMenuTargetCategory = ref<BookmarkCategory | null>(null);
+const contextMenuTargetItem = ref<BookmarkItem | BookmarkCategory | null>(null);
+const contextMenuTargetParent = ref<BookmarkCategory | null>(null);
 
-const onCategoryContextMenu = (e: MouseEvent, category: BookmarkCategory) => {
+const onCategoryContextMenu = (e: MouseEvent, category: BookmarkCategory | BookmarkItem) => {
   if (!store.isLogged) return;
   e.preventDefault();
-  contextMenuTargetCategory.value = category;
+
+  if (!("children" in category) && (category as { type?: string }).type !== "category") {
+    // If it's a link, treat it as an item context menu
+    // We don't have parent info here easily, so we might need to find it or just disable delete
+    // For now let's just use onItemContextMenu logic if possible or just show rename
+    contextMenuTargetCategory.value = null;
+    contextMenuTargetItem.value = category;
+    contextMenuTargetParent.value = null; // Root level item or unknown parent
+  } else {
+    contextMenuTargetCategory.value = category as BookmarkCategory;
+    contextMenuTargetItem.value = null;
+    contextMenuTargetParent.value = null;
+  }
+
+  contextMenuPosition.value = { x: e.clientX, y: e.clientY };
+  showContextMenu.value = true;
+};
+
+const onItemContextMenu = (
+  e: MouseEvent,
+  item: BookmarkItem | BookmarkCategory,
+  parent: BookmarkCategory | null,
+) => {
+  if (!store.isLogged) return;
+  e.preventDefault();
+  contextMenuTargetCategory.value = null;
+  contextMenuTargetItem.value = item;
+  contextMenuTargetParent.value = parent;
   contextMenuPosition.value = { x: e.clientX, y: e.clientY };
   showContextMenu.value = true;
 };
@@ -143,14 +217,18 @@ const closeContextMenu = () => {
 };
 
 const handleContextRename = () => {
-  if (contextMenuTargetCategory.value) {
+  if (contextMenuTargetItem.value) {
+    openEditModal(contextMenuTargetItem.value);
+  } else if (contextMenuTargetCategory.value) {
     openEditModal(contextMenuTargetCategory.value);
   }
   closeContextMenu();
 };
 
 const handleContextDelete = () => {
-  if (contextMenuTargetCategory.value) {
+  if (contextMenuTargetItem.value && contextMenuTargetParent.value) {
+    handleDeleteBookmark(contextMenuTargetParent.value, contextMenuTargetItem.value.id);
+  } else if (contextMenuTargetCategory.value) {
     handleDeleteCategory(contextMenuTargetCategory.value.id);
   }
   closeContextMenu();
@@ -166,6 +244,25 @@ onUnmounted(() => {
 
 const bookmarkGroups = computed(() => {
   return bookmarks.value.filter((c) => c.title !== "默认收藏");
+});
+
+const draggableBookmarkGroups = computed({
+  get: () => bookmarkGroups.value as (BookmarkCategory | BookmarkItem)[],
+  set: (newGroups: (BookmarkCategory | BookmarkItem)[]) => {
+    const widget = store.widgets.find((w) => w.type === "bookmarks");
+    if (widget) {
+      const currentData = (widget.data as BookmarkCategory[]) || [];
+      const defaultCat = currentData.find((c) => c.title === "默认收藏");
+
+      // Reconstruct data: New Sorted Groups + Default Category (if any)
+      const newData = [...newGroups] as BookmarkCategory[];
+      if (defaultCat) {
+        newData.push(defaultCat);
+      }
+      widget.data = newData;
+      store.saveData();
+    }
+  },
 });
 
 const ungroupedCategory = computed(() => {
@@ -284,7 +381,7 @@ const getLinkUrl = (item: BookmarkItem | BookmarkCategory): string => {
 
 const getLinkIcon = (item: BookmarkItem | BookmarkCategory): string | undefined => {
   if ("url" in item) {
-    return item.icon;
+    return store.getAssetUrl(item.icon);
   }
   return undefined;
 };
@@ -531,6 +628,30 @@ const confirmAddBookmark = async () => {
   activeCategory.value = { ...targetCategory };
 };
 
+const togglePin = (item: BookmarkItem, parent: BookmarkCategory) => {
+  if (!store.isLogged) return;
+
+  const index = parent.children.findIndex((c) => c.id === item.id);
+  if (index === -1) return;
+
+  // Toggle pinned state
+  item.pinned = !item.pinned;
+
+  if (item.pinned) {
+    // Remove from current position
+    parent.children.splice(index, 1);
+    // Move to top
+    parent.children.unshift(item);
+  } else {
+    // If unpinning, we might want to move it after all pinned items?
+    // For now, let's just keep it where it is (at top or wherever it was moved)
+    // or maybe move it to after the last pinned item?
+    // Let's just keep it simple: unpinning just removes the visual pin.
+  }
+
+  store.saveData();
+};
+
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
 });
@@ -546,23 +667,43 @@ const toggle = () => {
 
 <template>
   <div
-    class="flex flex-col transition-all duration-200 z-50 fixed max-h-[85vh] rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
+    ref="sidebarRef"
+    class="flex flex-col transition-all duration-200 z-50 fixed rounded-xl text-black md:before:absolute md:before:-inset-10 md:before:content-[''] md:before:bg-transparent md:before:z-[-1]"
     :class="[
       isMobile && isCollapsed
-        ? 'w-auto h-auto rounded-lg bottom-6 left-6 top-auto'
-        : 'top-4 left-4 backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
-      isCollapsed && !isMobile ? 'w-[48px] !top-1/2 !-translate-y-1/2 !max-h-[60vh]' : '',
-      isCollapsed ? (isMobile ? 'w-auto' : 'w-[48px]') : 'w-64',
+        ? 'w-auto h-auto rounded-lg left-6'
+        : 'left-4 backdrop-blur-[12px] shadow-[0_4px_15px_rgba(0,0,0,0.1)] bg-white/20 border border-white/20',
+      isCollapsed ? (isMobile ? 'w-auto' : isHiddenMode ? 'w-[20px]' : 'w-[48px]') : 'w-64',
     ]"
+    :style="{ height: isMobile && isCollapsed ? 'auto' : sidebarHeight, top: sidebarTop }"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
   >
+    <!-- Hidden Mode Arrow -->
+    <div
+      v-if="isCollapsed && isHiddenMode && !isMobile"
+      class="h-full flex items-center justify-center cursor-pointer text-black/50 hover:text-black"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="w-4 h-4"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+    </div>
+
     <!-- Toggle Button -->
     <div
       v-if="!isCollapsed || isMobile"
       class="flex items-center text-black"
       :class="[
-        isMobile && isCollapsed ? 'p-0' : 'px-3 py-4 border-b',
+        isMobile && isCollapsed
+          ? 'p-0'
+          : 'px-3 h-[50px] transition-all duration-300 ease-in-out border-b mb-1',
         'border-white/15',
         isCollapsed ? 'justify-center' : 'justify-between',
       ]"
@@ -573,7 +714,7 @@ const toggle = () => {
         class="font-bold text-lg truncate hover:opacity-70 transition-opacity flex items-center gap-1 text-black"
         :title="viewMode === 'bookmarks' ? '切换到分组导航' : '切换到书签'"
       >
-        {{ viewMode === "bookmarks" ? "收藏夹" : "快捷导航" }}
+        {{ viewMode === "bookmarks" ? "收藏夹" : "导航" }}
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -590,6 +731,37 @@ const toggle = () => {
         </svg>
       </button>
       <div class="flex items-center gap-2">
+        <button
+          v-if="!isMobile"
+          @click="toggleHiddenMode"
+          class="p-1.5 rounded-xl transition-all group relative backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15"
+          :class="[
+            isHiddenMode
+              ? 'text-blue-500 bg-blue-50/10 border-blue-500/30'
+              : 'text-black bg-white/10 border-white/15',
+          ]"
+          title="隐藏侧边栏"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+            />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
         <button
           v-if="store.isLogged && !isCollapsed && viewMode === 'bookmarks'"
           @click="handleImportClick"
@@ -612,6 +784,7 @@ const toggle = () => {
           </svg>
         </button>
         <button
+          v-if="!isMobile"
           @click="toggle"
           class="p-1.5 transition-all group relative backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15"
           :class="[
@@ -651,12 +824,25 @@ const toggle = () => {
       </div>
     </div>
 
+    <!-- Collapsed Title (Desktop Only) -->
+    <div
+      v-if="isCollapsed && !isMobile && !isHiddenMode"
+      class="px-2 h-[50px] transition-all duration-300 ease-in-out border-b border-white/15 mb-1 flex justify-center items-center"
+    >
+      <div
+        class="text-[10px] font-bold opacity-60 text-black leading-tight tracking-wider vertical-lr select-none"
+        style="writing-mode: vertical-lr; text-orientation: mixed"
+      >
+        {{ viewMode === "bookmarks" ? "收藏夹" : "导航" }}
+      </div>
+    </div>
+
     <!-- Main Content -->
     <div
       ref="scrollContainer"
       class="flex-1 overflow-y-auto py-2 space-y-1 px-1 overscroll-contain custom-scrollbar"
       :class="{ 'no-scrollbar': isCollapsed, 'flex flex-col items-center': isCollapsed }"
-      v-show="!isMobile || !isCollapsed"
+      v-show="(!isMobile || !isCollapsed) && !(isCollapsed && isHiddenMode)"
     >
       <!-- Bookmarks View -->
       <template v-if="viewMode === 'bookmarks'">
@@ -667,56 +853,101 @@ const toggle = () => {
           "
         >
           <!-- Groups Area -->
-          <div v-if="bookmarkGroups.length > 0" class="space-y-1 mb-2">
-            <template v-for="category in bookmarkGroups" :key="category.id">
-              <!-- Category Title (Click to open flyout) -->
+          <VueDraggable
+            v-if="bookmarkGroups.length > 0"
+            v-model="draggableBookmarkGroups"
+            class="space-y-1 mb-2"
+            handle=".drag-handle"
+            :animation="200"
+            ghost-class="ghost-card"
+            group="bookmarks"
+          >
+            <div
+              v-for="category in draggableBookmarkGroups"
+              :key="category.id"
+              @click="handleCategoryClick(category)"
+              @contextmenu.prevent="onCategoryContextMenu($event, category)"
+              class="w-full h-10 px-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black transition-all cursor-pointer group/header rounded-lg hover:bg-white/10 shrink-0"
+              :class="[
+                activeCategory?.id === category.id
+                  ? 'bg-white/20 opacity-100'
+                  : 'opacity-70 hover:opacity-100',
+                isCollapsed ? 'justify-center' : '',
+              ]"
+            >
+              <!-- Drag Handle (Desktop only, visible on hover) -->
               <div
-                @click="handleCategoryClick(category)"
-                @contextmenu.prevent="onCategoryContextMenu($event, category)"
-                class="w-full px-2 py-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-black transition-all cursor-pointer group/header rounded-lg hover:bg-white/10"
-                :class="[
-                  activeCategory?.id === category.id
-                    ? 'bg-white/20 opacity-100'
-                    : 'opacity-70 hover:opacity-100',
-                  { 'flex-col justify-center': isCollapsed },
-                ]"
+                v-if="!isCollapsed"
+                class="drag-handle mr-2 text-black/30 hover:text-black/80 cursor-grab active:cursor-grabbing opacity-0 group-hover/header:opacity-100 transition-opacity flex items-center"
+                @click.stop
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M3 9a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 9zm0 6.75a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75a.75.75 0 01-.75-.75z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+
+              <div
+                class="flex items-center gap-2 flex-1 min-w-0"
+                :class="{ 'justify-center': isCollapsed }"
               >
                 <div
-                  class="flex items-center gap-2 flex-1 min-w-0"
-                  :class="{ 'justify-center': isCollapsed }"
+                  v-if="isCollapsed"
+                  class="drag-handle flex-shrink-0 w-8 h-8 rounded-lg bg-black/5 flex items-center justify-center text-[10px] font-bold cursor-grab active:cursor-grabbing"
                 >
-                  <div
-                    v-if="isCollapsed"
-                    class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/5 flex items-center justify-center text-[10px] font-bold"
+                  <template
+                    v-if="
+                      (category as BookmarkCategory).type === 'category' || 'children' in category
+                    "
                   >
                     {{ category.title.substring(0, 2) }}
-                  </div>
-                  <span v-if="!isCollapsed" class="truncate text-base md:text-xs">{{
-                    category.title
+                  </template>
+                  <img
+                    v-else-if="getLinkIcon(category as BookmarkItem)"
+                    :src="getLinkIcon(category as BookmarkItem)"
+                    class="w-4 h-4 object-contain"
+                    alt=""
+                  />
+                  <span v-else class="text-[10px] font-bold opacity-70 leading-none">{{
+                    category.title.substring(0, 1).toUpperCase()
                   }}</span>
                 </div>
-
-                <div v-if="!isCollapsed" class="flex items-center gap-2">
-                  <!-- Chevron (Right) -->
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="2"
-                    stroke="currentColor"
-                    class="w-5 h-5 md:w-3 md:h-3 transition-transform duration-200"
-                    :class="{ 'rotate-90': activeCategory?.id === category.id }"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M8.25 4.5l7.5 7.5-7.5 7.5"
-                    />
-                  </svg>
-                </div>
+                <span v-if="!isCollapsed" class="truncate text-base md:text-xs">{{
+                  category.title
+                }}</span>
               </div>
-            </template>
-          </div>
+
+              <div v-if="!isCollapsed" class="flex items-center gap-2">
+                <!-- Chevron (Right) for categories -->
+                <svg
+                  v-if="
+                    (category as BookmarkCategory).type === 'category' || 'children' in category
+                  "
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="2"
+                  stroke="currentColor"
+                  class="w-5 h-5 md:w-3 md:h-3 transition-transform duration-200"
+                  :class="{ 'rotate-90': activeCategory?.id === category.id }"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M8.25 4.5l7.5 7.5-7.5 7.5"
+                  />
+                </svg>
+              </div>
+            </div>
+          </VueDraggable>
 
           <!-- Divider -->
           <div
@@ -729,8 +960,9 @@ const toggle = () => {
             <div
               v-for="item in ungroupedCategory.children"
               :key="item.id"
-              class="w-full px-2 py-2 flex items-center justify-between text-black transition-all cursor-pointer group/item rounded-lg hover:bg-white/10"
-              :class="{ 'flex-col justify-center': isCollapsed }"
+              class="w-full h-10 px-2 flex items-center justify-between text-black transition-all cursor-pointer group/item rounded-lg hover:bg-white/10 shrink-0"
+              :class="[isCollapsed ? 'justify-center' : '']"
+              @contextmenu.prevent="onItemContextMenu($event, item, ungroupedCategory!)"
             >
               <a
                 :href="getLinkUrl(item)"
@@ -761,52 +993,21 @@ const toggle = () => {
                 >
               </a>
 
-              <!-- Actions -->
-              <div
-                v-if="!isCollapsed && store.isLogged"
-                class="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity"
+              <button
+                v-if="store.isLogged && !isCollapsed"
+                @click.stop="togglePin(item as BookmarkItem, ungroupedCategory!)"
+                class="opacity-0 group-hover/item:opacity-100 w-6 h-6 rounded flex items-center justify-center transition-all shrink-0 hover:bg-black/10 ml-1"
+                :class="[
+                  (item as BookmarkItem).pinned
+                    ? 'opacity-100 text-black'
+                    : 'text-black/30 hover:text-black',
+                ]"
+                title="置顶"
               >
-                <button
-                  @click.stop="openEditModal(item)"
-                  class="p-0.5 rounded hover:bg-blue-500/20 text-blue-500"
-                  title="编辑"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1.5"
-                    stroke="currentColor"
-                    class="w-3.5 h-3.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
-                    />
-                  </svg>
-                </button>
-                <button
-                  @click.stop="handleDeleteBookmark(ungroupedCategory!, item.id)"
-                  class="p-0.5 rounded hover:bg-red-500/20 text-red-500"
-                  title="删除"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke-width="1.5"
-                    stroke="currentColor"
-                    class="w-3.5 h-3.5"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                    />
-                  </svg>
-                </button>
-              </div>
+                <svg viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5 rotate-45">
+                  <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
+                </svg>
+              </button>
             </div>
           </div>
         </template>
@@ -883,7 +1084,7 @@ const toggle = () => {
             </button>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+          <div class="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar overscroll-contain">
             <VueDraggable
               v-if="currentFolder"
               v-model="currentFolder.children"
@@ -896,6 +1097,7 @@ const toggle = () => {
                 v-for="item in currentFolder.children"
                 :key="item.id"
                 class="w-full flex items-center gap-2 transition-all group relative hover:bg-black/5 text-inherit p-2 rounded-lg cursor-pointer"
+                @contextmenu.prevent="onItemContextMenu($event, item, currentFolder!)"
                 @click="
                   item.type === 'category' || 'children' in item
                     ? navigateTo(item as BookmarkCategory)
@@ -955,7 +1157,7 @@ const toggle = () => {
                     >
                       <img
                         v-if="item.icon"
-                        :src="item.icon"
+                        :src="store.getAssetUrl(item.icon)"
                         class="max-w-full max-h-full object-contain"
                         alt=""
                         @error="
@@ -972,54 +1174,23 @@ const toggle = () => {
                       {{ item.title }}
                     </span>
                   </a>
-                </template>
 
-                <!-- Edit/Delete Buttons -->
-                <div
-                  v-if="store.isLogged"
-                  class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
                   <button
-                    @click.stop="openEditModal(item)"
-                    class="p-1 rounded hover:bg-blue-500/20 text-blue-400"
-                    title="编辑"
+                    v-if="store.isLogged"
+                    @click.stop="togglePin(item as BookmarkItem, currentFolder!)"
+                    class="opacity-0 group-hover:opacity-100 w-6 h-6 rounded flex items-center justify-center transition-all shrink-0 hover:bg-black/10"
+                    :class="[
+                      (item as BookmarkItem).pinned
+                        ? 'opacity-100 text-black'
+                        : 'text-black/30 hover:text-black',
+                    ]"
+                    title="置顶"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="w-3.5 h-3.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
-                      />
+                    <svg viewBox="0 0 24 24" fill="currentColor" class="w-3.5 h-3.5 rotate-45">
+                      <path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" />
                     </svg>
                   </button>
-                  <button
-                    @click.stop="handleDeleteBookmark(currentFolder!, item.id)"
-                    class="p-1 rounded hover:bg-red-500/20 text-red-400"
-                    title="删除"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke-width="1.5"
-                      stroke="currentColor"
-                      class="w-3.5 h-3.5"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                      />
-                    </svg>
-                  </button>
-                </div>
+                </template>
               </div>
 
               <div
@@ -1033,35 +1204,22 @@ const toggle = () => {
 
           <div v-if="store.isLogged" class="p-3 border-t border-black/5 shrink-0 flex gap-2">
             <button
-              @click="openAddCategoryModal(currentFolder)"
-              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+              @click="goHome"
+              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+              title="首页"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-4 h-4"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
+              首页
+            </button>
+            <button
+              @click="openAddCategoryModal(currentFolder)"
+              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+            >
               添加分组
             </button>
             <button
               @click="openAddModal"
-              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center gap-2 border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
+              class="flex-1 p-2 rounded-lg transition-colors group flex items-center justify-center border border-dashed hover:bg-black/5 border-black/20 text-inherit text-xs"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-4 h-4"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
               添加书签
             </button>
           </div>
@@ -1088,7 +1246,9 @@ const toggle = () => {
             @click="scrollToGroup(group.id)"
             class="w-full flex items-center transition-all group relative text-left text-black bg-white/10 backdrop-blur-md border border-white/15 hover:bg-white/25 hover:shadow-md hover:-translate-y-[1px] active:translate-y-0 active:bg-white/15"
             :class="[
-              isCollapsed ? 'justify-center w-10 h-10 p-0 rounded-xl' : 'p-2 rounded-lg gap-2',
+              isCollapsed
+                ? 'justify-center w-10 h-10 p-0 rounded-xl'
+                : 'h-10 px-2 rounded-lg gap-2 shrink-0',
             ]"
           >
             <!-- Icon/Indicator -->
@@ -1098,7 +1258,7 @@ const toggle = () => {
             >
               <img
                 v-if="group.icon"
-                :src="group.icon"
+                :src="store.getAssetUrl(group.icon)"
                 class="w-full h-full object-contain"
                 alt=""
               />
@@ -1157,7 +1317,7 @@ const toggle = () => {
             >
               <img
                 v-if="group.icon"
-                :src="group.icon"
+                :src="store.getAssetUrl(group.icon)"
                 class="w-full h-full object-contain"
                 alt=""
               />
@@ -1193,37 +1353,24 @@ const toggle = () => {
       class="flex justify-between p-2 gap-2 border-t border-white/10"
     >
       <button
+        @click="goHome"
+        class="py-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center border border-dashed hover:bg-white/25 border-black/20 text-black"
+        title="首页"
+      >
+        <span class="text-xs font-medium">首页</span>
+      </button>
+      <button
         @click="openAddCategoryModal(null)"
-        class="p-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
+        class="py-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center border border-dashed hover:bg-white/25 border-black/20 text-black"
         title="添加分组"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-5 h-5"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
         <span class="text-xs font-medium">添加分组</span>
       </button>
       <button
         @click="openAddModal"
-        class="p-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center gap-2 border border-dashed hover:bg-white/25 border-black/20 text-black"
+        class="py-2 rounded-lg transition-colors group relative flex-1 flex items-center justify-center border border-dashed hover:bg-white/25 border-black/20 text-black"
         title="添加书签"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-5 h-5"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
         <span class="text-xs font-medium">添加书签</span>
       </button>
     </div>
@@ -1381,7 +1528,7 @@ const toggle = () => {
                     >
                       <img
                         v-if="editingBookmarkIcon"
-                        :src="editingBookmarkIcon"
+                        :src="store.getAssetUrl(editingBookmarkIcon)"
                         class="w-5 h-5 object-contain"
                         @error="editingBookmarkIcon = ''"
                       />
@@ -1504,7 +1651,7 @@ const toggle = () => {
               d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
             />
           </svg>
-          重命名
+          编辑
         </button>
         <button
           @click="handleContextDelete"
@@ -1524,20 +1671,21 @@ const toggle = () => {
               d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
             />
           </svg>
-          删除分组
+          删除
         </button>
       </div>
     </Teleport>
 
-    <!-- Mobile Collapse Button (Restores original toggle position) -->
+    <!-- Mobile Collapse/Expand Button (Restores original toggle position) -->
     <Teleport to="body">
       <button
-        v-if="isMobile && !isCollapsed"
+        v-if="isMobile"
         @click="toggle"
         class="fixed bottom-6 left-6 z-[60] p-1.5 transition-all group backdrop-blur-[8px] border hover:bg-white/25 hover:-translate-y-px hover:shadow-[0_2px_8px_rgba(0,0,0,0.15)] active:translate-y-0 active:bg-white/15 w-12 h-12 flex justify-center items-center rounded-full text-white bg-white/20 border-white/30 shadow-lg"
-        title="收起侧边栏"
+        :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'"
       >
         <svg
+          v-if="!isCollapsed"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
@@ -1546,6 +1694,21 @@ const toggle = () => {
           class="w-5 h-5"
         >
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+        </svg>
+        <svg
+          v-else
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="w-5 h-5"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+          />
         </svg>
       </button>
     </Teleport>
@@ -1591,5 +1754,11 @@ const toggle = () => {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+.ghost-card {
+  opacity: 0.5;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px dashed rgba(0, 0, 0, 0.2);
 }
 </style>

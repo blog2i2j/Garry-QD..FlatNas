@@ -107,8 +107,9 @@ const updateTempInput = (key: string, value: string) => {
   tempInputs.value[key] = value;
 };
 
-const confirmTempInput = (w: any, field: string, key: string) => {
+const confirmTempInput = (w: WidgetConfig, field: string, key: string) => {
   if (tempInputs.value[key] !== undefined) {
+    if (!w.data) w.data = {};
     w.data[field] = tempInputs.value[key];
     store.saveData();
     // Clear temp input so it falls back to the saved value
@@ -289,7 +290,8 @@ const getMusicAvatarUrl = (path?: string) => {
   if (path.startsWith("http")) return path;
   const apiBase = getApiBase(musicWidget.value?.data?.apiUrl);
   // If it's a relative path like /static/..., prepend API base
-  return path.startsWith("/") ? `${apiBase}${path}` : `${apiBase}/${path}`;
+  const url = path.startsWith("/") ? `${apiBase}${path}` : `${apiBase}/${path}`;
+  return store.getAssetUrl(url);
 };
 
 const testQWeather = async () => {
@@ -438,6 +440,7 @@ const uploadMusic = async (event: Event) => {
       if (musicManagerOpen.value) {
         await fetchMusicFiles();
       }
+      store.refreshResources(); // Update cache buster
       setTimeout(() => {
         uploadStatus.value = "";
       }, 3000);
@@ -822,6 +825,21 @@ const addCustomCssWidget = () => {
     isPublic: true,
   });
   store.saveData();
+};
+
+const addAmapWeatherWidget = () => {
+  const newId = "amap-weather-" + Date.now();
+  store.widgets.push({
+    id: newId,
+    type: "amap-weather",
+    enable: true,
+    data: { city: "110101", apiKey: "" },
+    colSpan: 1,
+    rowSpan: 1,
+    isPublic: true,
+  });
+  store.saveData();
+  alert("已添加高德天气组件，请在组件上配置 API Key");
 };
 
 const addMusicWidget = () => {
@@ -2494,6 +2512,78 @@ watch(activeTab, (val) => {
               </div>
             </template>
 
+            <!-- Amap Weather Widget Section -->
+            <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-4 mt-8">
+              <div class="flex items-center gap-2">
+                <h4 class="text-base font-bold text-gray-900 border-l-4 border-gray-900 pl-3">
+                  高德天气
+                </h4>
+                <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">可多开</span>
+                <button
+                  @click="addAmapWeatherWidget"
+                  class="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-900 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1 ml-2"
+                >
+                  <span class="text-base leading-none">+</span> 新增天气
+                </button>
+              </div>
+            </div>
+
+            <template v-for="w in store.widgets" :key="'amap-' + w.id">
+              <div
+                v-if="w.type === 'amap-weather'"
+                class="flatnas-handshake-signal flex flex-col gap-3 p-4 border border-gray-100 rounded-xl bg-gray-50 hover:bg-white hover:shadow-md transition-all"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-4">
+                    <div
+                      class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-sm font-medium text-gray-700 shadow-sm"
+                    >
+                      天
+                    </div>
+                    <div class="flex flex-col">
+                      <span class="font-bold text-gray-700">高德天气</span>
+                      <span class="text-[10px] text-gray-400 font-mono">ID: {{ w.id }}</span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-6">
+                    <button
+                      @click="removeWidget(w.id)"
+                      class="text-gray-400 hover:text-gray-900 text-xs underline px-2"
+                      title="删除此组件"
+                    >
+                      删除
+                    </button>
+                    <div class="flex flex-col items-end gap-1">
+                      <span class="text-[10px] text-gray-400 font-medium">公开</span
+                      ><label class="relative inline-flex items-center cursor-pointer"
+                        ><input
+                          type="checkbox"
+                          v-model="w.isPublic"
+                          class="sr-only peer"
+                          @change="store.saveData()" />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"
+                        ></div
+                      ></label>
+                    </div>
+                    <div class="flex flex-col items-end gap-1">
+                      <span class="text-[10px] text-gray-400 font-medium">启用</span
+                      ><label class="relative inline-flex items-center cursor-pointer"
+                        ><input
+                          type="checkbox"
+                          v-model="w.enable"
+                          class="sr-only peer"
+                          @change="store.saveData()" />
+                        <div
+                          class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"
+                        ></div
+                      ></label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
             <!-- Countdown Widget Section -->
             <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-4 mt-8">
               <div class="flex items-center gap-2">
@@ -3000,16 +3090,24 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
                     placeholder="请输入高德 Web 服务 Key"
                   />
-                  <p class="text-[10px] text-gray-500 mt-1">
-                    请前往
-                    <a
-                      href="https://console.amap.com/dev/key/app"
-                      target="_blank"
-                      class="text-gray-600 underline hover:text-gray-900"
-                      >高德开放平台</a
+                  <div class="flex items-center justify-between mt-2">
+                    <p class="text-[10px] text-gray-500">
+                      请前往
+                      <a
+                        href="https://console.amap.com/dev/key/app"
+                        target="_blank"
+                        class="text-gray-600 underline hover:text-gray-900"
+                        >高德开放平台</a
+                      >
+                      申请 Web 服务 Key。
+                    </p>
+                    <button
+                      @click="addAmapWeatherWidget"
+                      class="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1"
                     >
-                    申请 Web 服务 Key。
-                  </p>
+                      <span>+</span> 添加天气组件到桌面
+                    </button>
+                  </div>
                 </div>
 
                 <div

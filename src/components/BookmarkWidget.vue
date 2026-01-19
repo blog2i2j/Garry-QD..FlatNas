@@ -436,7 +436,7 @@ const handleScrollIsolation = (e: WheelEvent) => {
               class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 overflow-hidden border border-gray-200"
             >
               <img
-                :src="link.icon"
+                :src="store.getAssetUrl(link.icon)"
                 class="w-6 h-6 object-cover"
                 @error="link.icon = 'https://www.favicon.vip/get.php?url=unknown'"
               />
@@ -522,7 +522,11 @@ const handleScrollIsolation = (e: WheelEvent) => {
           <div
             class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center border overflow-hidden shrink-0"
           >
-            <img v-if="newIcon" :src="newIcon" class="w-full h-full object-cover" />
+            <img
+              v-if="newIcon"
+              :src="store.getAssetUrl(newIcon)"
+              class="w-full h-full object-cover"
+            />
             <span v-else class="text-xs text-gray-300">icon</span>
           </div>
           <input

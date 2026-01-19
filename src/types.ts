@@ -229,6 +229,7 @@ export interface BookmarkItem {
   url: string;
   icon?: string;
   type?: "link";
+  pinned?: boolean;
 }
 
 export interface BookmarkCategory {

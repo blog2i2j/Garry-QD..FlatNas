@@ -1077,7 +1077,7 @@ const submit = async () => {
               <template v-if="iconType === 'image'">
                 <img
                   v-if="form.icon"
-                  :src="form.icon"
+                  :src="store.getAssetUrl(form.icon)"
                   class="w-full h-full object-cover transition-transform duration-200"
                   :style="{ transform: `scale(${(form.iconSize ?? 100) / 100})` }"
                   @error="handleIconError"

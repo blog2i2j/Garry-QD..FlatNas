@@ -40,6 +40,7 @@ const CountdownWidget = defineAsyncComponent(() => import("./CountdownWidget.vue
 const DockerWidget = defineAsyncComponent(() => import("./DockerWidget.vue"));
 const SystemStatusWidget = defineAsyncComponent(() => import("./SystemStatusWidget.vue"));
 const CustomCssWidget = defineAsyncComponent(() => import("./CustomCssWidget.vue"));
+const AmapWeatherWidget = defineAsyncComponent(() => import("./AmapWeatherWidget.vue"));
 const FileTransferWidget = defineAsyncComponent(() => import("./FileTransferWidget.vue"));
 const SizeSelector = defineAsyncComponent(() => import("./SizeSelector.vue"));
 
@@ -221,6 +222,66 @@ const isInternalNetwork = (url: string) => {
   return false;
 };
 
+// --- Wallpaper Preload Logic ---
+const isPcBgLoaded = ref(false);
+const isMobileBgLoaded = ref(false);
+
+const pcBgUrl = computed(() =>
+  store.appConfig.background ? store.getAssetUrl(store.appConfig.background) : "",
+);
+const mobileBgUrl = computed(() =>
+  store.appConfig.mobileBackground ? store.getAssetUrl(store.appConfig.mobileBackground) : "",
+);
+
+watch(
+  pcBgUrl,
+  (url) => {
+    if (!url) {
+      isPcBgLoaded.value = false;
+      return;
+    }
+    const img = new Image();
+    img.src = url;
+    if (img.complete) {
+      isPcBgLoaded.value = true;
+    } else {
+      isPcBgLoaded.value = false;
+      img.onload = () => {
+        isPcBgLoaded.value = true;
+      };
+      img.onerror = () => {
+        isPcBgLoaded.value = true;
+      };
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  mobileBgUrl,
+  (url) => {
+    if (!url) {
+      isMobileBgLoaded.value = false;
+      return;
+    }
+    const img = new Image();
+    img.src = url;
+    if (img.complete) {
+      isMobileBgLoaded.value = true;
+    } else {
+      isMobileBgLoaded.value = false;
+      img.onload = () => {
+        isMobileBgLoaded.value = true;
+      };
+      img.onerror = () => {
+        isMobileBgLoaded.value = true;
+      };
+    }
+  },
+  { immediate: true },
+);
+// ------------------------------
+
 /*
 const draggableWidgets = computed({
   get: () =>
@@ -251,6 +312,7 @@ const layoutData = ref<GridLayoutItem[]>([]);
 let skipNextLayoutSave = false;
 let isInternalUpdate = false;
 const { deviceKey, isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
+const isHandheld = computed(() => deviceKey.value === "mobile" || deviceKey.value === "tablet");
 const checkVisible = (obj?: WidgetConfig | NavItem) => {
   if (!obj) return false;
   if ("enable" in obj && !obj.enable) return false;
@@ -258,7 +320,6 @@ const checkVisible = (obj?: WidgetConfig | NavItem) => {
   if (store.isLogged) return true;
   return !!obj.isPublic;
 };
-const isHandheld = computed(() => deviceKey.value === "mobile" || deviceKey.value === "tablet");
 const isTabletPortrait = computed(() => deviceKey.value === "tablet" && height.value > width.value);
 const widgetColNum = computed(() => {
   if (deviceKey.value === "mobile") return 1;
@@ -274,15 +335,23 @@ watch(
   () => {
     if (isInternalUpdate) return;
 
-    const visibleWidgets = store.widgets.filter(
-      (w) =>
-        checkVisible(w) &&
-        w.type !== "player" &&
-        w.type !== "search" &&
-        w.type !== "quote" &&
-        w.type !== "sidebar" &&
-        !(deviceKey.value === "mobile" && w.hideOnMobile),
-    );
+    const visibleWidgets = store.widgets
+      .filter(
+        (w) =>
+          checkVisible(w) &&
+          w.type !== "player" &&
+          w.type !== "search" &&
+          w.type !== "quote" &&
+          w.type !== "sidebar" &&
+          !(deviceKey.value === "mobile" && w.hideOnMobile),
+      )
+      .sort((a, b) => {
+        // Sort by visual position (Row-major) to ensure correct reflow order
+        const ay = a.y ?? 0;
+        const by = b.y ?? 0;
+        if (ay !== by) return ay - by;
+        return (a.x ?? 0) - (b.x ?? 0);
+      });
 
     const colNum = widgetColNum.value;
 
@@ -298,7 +367,12 @@ watch(
         newW.h = spec.h;
         newW.colSpan = spec.w;
         newW.rowSpan = spec.h;
+      } else if (deviceKey.value === "mobile") {
+        // If no mobile layout exists, reset position to force auto-layout in reading order
+        newW.x = undefined;
+        newW.y = undefined;
       }
+
       if (deviceKey.value === "mobile") {
         if ((newW.w || 1) > colNum) newW.w = colNum;
         if (
@@ -1143,6 +1217,11 @@ const onGroupItemsChange = (groupId: string, newItems: NavItem[]) => {
   }
 };
 
+const openBackupUrl = (url: string) => {
+  if (!url) return;
+  window.open(url, "_blank");
+};
+
 // --- Context Menu Logic ---
 const showContextMenu = ref(false);
 const contextMenuPosition = ref({ x: 0, y: 0 });
@@ -1766,28 +1845,32 @@ onMounted(() => {
       >
         <div
           class="absolute inset-0 opacity-30"
-          :style="{ backgroundImage: `url('${empireBackgroundUrl}')` }"
+          :style="{ backgroundImage: `url('${store.getAssetUrl(empireBackgroundUrl)}')` }"
         ></div>
       </div>
 
       <!-- Desktop Image Layer -->
       <div
-        class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat transition-all duration-300"
+        class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat"
         :class="(store.appConfig.enableMobileWallpaper ?? true) ? 'hidden md:block' : 'block'"
         v-if="store.appConfig.background"
         :style="{
-          backgroundImage: `url('${store.appConfig.background}')`,
+          backgroundImage: `url('${store.getAssetUrl(store.appConfig.background)}')`,
           filter: `blur(${store.appConfig.backgroundBlur ?? 0}px)`,
+          opacity: isPcBgLoaded ? 1 : 0,
+          transition: 'opacity 0.5s ease-in-out, filter 0.3s ease-in-out',
         }"
       ></div>
 
       <!-- Mobile Image Layer -->
       <div
-        class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat transition-all duration-300 md:hidden"
+        class="absolute inset-[-20px] bg-cover bg-center bg-no-repeat md:hidden"
         v-if="(store.appConfig.enableMobileWallpaper ?? true) && store.appConfig.mobileBackground"
         :style="{
-          backgroundImage: `url('${store.appConfig.mobileBackground}')`,
+          backgroundImage: `url('${store.getAssetUrl(store.appConfig.mobileBackground)}')`,
           filter: `blur(${store.appConfig.mobileBackgroundBlur ?? 0}px)`,
+          opacity: isMobileBgLoaded ? 1 : 0,
+          transition: 'opacity 0.5s ease-in-out, filter 0.3s ease-in-out',
         }"
       ></div>
 
@@ -2153,6 +2236,7 @@ onMounted(() => {
             <BookmarkWidget v-else-if="widget.type === 'bookmarks'" :widget="widget" />
             <HotWidget v-else-if="widget.type === 'hot'" :widget="widget" />
             <ClockWeatherWidget v-else-if="widget.type === 'clockweather'" :widget="widget" />
+            <AmapWeatherWidget v-else-if="widget.type === 'amap-weather'" :widget="widget" />
             <RssWidget v-else-if="widget.type === 'rss'" :widget="widget" />
             <DockerWidget v-else-if="widget.type === 'docker'" :widget="widget" />
             <SystemStatusWidget v-else-if="widget.type === 'system-status'" :widget="widget" />
@@ -2371,7 +2455,7 @@ onMounted(() => {
                   <div
                     class="absolute inset-0 bg-cover bg-center transition-all duration-300"
                     :style="{
-                      backgroundImage: `url('${item.backgroundImage || group.backgroundImage}')`,
+                      backgroundImage: `url('${store.getAssetUrl(item.backgroundImage || group.backgroundImage)}')`,
                       filter: `blur(${item.backgroundImage ? (item.backgroundBlur ?? 6) : (group.backgroundBlur ?? 6)}px)`,
                       transform: 'scale(1.1)',
                     }"
@@ -2480,29 +2564,33 @@ onMounted(() => {
                 </div>
 
                 <div
-                  class="relative flex items-center justify-center overflow-hidden flex-shrink-0 transition-all duration-300 relative z-10"
+                  class="relative flex items-center justify-center flex-shrink-0 transition-all duration-300 relative z-10"
                   v-if="(group.iconShape || store.appConfig.iconShape) !== 'hidden'"
                   :style="{
                     width: getLayoutConfig(group).iconSize + 'px',
                     height: getLayoutConfig(group).iconSize + 'px',
                   }"
                 >
-                  <IconShape
-                    :shape="group.iconShape || store.appConfig.iconShape"
-                    :size="getLayoutConfig(group).iconSize"
-                    :imgScale="item.iconSize"
-                    :bgClass="
-                      item.color &&
-                      !item.color.includes('sky') &&
-                      item.color !== '#000000' &&
-                      item.color !== 'bg-black'
-                        ? item.color
-                        : 'bg-white'
-                    "
-                    :icon="processIcon(item.icon || '')"
-                    class="transition-all duration-300 relative z-10 w-full h-full"
-                    :class="item.backgroundImage || group.backgroundImage ? 'drop-shadow-lg' : ''"
-                  />
+                  <div
+                    class="absolute inset-0 overflow-hidden flex items-center justify-center rounded-[inherit]"
+                  >
+                    <IconShape
+                      :shape="group.iconShape || store.appConfig.iconShape"
+                      :size="getLayoutConfig(group).iconSize"
+                      :imgScale="item.iconSize"
+                      :bgClass="
+                        item.color &&
+                        !item.color.includes('sky') &&
+                        item.color !== '#000000' &&
+                        item.color !== 'bg-black'
+                          ? item.color
+                          : 'bg-white'
+                      "
+                      :icon="processIcon(item.icon || '')"
+                      class="transition-all duration-300 relative z-10 w-full h-full"
+                      :class="item.backgroundImage || group.backgroundImage ? 'drop-shadow-lg' : ''"
+                    />
+                  </div>
 
                   <!-- Container Status Indicator -->
                   <div
@@ -2513,6 +2601,51 @@ onMounted(() => {
                     "
                     :title="getContainerStatus(item)?.state"
                   ></div>
+
+                  <!-- Backup Url Badges -->
+                  <!-- 外网备用地址 (左上角, 蓝色) -->
+                  <div
+                    v-if="item.backupUrls && item.backupUrls.length > 0"
+                    class="absolute -top-1 -left-4 z-20 flex flex-col gap-0.5 pointer-events-auto"
+                  >
+                    <div
+                      v-for="(url, idx) in item.backupUrls"
+                      :key="'wan-' + idx"
+                      @click.stop="openBackupUrl(url)"
+                      class="flex items-center justify-center rounded-full bg-blue-600 text-white font-sans font-bold cursor-pointer hover:scale-110 hover:bg-blue-500 transition-all shadow-sm border border-white/50"
+                      :style="{
+                        width: Math.max(16, getLayoutConfig(group).iconSize * 0.22) + 'px',
+                        height: Math.max(16, getLayoutConfig(group).iconSize * 0.22) + 'px',
+                        fontSize: Math.max(10, getLayoutConfig(group).iconSize * 0.14) + 'px',
+                        lineHeight: 1,
+                      }"
+                      :title="'外网: ' + url"
+                    >
+                      {{ idx + 1 }}
+                    </div>
+                  </div>
+
+                  <!-- 内网备用地址 (右上角, 绿色) -->
+                  <div
+                    v-if="item.backupLanUrls && item.backupLanUrls.length > 0"
+                    class="absolute -top-1 -right-4 z-20 flex flex-col gap-0.5 pointer-events-auto"
+                  >
+                    <div
+                      v-for="(url, idx) in item.backupLanUrls"
+                      :key="'lan-' + idx"
+                      @click.stop="openBackupUrl(url)"
+                      class="flex items-center justify-center rounded-full bg-green-600 text-white font-sans font-bold cursor-pointer hover:scale-110 hover:bg-green-500 transition-all shadow-sm border border-white/50"
+                      :style="{
+                        width: Math.max(16, getLayoutConfig(group).iconSize * 0.22) + 'px',
+                        height: Math.max(16, getLayoutConfig(group).iconSize * 0.22) + 'px',
+                        fontSize: Math.max(10, getLayoutConfig(group).iconSize * 0.14) + 'px',
+                        lineHeight: 1,
+                      }"
+                      :title="'内网: ' + url"
+                    >
+                      {{ idx + 1 }}
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Horizontal Mode: 3-Line Custom Text -->
@@ -2639,68 +2772,6 @@ onMounted(() => {
                 >
                   {{ item.title }}
                 </span>
-
-                <!-- Backup URLs Shortcut Overlay (Popup) -->
-                <div
-                  v-if="
-                    !isEditMode &&
-                    ((item.backupUrls && item.backupUrls.length) ||
-                      (item.backupLanUrls && item.backupLanUrls.length))
-                  "
-                  class="absolute top-[100%] left-1/2 -translate-x-1/2 mt-3 w-max max-w-[260px] bg-black/80 backdrop-blur-xl opacity-0 group-hover:opacity-100 transition-all duration-300 z-50 flex flex-col items-center gap-2 p-3 rounded-xl shadow-2xl border border-white/10 pointer-events-none group-hover:pointer-events-auto cursor-default before:absolute before:-top-4 before:left-0 before:w-full before:h-4"
-                  @click.stop
-                >
-                  <!-- Arrow -->
-                  <div
-                    class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/80 border-t border-l border-white/10 rotate-45"
-                  ></div>
-
-                  <div class="text-white/90 text-[11px] font-bold px-2 py-0.5">快捷入口</div>
-
-                  <div class="flex flex-wrap justify-center gap-2 w-full relative z-10">
-                    <!-- Main LAN -->
-                    <button
-                      v-if="item.lanUrl"
-                      @click.stop="handleMenuOpen(item.lanUrl)"
-                      class="bg-emerald-600/90 hover:bg-emerald-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
-                      title="主内网地址"
-                    >
-                      <span>🏠</span> 主
-                    </button>
-
-                    <!-- Main WAN -->
-                    <button
-                      v-if="item.url"
-                      @click.stop="handleMenuOpen(item.url)"
-                      class="bg-indigo-600/90 hover:bg-indigo-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
-                      title="主外网地址"
-                    >
-                      <span>🚀</span> 主
-                    </button>
-
-                    <!-- Backup LAN -->
-                    <button
-                      v-for="(url, idx) in item.backupLanUrls"
-                      :key="'lan-' + idx"
-                      @click.stop="handleMenuOpen(url)"
-                      class="bg-green-600/90 hover:bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
-                      title="备用内网地址"
-                    >
-                      <span>🌐</span> {{ idx + 1 }}
-                    </button>
-
-                    <!-- Backup WAN -->
-                    <button
-                      v-for="(url, idx) in item.backupUrls"
-                      :key="'wan-' + idx"
-                      @click.stop="handleMenuOpen(url)"
-                      class="bg-blue-600/90 hover:bg-blue-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg backdrop-blur-md transition-transform hover:scale-110 flex items-center gap-1 border border-white/20"
-                      title="备用外网地址"
-                    >
-                      <span>🛰️</span> {{ idx + 1 }}
-                    </button>
-                  </div>
-                </div>
               </div>
             </VueDraggable>
           </div>

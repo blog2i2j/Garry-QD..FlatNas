@@ -34,10 +34,11 @@ const historyIndex = ref(-1);
 const getMusicUrl = (fileName: string) => {
   if (!fileName || fileName === "加载中..." || fileName === "无音乐") return undefined;
   // Support nested paths by encoding each segment separately
-  return `/music/${fileName
+  const url = `/music/${fileName
     .split("/")
     .map((part) => encodeURIComponent(part).replace(/'/g, "%27"))
     .join("/")}`;
+  return store.getAssetUrl(url);
 };
 
 // 📥 获取列表

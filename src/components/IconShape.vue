@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useMainStore } from "../stores/main";
 
 // 生成唯一ID，避免多个组件实例间clipPath冲突
 const uid = Math.random().toString(36).slice(2, 9);
 const maskId = `icon-mask-${uid}`;
+const store = useMainStore();
 
 const props = defineProps<{
   shape: string;
@@ -23,10 +25,8 @@ const imgGeometry = computed(() => {
   return { x: pos, y: pos, width: dim, height: dim };
 });
 
-const finalIcon = computed(() => props.icon || "");
-
 const isImg = computed(() => {
-  const s = finalIcon.value;
+  const s = props.icon || "";
   // 支持 http, data:image, blob: 以及包含 / 或 . 的本地路径，排除 SVG 代码
   return (
     !!s &&
@@ -39,8 +39,16 @@ const isImg = computed(() => {
   );
 });
 
+const finalIcon = computed(() => {
+  const icon = props.icon || "";
+  if (isImg.value) {
+    return store.getAssetUrl(icon);
+  }
+  return icon;
+});
+
 const isSvg = computed(() => {
-  const s = finalIcon.value;
+  const s = props.icon || "";
   return !!s && s.trim().startsWith("<svg");
 });
 

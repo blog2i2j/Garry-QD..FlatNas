@@ -134,7 +134,7 @@ const currentCoverUrl = computed(() => {
   }
   if (libraryMode.value === "artists" && currentArtistId.value) {
     const artist = artists.value.find((a) => a.id === currentArtistId.value);
-    return artist?.coverUrl;
+    return store.getAssetUrl(artist?.coverUrl);
   }
   return undefined;
 });
@@ -934,10 +934,11 @@ const getCoverUrl = (track: Track): string | undefined => {
   // If no coverUrl, try Subsonic fallback
   if (!coverUrl && track.id) {
     const url = `${API_BASE.value}/subsonic/rest/getCoverArt?id=track:${track.id}`;
-    return token ? `${url}&token=${token}` : url;
+    const finalUrl = token ? `${url}&token=${token}` : url;
+    return store.getAssetUrl(finalUrl);
   }
 
-  return resolveUrl(coverUrl);
+  return store.getAssetUrl(resolveUrl(coverUrl));
 };
 
 const currentTrack = computed(() =>
@@ -1445,7 +1446,7 @@ onMounted(() => {
   }
   if (isMiniSmall.value || isTallMini.value) {
     void fetchBrowseTracks();
-    if (!syncPlayerState.value) void playAllSongs();
+    if (!syncPlayerState.value && store.appConfig.autoPlayMusic) void playAllSongs();
   }
 
   // Restore state logic
@@ -1953,7 +1954,11 @@ watch(syncPlayerState, (enabled) => {
                   <div
                     class="w-14 h-14 rounded-full overflow-hidden bg-white/10 shadow-sm group-hover:scale-105 transition-transform border border-white/5"
                   >
-                    <img v-if="a.coverUrl" :src="a.coverUrl" class="w-full h-full object-cover" />
+                    <img
+                      v-if="a.coverUrl"
+                      :src="store.getAssetUrl(a.coverUrl)"
+                      class="w-full h-full object-cover"
+                    />
                     <div
                       v-else
                       class="w-full h-full flex items-center justify-center text-2xl opacity-50"
@@ -1980,7 +1985,11 @@ watch(syncPlayerState, (enabled) => {
                   <div
                     class="w-14 h-14 rounded overflow-hidden bg-white/10 shadow-sm group-hover:scale-105 transition-transform border border-white/5"
                   >
-                    <img v-if="a.coverUrl" :src="a.coverUrl" class="w-full h-full object-cover" />
+                    <img
+                      v-if="a.coverUrl"
+                      :src="store.getAssetUrl(a.coverUrl)"
+                      class="w-full h-full object-cover"
+                    />
                     <div
                       v-else
                       class="w-full h-full flex items-center justify-center text-2xl opacity-50"
@@ -2009,7 +2018,9 @@ watch(syncPlayerState, (enabled) => {
                   <div class="flex items-center gap-2 overflow-hidden flex-1">
                     <img
                       v-if="artists.find((a) => a.id === currentArtistId)?.coverUrl"
-                      :src="artists.find((a) => a.id === currentArtistId)?.coverUrl"
+                      :src="
+                        store.getAssetUrl(artists.find((a) => a.id === currentArtistId)?.coverUrl)
+                      "
                       class="w-5 h-5 rounded-full object-cover border border-white/10"
                     />
                     <span class="text-xs font-bold text-white truncate">
@@ -2038,7 +2049,9 @@ watch(syncPlayerState, (enabled) => {
                   <div class="flex items-center gap-2 overflow-hidden flex-1">
                     <img
                       v-if="albums.find((a) => a.id === currentAlbumId)?.coverUrl"
-                      :src="albums.find((a) => a.id === currentAlbumId)?.coverUrl"
+                      :src="
+                        store.getAssetUrl(albums.find((a) => a.id === currentAlbumId)?.coverUrl)
+                      "
                       class="w-5 h-5 rounded object-cover border border-white/10"
                     />
                     <span class="text-xs font-bold text-white truncate">

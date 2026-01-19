@@ -115,14 +115,14 @@ const fetchWallpapers = async () => {
 
 const getUrl = (name: string, type: "pc" | "mobile") => {
   if (name === DEFAULT_WALLPAPER) {
-    return `/${DEFAULT_WALLPAPER}`;
+    return store.getAssetUrl(`/${DEFAULT_WALLPAPER}`);
   }
   const base =
     type === "pc"
       ? store.appConfig.wallpaperPcImageBase || "/backgrounds"
       : store.appConfig.wallpaperMobileImageBase || "/mobile_backgrounds";
   const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
-  return `${trimmed}/${encodeURIComponent(name)}`;
+  return store.getAssetUrl(`${trimmed}/${encodeURIComponent(name)}`);
 };
 
 const selectWallpaper = (name: string, type: "pc" | "mobile") => {
@@ -235,6 +235,7 @@ const executeUpload = async () => {
 
     if (res.ok) {
       await fetchWallpapers();
+      store.refreshResources(); // 刷新资源版本号，更新图片缓存
     } else {
       alert("上传失败");
     }
@@ -292,6 +293,7 @@ const executeDelete = async (name: string, type: "pc" | "mobile") => {
       } else {
         mobileWallpapers.value = mobileWallpapers.value.filter((w) => w !== name);
       }
+      store.refreshResources();
     } else {
       alert("删除失败");
     }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from "vue";
+import { useMainStore } from "../stores/main";
 
 const props = defineProps<{
   show: boolean;
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(["update:show", "select", "cancelLink"]);
+const store = useMainStore();
 
 const timeoutSeconds = ref(10);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,7 +122,7 @@ watch(
             <div
               class="w-12 h-12 flex items-center justify-center bg-white rounded-lg shadow-sm group-hover:scale-110 transition-transform"
             >
-              <img :src="icon" class="w-8 h-8 object-contain" loading="lazy" />
+              <img :src="store.getAssetUrl(icon)" class="w-8 h-8 object-contain" loading="lazy" />
             </div>
             <span
               class="text-xs text-gray-600 truncate w-full text-center font-medium"
