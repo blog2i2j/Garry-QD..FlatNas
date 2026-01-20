@@ -75,9 +75,18 @@ export interface SearchEngine {
   urlTemplate: string;
 }
 
+export interface WallpaperConfig {
+  type: "api" | "local";
+  url: string;
+  enabled: boolean;
+  lastUpdated?: number;
+}
+
 export interface AppConfig {
   background: string;
   mobileBackground?: string;
+  wallpaperConfig?: WallpaperConfig;
+  mobileWallpaperConfig?: WallpaperConfig;
   solidBackgroundColor?: string;
   enableMobileWallpaper?: boolean;
   fixedWallpaper?: boolean; // Deprecated in favor of specific rotation flags

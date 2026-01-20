@@ -343,29 +343,121 @@ const togglePlayMode = () => {
 };
 
 const customApiUrl = ref("");
+const currentGeneratorUrl = ref("");
+const resolvingUrl = ref(false);
 
 const presetApis = [
   {
     name: "Bing 每日壁纸",
     url: "https://bing.biturl.top/?resolution=1920&format=image&index=0&mkt=zh-CN",
+    autoUpdate: true,
   },
-  { name: "随机风景 (Picsum)", url: "https://picsum.photos/1920/1080" },
-  { name: "随机二次元", url: "https://www.loliapi.com/acg/" },
+  { name: "随机风景 (Picsum)", url: "https://picsum.photos/1920/1080", autoUpdate: false },
+  { name: "随机二次元 (PC)", url: "https://www.loliapi.com/acg/pc/", autoUpdate: false },
+  { name: "随机二次元 (PE)", url: "https://www.loliapi.com/acg/pe/", autoUpdate: false },
 ];
 
-const usePreset = (url: string) => {
-  customApiUrl.value = url;
+const resolveUrl = async (url: string) => {
+  resolvingUrl.value = true;
+  try {
+    const res = await fetch("/api/wallpaper/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      customApiUrl.value = data.url;
+    } else {
+      customApiUrl.value = url;
+    }
+  } catch (e) {
+    customApiUrl.value = url;
+  } finally {
+    resolvingUrl.value = false;
+  }
 };
 
-const applyCustomApi = (type: "pc" | "mobile") => {
-  if (!customApiUrl.value) return;
-  if (type === "pc") {
-    store.appConfig.background = customApiUrl.value;
+const usePreset = (url: string) => {
+  currentGeneratorUrl.value = url;
+  resolveUrl(url);
+};
+
+const handleRefresh = () => {
+  if (currentGeneratorUrl.value) {
+    resolveUrl(currentGeneratorUrl.value);
   } else {
-    store.appConfig.mobileBackground = customApiUrl.value;
+    // For manual input, try to resolve it (treat input as generator)
+    resolveUrl(customApiUrl.value);
   }
-  store.saveData();
-  alert("设置成功");
+};
+
+const applyingApi = ref(false);
+
+const applyCustomApi = async (type: "pc" | "mobile", apply: boolean = true) => {
+  if (!customApiUrl.value) return;
+
+  applyingApi.value = true;
+  try {
+    const token = localStorage.getItem("flat-nas-token");
+    const res = await fetch("/api/wallpaper/fetch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ url: customApiUrl.value, type, apply }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+
+      if (apply) {
+        // Determine if scheduler should be enabled based on preset
+        // Check against currentGeneratorUrl as well
+        const preset = presetApis.find(
+          (p) => p.url === currentGeneratorUrl.value || p.url === customApiUrl.value,
+        );
+        // Default to false for unknown custom URLs to prevent unexpected changes
+        const enableScheduler = preset ? preset.autoUpdate : false;
+
+        // If auto-update is enabled, we must save the generator URL (e.g. Bing API)
+        // If disabled (Random), we save the specific resolved URL (Snapshot)
+        const urlToSave = enableScheduler
+          ? currentGeneratorUrl.value || customApiUrl.value
+          : customApiUrl.value;
+
+        const config = {
+          type: "api" as const,
+          url: urlToSave,
+          enabled: !!enableScheduler,
+          lastUpdated: Date.now(),
+        };
+
+        if (type === "pc") {
+          store.appConfig.background = data.path;
+          store.appConfig.wallpaperConfig = config;
+        } else {
+          store.appConfig.mobileBackground = data.path;
+          store.appConfig.mobileWallpaperConfig = config;
+        }
+        store.saveData();
+        alert("设置成功");
+      } else {
+        // Just refresh the list to show the new file
+        await fetchWallpapers();
+        alert(type === "pc" ? "已保存到 PC 壁纸库" : "已保存到手机壁纸库");
+      }
+    } else {
+      const err = await res.json();
+      alert("保存失败: " + (err.error || "未知错误"));
+    }
+  } catch (e) {
+    console.error(e);
+    alert("请求出错，请检查网络");
+  } finally {
+    applyingApi.value = false;
+  }
 };
 
 onMounted(() => {
@@ -782,6 +874,28 @@ onMounted(() => {
                           class="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                       </div>
+                      <div class="w-px h-3 bg-gray-300"></div>
+                      <button
+                        @click="applyCustomApi('pc', false)"
+                        class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="!customApiUrl || applyingApi"
+                        title="下载到 PC 壁纸库"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="w-4 h-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                          />
+                        </svg>
+                      </button>
                     </div>
                   </div>
 
@@ -837,6 +951,33 @@ onMounted(() => {
                           class="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                       </div>
+                      <div class="w-px h-3 bg-gray-300"></div>
+                      <button
+                        @click="applyCustomApi('mobile', false)"
+                        class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="!customApiUrl || applyingApi"
+                        title="下载到 手机壁纸库"
+                      >
+                        <span
+                          v-if="applyingApi"
+                          class="block w-4 h-4 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"
+                        ></span>
+                        <svg
+                          v-else
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="w-4 h-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                          />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -852,11 +993,13 @@ onMounted(() => {
                       placeholder="https://example.com/image.jpg 或 随机图片API"
                     />
                     <button
-                      @click="customApiUrl = customApiUrl.split('?')[0] + '?t=' + Date.now()"
-                      class="px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg border border-gray-200 transition-colors"
+                      @click="handleRefresh"
+                      class="px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg border border-gray-200 transition-colors disabled:opacity-50"
                       title="刷新预览 (追加时间戳)"
+                      :disabled="resolvingUrl"
                     >
-                      🔄
+                      <span v-if="resolvingUrl" class="inline-block animate-spin">🔄</span>
+                      <span v-else>🔄</span>
                     </button>
                   </div>
                 </div>
@@ -875,19 +1018,27 @@ onMounted(() => {
                 <div class="pt-4 flex items-center gap-3 border-t border-gray-100 mt-4">
                   <button
                     @click="applyCustomApi('pc')"
-                    class="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg shadow-sm transition-all active:scale-95"
-                    :disabled="!customApiUrl"
-                    :class="!customApiUrl ? 'opacity-50 cursor-not-allowed' : ''"
+                    class="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+                    :disabled="!customApiUrl || applyingApi"
+                    :class="!customApiUrl || applyingApi ? 'opacity-50 cursor-not-allowed' : ''"
                   >
-                    应用到 PC 壁纸
+                    <span
+                      v-if="applyingApi"
+                      class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+                    ></span>
+                    {{ applyingApi ? "保存中..." : "应用到 PC 壁纸" }}
                   </button>
                   <button
                     @click="applyCustomApi('mobile')"
-                    class="flex-1 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-bold rounded-lg shadow-sm transition-all active:scale-95"
-                    :disabled="!customApiUrl"
-                    :class="!customApiUrl ? 'opacity-50 cursor-not-allowed' : ''"
+                    class="flex-1 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-bold rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+                    :disabled="!customApiUrl || applyingApi"
+                    :class="!customApiUrl || applyingApi ? 'opacity-50 cursor-not-allowed' : ''"
                   >
-                    应用到 手机壁纸
+                    <span
+                      v-if="applyingApi"
+                      class="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"
+                    ></span>
+                    {{ applyingApi ? "保存中..." : "应用到 手机壁纸" }}
                   </button>
                 </div>
               </div>

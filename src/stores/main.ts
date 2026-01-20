@@ -120,7 +120,7 @@ export const useMainStore = defineStore("main", () => {
   };
 
   // Version Check
-  const currentVersion = "1.0.69";
+  const currentVersion = "1.0.71";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -1011,6 +1011,7 @@ export const useMainStore = defineStore("main", () => {
     rssFeeds,
     rssCategories,
     init,
+    fetchData: fetchAndProcessData,
     addGroup,
     deleteGroup,
     updateGroupTitle,

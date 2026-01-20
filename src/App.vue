@@ -292,6 +292,11 @@ onMounted(() => {
     }
   `;
   document.head.appendChild(style);
+
+  // Poll for updates every 18 hours
+  setInterval(() => {
+    store.fetchData();
+  }, 18 * 60 * 60 * 1000);
 });
 </script>
 

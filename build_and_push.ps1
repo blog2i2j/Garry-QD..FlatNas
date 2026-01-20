@@ -8,7 +8,7 @@ $env:HTTP_PROXY=$PROXY
 $env:HTTPS_PROXY=$PROXY
 
 $IMAGE_NAME = "qdnas/flatnas"
-$VERSION = "1.0.67"
+$VERSION = "1.0.71"
 $ORIGINAL_DOCKERFILE = "Dockerfile"
 
 function Retry-Command {

@@ -559,7 +559,7 @@
       "id": "w4",
       "type": "memo",
       "enable": true,
-      "data": "添加了侧边栏自动展开的功能\n优化了容器更新后卡片状态都是的问题\n容器卡片添加了镜像更多提醒\n容器卡片增加了镜像升级功能更\n容器管理增加了自动镜像升级功能\n道理鱼组件隐藏播放栏",
+      "data": "侧边栏重新排版\n侧边栏添加隐藏折叠侧边栏功能\n侧边栏添加分组排序功能\n侧边栏添加分组拖动功能\n侧边栏添加图钉置顶功能\n修复无法清空分组的BUG\n最终为了体验换成了强缓存，提升打开速度\n修改全部后端获取资讯的频率\n修改库API接口由后端获取\n优化了壁纸的获取逻辑\n壁纸库增加下载壁纸按钮，一键下载到本地\n",
       "colSpan": 1,
       "rowSpan": 2,
       "isPublic": false,
@@ -874,6 +874,7 @@
     "mouseHoverEffect": "scale",
     "customCssList": [],
     "customJsList": [],
+    "autoUltrawide": false,
     "weatherSource": "wttr",
     "qweatherProjectId": "",
     "qweatherKeyId": "",
@@ -887,6 +888,38 @@
       "unnamed-(2)_01.gif",
       "unnamed-2_02-1765141374406.gif"
     ],
-    "autoUltrawide": false
+    "backupUrls": {
+      "爱奇艺": {
+        "url_0": "http://www.baidu.com",
+        "url_1": "http://www.baidu.com"
+      },
+      "常用": {
+        "url_0": "https://v.qq.com/"
+      },
+      "default": {
+        "url_0": "https://v.baidu.com/"
+      },
+      "腾讯视频": {
+        "url_0": "https://www.baidu.com/"
+      },
+      "redis-cache": {
+        "url_0": "https://www.bilibili.com/"
+      },
+      "优酷": {
+        "url_0": "https://www.bilibili.com/video/BV1qXrjBjEC6/?spm_id_from=333.1007.tianma.2-2-5.click&vd_source=2e3d6cd0ec48225a780ae660dad2d60b"
+      }
+    },
+    "wallpaperConfig": {
+      "type": "api",
+      "url": "https://www.loliapi.com/acg/",
+      "enabled": false,
+      "lastUpdated": 1768881498725
+    },
+    "mobileWallpaperConfig": {
+      "type": "api",
+      "url": "https://picsum.photos/1920/1080",
+      "enabled": false,
+      "lastUpdated": 1768881943656
+    }
   }
 }

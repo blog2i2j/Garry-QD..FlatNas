@@ -25,6 +25,32 @@ const isVertical = computed(() => {
   return (layout || store.appConfig.cardLayout) === "vertical";
 });
 
+// 合并描述字段的计算属性
+const mergedDescription = computed({
+  get: () => {
+    const d1 = form.value.description1 || "";
+    const d2 = form.value.description2 || "";
+    const d3 = form.value.description3 || "";
+    // 如果有后面行的内容，则保留前面的换行符
+    if (d3) return `${d1}\n${d2}\n${d3}`;
+    if (d2) return `${d1}\n${d2}`;
+    return d1;
+  },
+  set: (val: string) => {
+    const lines = val.split("\n");
+    form.value.description1 = lines[0] || "";
+    form.value.description2 = lines[1] || "";
+    form.value.description3 = lines[2] || "";
+  },
+});
+
+// 自动调整高度
+const autoResize = (event: Event) => {
+  const el = event.target as HTMLTextAreaElement;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+};
+
 // 图标模式：emoji 或 图片
 const iconType = ref<"emoji" | "image">("image");
 const isFetching = ref(false);
@@ -869,34 +895,19 @@ const submit = async () => {
           </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-2" v-if="!isVertical">
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">描述行 1 (上)</label>
-            <input
-              v-model="form.description1"
-              type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
-              placeholder="水平模式显示"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">描述行 2 (中)</label>
-            <input
-              v-model="form.description2"
-              type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
-              placeholder="水平模式显示"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-500 mb-1">描述行 3 (下)</label>
-            <input
-              v-model="form.description3"
-              type="text"
-              class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
-              placeholder="水平模式显示"
-            />
-          </div>
+        <div v-if="!isVertical">
+          <label class="block text-xs font-medium text-gray-500 mb-1"
+            >描述 (水平模式显示，每行对应一行文字)</label
+          >
+          <textarea
+            v-model="mergedDescription"
+            @input="autoResize"
+            class="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm resize-none overflow-hidden"
+            placeholder="第一行 (上)
+第二行 (中)
+第三行 (下)"
+            rows="3"
+          ></textarea>
         </div>
 
         <div>

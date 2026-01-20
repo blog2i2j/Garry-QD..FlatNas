@@ -22,6 +22,57 @@ import multer from "multer";
 import Docker from "dockerode";
 import si from "systeminformation";
 
+// --- Security Utils ---
+const isPrivateIp = (ip) => {
+  const parts = ip.split(".");
+  if (parts.length === 4) {
+    const first = parseInt(parts[0], 10);
+    const second = parseInt(parts[1], 10);
+    if (first === 127) return true;
+    if (first === 10) return true;
+    if (first === 172 && second >= 16 && second <= 31) return true;
+    if (first === 192 && second === 168) return true;
+    if (first === 0) return true;
+    return false;
+  } else if (ip.includes(":")) {
+    if (ip === "::1") return true;
+    if (ip === "::") return true;
+    if (ip.toLowerCase().startsWith("fc") || ip.toLowerCase().startsWith("fd")) return true;
+    if (ip.toLowerCase().startsWith("fe80")) return true;
+    return false;
+  }
+  return false;
+};
+
+const safeUrlCheck = (urlStr) => {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const hostname = u.hostname;
+    if (hostname === "localhost") return false;
+    if (isPrivateIp(hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// --- Concurrency Control ---
+const userLocks = {};
+const getUserLock = (username) => {
+  if (!userLocks[username]) {
+    let p = Promise.resolve();
+    userLocks[username] = {
+      run: (fn) => {
+        const res = p.then(() => fn()).finally(() => {});
+        p = res.catch(() => {});
+        return res;
+      },
+    };
+  }
+  return userLocks[username];
+};
+
 const rssParser = new RSSParser();
 const socketPath =
   process.env.DOCKER_SOCKET_PATH ||
@@ -607,6 +658,145 @@ async function getDefaultData() {
   }
 }
 
+// --- Wallpaper Scheduler ---
+const WALLPAPER_CHECK_INTERVAL = 12 * 60 * 60 * 1000;
+
+async function checkAndDownloadWallpapers() {
+  console.log("[WallpaperScheduler] Checking for wallpaper updates...");
+
+  const users = new Set();
+  // Always check admin/single user
+  users.add("admin");
+
+  // Check all users in multi mode
+  try {
+    if (existsSync(USERS_DIR)) {
+      const files = await fs.readdir(USERS_DIR);
+      for (const f of files) {
+        if (f.endsWith(".json")) {
+          users.add(path.basename(f, ".json"));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[WallpaperScheduler] Failed to list users:", e);
+  }
+
+  for (const username of users) {
+    await getUserLock(username).run(async () => {
+      // Get user data (prefer cache, else read file)
+      let data = cachedUsersData[username];
+      const filePath = getUserFile(username);
+
+      if (!data) {
+        try {
+          const content = await fs.readFile(filePath, "utf-8");
+          data = JSON.parse(content);
+          cachedUsersData[username] = data;
+        } catch {
+          return;
+        }
+      }
+
+      if (!data || !data.appConfig) return;
+
+      let modified = false;
+
+      // Check PC Wallpaper
+      if (
+        data.appConfig.wallpaperConfig?.enabled &&
+        data.appConfig.wallpaperConfig.type === "api"
+      ) {
+        try {
+          const url = data.appConfig.wallpaperConfig.url;
+          console.log(`[WallpaperScheduler] Downloading PC wallpaper for ${username} from ${url}`);
+          const filename = `api_bg_${username}_${Date.now()}.jpg`;
+          const destPath = path.join(BACKGROUNDS_DIR, filename);
+
+          const res = await fetch(url);
+          if (res.ok) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            await fs.writeFile(destPath, buffer);
+
+            // Cleanup old files
+            try {
+              const files = await fs.readdir(BACKGROUNDS_DIR);
+              for (const f of files) {
+                if (f.startsWith(`api_bg_${username}_`) && f !== filename) {
+                  await fs.unlink(path.join(BACKGROUNDS_DIR, f));
+                }
+              }
+            } catch (e) {
+              console.error("Cleanup error:", e);
+            }
+
+            data.appConfig.background = `/backgrounds/${filename}`;
+            data.appConfig.wallpaperConfig.lastUpdated = Date.now();
+            modified = true;
+          }
+        } catch (e) {
+          console.error(`[WallpaperScheduler] Failed to update PC wallpaper for ${username}:`, e);
+        }
+      }
+
+      // Check Mobile Wallpaper
+      if (
+        data.appConfig.mobileWallpaperConfig?.enabled &&
+        data.appConfig.mobileWallpaperConfig.type === "api"
+      ) {
+        try {
+          const url = data.appConfig.mobileWallpaperConfig.url;
+          console.log(
+            `[WallpaperScheduler] Downloading Mobile wallpaper for ${username} from ${url}`,
+          );
+          const filename = `api_mbg_${username}_${Date.now()}.jpg`;
+          const destPath = path.join(MOBILE_BACKGROUNDS_DIR, filename);
+
+          const res = await fetch(url);
+          if (res.ok) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            await fs.writeFile(destPath, buffer);
+
+            // Cleanup old
+            try {
+              const files = await fs.readdir(MOBILE_BACKGROUNDS_DIR);
+              for (const f of files) {
+                if (f.startsWith(`api_mbg_${username}_`) && f !== filename) {
+                  await fs.unlink(path.join(MOBILE_BACKGROUNDS_DIR, f));
+                }
+              }
+            } catch (e) {
+              console.error("Cleanup error:", e);
+            }
+
+            data.appConfig.mobileBackground = `/mobile_backgrounds/${filename}`;
+            data.appConfig.mobileWallpaperConfig.lastUpdated = Date.now();
+            modified = true;
+          }
+        } catch (e) {
+          console.error(
+            `[WallpaperScheduler] Failed to update Mobile wallpaper for ${username}:`,
+            e,
+          );
+        }
+      }
+
+      if (modified) {
+        await atomicWrite(filePath, JSON.stringify(data, null, 2));
+        // Update cache
+        cachedUsersData[username] = data;
+        io.emit("data-updated", { username, source: "wallpaper-scheduler" });
+        console.log(`[WallpaperScheduler] Updated config for ${username}`);
+      }
+    });
+  }
+}
+
+// Start scheduler
+setInterval(checkAndDownloadWallpapers, WALLPAPER_CHECK_INTERVAL);
+// Initial check after startup
+setTimeout(checkAndDownloadWallpapers, 10000);
+
 ensureInit();
 
 app.use(cors());
@@ -638,53 +828,59 @@ async function updateContainerIdGlobally(oldId, newId, containerName) {
   }
 
   for (const filePath of filesToCheck) {
-    try {
-      const content = await fs.readFile(filePath, "utf-8");
-      let data;
+    // Determine username for lock
+    let username = null;
+    if (filePath === OLD_DATA_FILE) {
+      if (systemConfig.authMode === "single") username = "admin";
+    } else {
+      username = path.basename(filePath, ".json");
+    }
+
+    // Skip if no username (shouldn't happen for valid files)
+    if (!username) continue;
+
+    await getUserLock(username).run(async () => {
       try {
-        data = JSON.parse(content);
-      } catch {
-        continue;
-      }
+        const content = await fs.readFile(filePath, "utf-8");
+        let data;
+        try {
+          data = JSON.parse(content);
+        } catch {
+          return;
+        }
 
-      let modified = false;
-      // Determine username for cache update
-      let username = null;
-      if (filePath === OLD_DATA_FILE) {
-        if (systemConfig.authMode === "single") username = "admin";
-      } else {
-        username = path.basename(filePath, ".json");
-      }
+        let modified = false;
 
-      if (data.groups) {
-        for (const group of data.groups) {
-          if (group.items) {
-            for (const item of group.items) {
-              if (item.containerId === oldId) {
-                item.containerId = newId;
-                if (containerName) {
-                  const realName = containerName.replace(/^\//, "");
-                  if (item.containerName !== realName) item.containerName = realName;
+        if (data.groups) {
+          for (const group of data.groups) {
+            if (group.items) {
+              for (const item of group.items) {
+                if (item.containerId === oldId) {
+                  item.containerId = newId;
+                  if (containerName) {
+                    const realName = containerName.replace(/^\//, "");
+                    if (item.containerName !== realName) item.containerName = realName;
+                  }
+                  modified = true;
                 }
-                modified = true;
               }
             }
           }
         }
-      }
 
-      if (modified) {
-        await atomicWrite(filePath, JSON.stringify(data, null, 2));
-        console.log(`[ContainerSync] Updated config in ${filePath}`);
+        if (modified) {
+          await atomicWrite(filePath, JSON.stringify(data, null, 2));
+          console.log(`[ContainerSync] Updated config in ${filePath}`);
 
-        if (username && cachedUsersData[username]) {
-          cachedUsersData[username] = data;
-          io.emit("data-updated", { username, source: "container-sync" });
+          if (username && cachedUsersData[username]) {
+            cachedUsersData[username] = data;
+            io.emit("data-updated", { username, source: "container-sync" });
+          }
         }
+      } catch (err) {
+        console.error(`[ContainerSync] Error processing ${filePath}:`, err);
       }
-    } catch (err) {
-      console.error(`[ContainerSync] Error processing ${filePath}:`, err);
-    }
+    });
   }
 }
 
@@ -724,6 +920,170 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+// API to manually fetch and save wallpaper (immediately)
+app.post("/api/wallpaper/fetch", authenticateToken, async (req, res) => {
+  const { url, type, apply = true } = req.body;
+  const username = req.user.username;
+
+  if (!url) return res.status(400).json({ error: "URL is required" });
+  if (!safeUrlCheck(url)) return res.status(400).json({ error: "Invalid or unsafe URL" });
+  if (type !== "pc" && type !== "mobile")
+    return res.status(400).json({ error: "Type must be 'pc' or 'mobile'" });
+
+  console.log(
+    `[WallpaperFetch] User ${username} requesting fetch from ${url} for ${type} (apply: ${apply})`,
+  );
+
+  try {
+    const isMobile = type === "mobile";
+    const targetDir = isMobile ? MOBILE_BACKGROUNDS_DIR : BACKGROUNDS_DIR;
+
+    // Determine prefix: if applying, use standard api prefix (managed/cleaned up).
+    // If just saving, use 'saved_' prefix (persisted).
+    const prefix = apply
+      ? isMobile
+        ? `api_mbg_${username}_`
+        : `api_bg_${username}_`
+      : isMobile
+        ? `saved_mbg_${username}_`
+        : `saved_bg_${username}_`;
+
+    // Fetch Image
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && !contentType.startsWith("image/")) {
+      throw new Error(`Invalid content type: ${contentType}. Expected an image.`);
+    }
+
+    // Determine extension from content-type
+    let ext = ".jpg";
+    if (contentType) {
+      if (contentType.includes("png")) ext = ".png";
+      else if (contentType.includes("webp")) ext = ".webp";
+      else if (contentType.includes("gif")) ext = ".gif";
+      else if (contentType.includes("svg")) ext = ".svg";
+      else if (contentType.includes("jpeg")) ext = ".jpg";
+    }
+
+    const filename = `${prefix}${Date.now()}${ext}`;
+    const destPath = path.join(targetDir, filename);
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(destPath, buffer);
+
+    // Cleanup old files for this user and type ONLY if applying (maintaining single active API wallpaper)
+    if (apply) {
+      try {
+        const files = await fs.readdir(targetDir);
+        for (const f of files) {
+          if (f.startsWith(prefix) && f !== filename) {
+            await fs.unlink(path.join(targetDir, f));
+          }
+        }
+      } catch (e) {
+        console.warn("[WallpaperFetch] Cleanup warning:", e);
+      }
+    }
+
+    // Update User Config
+    const filePath = getUserFile(username);
+    let data = cachedUsersData[username];
+
+    // Ensure we have fresh data
+    if (!data) {
+      try {
+        const content = await fs.readFile(filePath, "utf-8");
+        data = JSON.parse(content);
+        cachedUsersData[username] = data;
+      } catch {
+        return res.status(500).json({ error: "Failed to load user config" });
+      }
+    }
+
+    const webPath = isMobile ? `/mobile_backgrounds/${filename}` : `/backgrounds/${filename}`;
+
+    // Only update config if applying
+    if (apply) {
+      // Update data object
+      if (!data.appConfig) data.appConfig = {};
+
+      if (isMobile) {
+        data.appConfig.mobileBackground = webPath;
+        // We don't necessarily update wallpaperConfig here if it's "manual",
+        // but to persist the "source" we probably should.
+        // However, frontend calls this. Let's assume frontend manages wallpaperConfig state separately
+        // OR we just return the path and let frontend update the config.
+        // BUT, to be atomic and safe, we should update config here.
+        // The user wants "Random" to NOT update on refresh.
+        // If we save the URL to wallpaperConfig, the scheduler WILL update it every 12h.
+        // That seems to be the desired behavior for "Daily" (Bing).
+        // For "Random", 12h update is acceptable (it's a "Daily Random").
+        // The user just wants to avoid "Refresh Page Random".
+        // So updating wallpaperConfig is fine.
+      } else {
+        data.appConfig.background = webPath;
+      }
+
+      // We don't save the full wallpaperConfig object here because we don't know the full config (enabled, etc).
+      // We just update the 'background' path.
+      // The frontend should call save-data to update the wallpaperConfig if needed,
+      // OR we rely on this endpoint to JUST fetch and return the path.
+      // However, saving to file requires updating the config to point to it.
+      // So we MUST save the new background path to the user config.
+
+      await atomicWrite(filePath, JSON.stringify(data, null, 2));
+      cachedUsersData[username] = data;
+      io.emit("data-updated", { username, source: "wallpaper-fetch" });
+    }
+
+    res.json({ success: true, path: webPath });
+  } catch (error) {
+    console.error("[WallpaperFetch] Error:", error);
+    res.status(500).json({ error: "Failed to fetch wallpaper: " + error.message });
+  }
+});
+
+// Helper to resolve redirect URL (for preview consistency)
+app.post("/api/wallpaper/resolve", async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: "URL is required" });
+  if (!safeUrlCheck(url)) return res.status(400).json({ error: "Invalid or unsafe URL" });
+
+  try {
+    const response = await fetch(url, { redirect: "follow", method: "HEAD" });
+    // If HEAD fails (e.g. 405 Method Not Allowed, or 404 from API gateway), try GET
+    if (!response.ok) {
+      console.log(`[WallpaperResolve] HEAD failed (${response.status}), trying GET for ${url}`);
+      const getResp = await fetch(url, { redirect: "follow" });
+      if (!getResp.ok) {
+        // If GET also fails, return error or null so frontend knows
+        console.warn(`[WallpaperResolve] GET also failed (${getResp.status}) for ${url}`);
+        // Return the final URL anyway? No, it might be a 404 page.
+        // Let's return the URL but frontend might check it.
+        // Better: throw error so frontend keeps the original URL (which will fail later, but at least not "success" with a 404 url)
+        return res.status(400).json({ error: `Resolve failed: ${getResp.status}` });
+      }
+      return res.json({ url: getResp.url });
+    }
+    res.json({ url: response.url });
+  } catch (e) {
+    // If fetch fails, just return the original URL (maybe it's not reachable by server but reachable by client?)
+    // Or return error. Let's return original to be safe, or error?
+    // If server can't reach it, it can't download it later either.
+    console.error("[WallpaperResolve] Error:", e);
+    res.status(500).json({ error: "Failed to resolve URL" });
+  }
+});
 
 // System Config API
 app.get("/api/system-config", (req, res) => {
@@ -1970,45 +2330,47 @@ app.post("/api/save", authenticateToken, async (req, res) => {
   const username = req.user.username;
   console.log(`[Save] Saving for user: ${username}`);
 
-  try {
-    const body = req.body;
-    if (!body || Object.keys(body).length === 0) {
-      return res.status(400).json({ error: "Empty body" });
-    }
-
-    const currentData = cachedUsersData[username] || {};
-
-    // Handle password update
-    let newPassword = currentData.password;
-    if (typeof body.password === "string" && body.password.length > 0) {
-      try {
-        let matched = false;
-        if (typeof currentData.password === "string" && currentData.password.startsWith("$2b$")) {
-          matched = await bcrypt.compare(body.password, currentData.password);
-        } else {
-          matched = body.password === currentData.password;
-        }
-        if (!matched) {
-          newPassword = await bcrypt.hash(body.password, 10);
-        }
-      } catch (e) {
-        console.error("Password process error", e);
-        newPassword = currentData.password;
+  await getUserLock(username).run(async () => {
+    try {
+      const body = req.body;
+      if (!body || Object.keys(body).length === 0) {
+        return res.status(400).json({ error: "Empty body" });
       }
+
+      const currentData = cachedUsersData[username] || {};
+
+      // Handle password update
+      let newPassword = currentData.password;
+      if (typeof body.password === "string" && body.password.length > 0) {
+        try {
+          let matched = false;
+          if (typeof currentData.password === "string" && currentData.password.startsWith("$2b$")) {
+            matched = await bcrypt.compare(body.password, currentData.password);
+          } else {
+            matched = body.password === currentData.password;
+          }
+          if (!matched) {
+            newPassword = await bcrypt.hash(body.password, 10);
+          }
+        } catch (e) {
+          console.error("Password process error", e);
+          newPassword = currentData.password;
+        }
+      }
+      body.password = newPassword;
+
+      cachedUsersData[username] = body;
+      await atomicWrite(getUserFile(username), JSON.stringify(body, null, 2));
+
+      // Notify other clients
+      io.emit("data-updated", { username, source: "save-api" });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[Save Failed]:", err);
+      res.status(500).json({ error: "Failed to save" });
     }
-    body.password = newPassword;
-
-    cachedUsersData[username] = body;
-    await atomicWrite(getUserFile(username), JSON.stringify(body, null, 2));
-
-    // Notify other clients
-    io.emit("data-updated", { username, source: "save-api" });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("[Save Failed]:", err);
-    res.status(500).json({ error: "Failed to save" });
-  }
+  });
 });
 
 // Docker Status (Global)
@@ -3503,6 +3865,7 @@ app.post("/api/visitor/track", async (req, res) => {
 app.get("/api/fetch-meta", async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: "URL is required" });
+  if (!safeUrlCheck(url)) return res.json({ title: "", icon: "" });
 
   try {
     // 1. Basic URL validation
@@ -3634,6 +3997,7 @@ app.get("/api/fetch-meta", async (req, res) => {
 app.get("/api/get-icon-base64", async (req, res) => {
   const targetUrl = req.query.url;
   if (!targetUrl) return res.status(400).json({ error: "URL is required" });
+  if (!safeUrlCheck(targetUrl)) return res.status(400).json({ error: "Invalid or unsafe URL" });
 
   try {
     const controller = new AbortController();
@@ -3745,8 +4109,8 @@ app.post("/api/icon-cache", async (req, res) => {
       contentType = parsed.mime;
       extFromType = inferExtFromType(contentType);
     } else {
-      if (!/^https?:\/\//i.test(url)) {
-        return res.status(400).json({ success: false, error: "Only http/https url is allowed" });
+      if (!safeUrlCheck(url)) {
+        return res.status(400).json({ success: false, error: "Invalid or unsafe URL" });
       }
 
       const doFetch = async () => {
@@ -3935,7 +4299,7 @@ io.on("connection", (socket) => {
           payload && payload.custom && typeof payload.custom === "object" ? payload.custom : {};
 
         const url = typeof cfg.url === "string" ? cfg.url.trim() : "";
-        if (!/^https?:\/\//i.test(url)) throw new Error("Invalid URL");
+        if (!safeUrlCheck(url)) throw new Error("Invalid or unsafe URL");
 
         const method = typeof cfg.method === "string" ? cfg.method.toUpperCase().trim() : "GET";
         const headers = {
@@ -4141,7 +4505,10 @@ io.on("connection", (socket) => {
           );
           socket.to(`user:${username}`).emit("memo:updated", { widgetId, content });
           if (systemConfig.authMode === "single") {
-            io.emit("memo:updated", { widgetId, content });
+            // Use socket.broadcast.emit instead of io.emit to avoid sending back to the sender
+            // This prevents the "rollback" effect where the sender receives their own update
+            // with a slight delay, overwriting any new characters typed in the meantime.
+            socket.broadcast.emit("memo:updated", { widgetId, content });
           }
         }
       }
