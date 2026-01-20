@@ -29,9 +29,18 @@ export const useMainStore = defineStore("main", () => {
   const isConnected = ref(false);
   let socketListenersBound = false;
   let isInitializing = false;
+  let isFirstConnect = true;
 
   socket.on("connect", async () => {
     isConnected.value = true;
+
+    // Skip the mode check on first connection (initial load)
+    // The init() function will handle the initial state and config fetching
+    if (isFirstConnect) {
+      isFirstConnect = false;
+      return;
+    }
+
     // Check if system config changed while we were disconnected
     // This handles the case where user switches mode in one tab while another is briefly offline
     const oldMode = systemConfig.value.authMode;
@@ -120,7 +129,7 @@ export const useMainStore = defineStore("main", () => {
   };
 
   // Version Check
-  const currentVersion = "1.0.72";
+  const currentVersion = "1.0.72dev";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 

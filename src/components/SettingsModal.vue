@@ -3325,6 +3325,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     📥 导入配置
                   </button>
                   <button
+                    v-if="store.username === 'admin'"
                     @click="handleSaveAsDefault"
                     class="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-900 transition-all"
                   >
@@ -3357,6 +3358,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     }}</span
                   >
                   <button
+                    v-if="store.username === 'admin'"
                     @click="toggleAuthMode"
                     class="px-4 py-2 rounded-lg text-sm font-bold text-white transition-all bg-gray-900 hover:bg-gray-800"
                   >
@@ -3364,6 +3366,12 @@ document.querySelector('.card-item').addEventListener('click', () => {
                       store.systemConfig.authMode === "single" ? "多用户模式" : "单用户模式"
                     }}
                   </button>
+                  <span
+                    v-else
+                    class="px-4 py-2 rounded-lg text-sm font-bold text-gray-500 bg-gray-100"
+                  >
+                    仅管理员可切换
+                  </span>
                 </div>
                 <p class="text-xs text-gray-500 mt-2">
                   {{
@@ -3488,17 +3496,10 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   </button>
                 </div>
               </div>
-              <button
-                @click="store.logout"
-                class="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold border border-gray-200 hover:bg-gray-200 transition-colors"
-              >
-                退出登录
-              </button>
-
               <!-- Admin User Management UI -->
               <div
                 v-if="store.username === 'admin' && store.systemConfig.authMode === 'multi'"
-                class="mt-6 bg-gray-50 p-5 rounded-xl border border-gray-200"
+                class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6"
               >
                 <h5 class="text-sm font-bold text-gray-900 mb-3">👥 用户管理 (Admin)</h5>
 
@@ -3567,6 +3568,13 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   </p>
                 </div>
               </div>
+
+              <button
+                @click="store.logout"
+                class="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold border border-gray-200 hover:bg-gray-200 transition-colors"
+              >
+                退出登录
+              </button>
             </div>
           </div>
           <div
