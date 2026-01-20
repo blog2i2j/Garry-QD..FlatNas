@@ -541,8 +541,9 @@ const newPwd = ref("");
 const licenseKey = ref("");
 
 const loadUsers = async () => {
-  if (store.username === "admin" && store.systemConfig.authMode === "multi") {
-    userList.value = await store.fetchUsers();
+  const users = await store.fetchUsers();
+  if (Array.isArray(users)) {
+    userList.value = users;
   }
 };
 
@@ -582,11 +583,15 @@ const handleUploadLicense = async () => {
 };
 
 // Watch for tab change to load users
-watch(activeTab, (val) => {
-  if (val === "account") {
-    loadUsers();
-  }
-});
+watch(
+  activeTab,
+  (val) => {
+    if (val === "account") {
+      loadUsers();
+    }
+  },
+  { immediate: true },
+);
 
 const toggleAuthMode = async () => {
   const currentMode = store.systemConfig.authMode;
@@ -1233,13 +1238,12 @@ const onNavMouseUp = () => {
 watch(
   () => props.show,
   (val) => {
-    if (
-      val &&
-      activeTab.value === "account" &&
-      store.username === "admin" &&
-      store.systemConfig.authMode === "single"
-    ) {
-      fetchVersions();
+    if (val && activeTab.value === "account" && store.username === "admin") {
+      if (store.systemConfig.authMode === "single") {
+        fetchVersions();
+      } else {
+        loadUsers();
+      }
     }
   },
 );

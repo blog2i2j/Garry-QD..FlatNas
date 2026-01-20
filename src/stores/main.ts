@@ -284,6 +284,7 @@ export const useMainStore = defineStore("main", () => {
       if (cache.appConfig) appConfig.value = { ...appConfig.value, ...cache.appConfig };
       if (cache.rssFeeds) rssFeeds.value = cache.rssFeeds;
       if (cache.rssCategories) rssCategories.value = cache.rssCategories;
+      if (cache.systemConfig) systemConfig.value = cache.systemConfig;
 
       return true;
     } catch (e) {
