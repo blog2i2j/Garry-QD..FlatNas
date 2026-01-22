@@ -1819,6 +1819,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <div class="flatnas-handshake-signal" style="display: none !important"></div>
   <div
     class="min-h-dvh relative overflow-hidden flex flex-col pt-[env(safe-area-inset-top)]"
     :class="{ 'empire-theme': store.appConfig.empireMode }"

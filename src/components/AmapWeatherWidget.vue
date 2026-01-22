@@ -451,14 +451,14 @@ watch(
             }}</span>
             <span class="text-[10px] text-gray-500">{{ cast.date.slice(5) }}</span>
           </div>
-          <div class="flex flex-col items-center flex-1">
-            <span class="text-gray-700">{{
+          <div class="flex flex-col items-center w-[30%]">
+            <span class="text-gray-700 truncate w-full text-center">{{
               cast.dayweather === cast.nightweather
                 ? cast.dayweather
                 : `${cast.dayweather}转${cast.nightweather}`
             }}</span>
           </div>
-          <div class="flex flex-col items-end w-16">
+          <div class="flex flex-col items-end flex-1">
             <span class="font-bold text-gray-800">{{ cast.nighttemp }}° ~ {{ cast.daytemp }}°</span>
           </div>
         </div>

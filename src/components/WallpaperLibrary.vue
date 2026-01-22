@@ -371,7 +371,7 @@ const resolveUrl = async (url: string) => {
     } else {
       customApiUrl.value = url;
     }
-  } catch (e) {
+  } catch {
     customApiUrl.value = url;
   } finally {
     resolvingUrl.value = false;

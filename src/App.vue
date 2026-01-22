@@ -301,6 +301,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <div class="flatnas-handshake-signal" style="display: none !important"></div>
   <GridPanel />
 
   <Transition name="fade-up">

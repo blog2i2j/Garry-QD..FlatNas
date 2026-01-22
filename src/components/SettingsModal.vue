@@ -624,6 +624,9 @@ onMounted(() => {
 const versionLabel = ref("");
 const versions = ref<{ id: string; label: string; createdAt: number; size: number }[]>([]);
 const loadingVersions = ref(false);
+const isImporting = ref(false);
+const importProgress = ref(0);
+const importTotal = ref(0);
 
 const fetchVersions = async () => {
   try {
@@ -951,6 +954,36 @@ const handleExport = async () => {
 const triggerImport = () => {
   fileInput.value?.click();
 };
+
+const checkImage = (url: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+};
+
+const getAutoIcon = async (url: string) => {
+  if (!url) return "";
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    const candidates = [
+      `https://www.favicon.vip/get.php?url=${encodeURIComponent(url)}`,
+      `https://icon.bqb.cool?url=${encodeURIComponent(url)}`,
+      `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
+      `${urlObj.origin}/favicon.ico`,
+    ];
+    for (const src of candidates) {
+      if (await checkImage(src)) return src;
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+};
+
 const handleFileChange = (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -966,24 +999,83 @@ const handleFileChange = (event: Event) => {
           (
             g: {
               title?: string;
-              children?: { title?: string; url?: string; lanUrl?: string }[];
+              children?: {
+                title?: string;
+                url?: string;
+                lanUrl?: string;
+                description?: string;
+                openMethod?: number;
+                icon?: { src?: string };
+              }[];
             },
             gIdx: number,
           ) => ({
             id: Date.now().toString() + "_" + gIdx,
             title: g.title || "New Group",
             items: (g.children || []).map(
-              (c: { title?: string; url?: string; lanUrl?: string }, cIdx: number) => ({
-                id: Date.now().toString() + "_" + gIdx + "_" + cIdx,
-                title: c.title || "New Item",
-                url: c.url || "",
-                lanUrl: c.lanUrl || "",
-                icon: "",
-                isPublic: true,
-              }),
+              (
+                c: {
+                  title?: string;
+                  url?: string;
+                  lanUrl?: string;
+                  description?: string;
+                  openMethod?: number;
+                  icon?: { src?: string };
+                },
+                cIdx: number,
+              ) => {
+                let icon = c.icon?.src || "";
+                // Only keep absolute URLs (http/https), discard relative paths (server-local)
+                if (!icon.startsWith("http")) {
+                  icon = "";
+                }
+
+                return {
+                  id: Date.now().toString() + "_" + gIdx + "_" + cIdx,
+                  title: c.title || "New Item",
+                  url: c.url || "",
+                  lanUrl: c.lanUrl || "",
+                  icon: icon,
+                  description1: c.description || "",
+                  // SunPanel: 2 usually means new tab
+                  openInNewTab: c.openMethod === 2,
+                  isPublic: true,
+                };
+              },
             ),
           }),
         );
+
+        // Auto fetch icons
+        document.body.style.cursor = "wait";
+        const allItems = newGroups.flatMap((g) => g.items);
+
+        isImporting.value = true;
+        importTotal.value = allItems.length;
+        importProgress.value = 0;
+
+        // Batch processing to avoid overwhelming the browser
+        const batchSize = 10;
+        for (let i = 0; i < allItems.length; i += batchSize) {
+          const batch = allItems.slice(i, i + batchSize);
+          await Promise.all(
+            batch.map(async (item) => {
+              try {
+                // Only fetch if icon is missing
+                if (item.icon) return;
+
+                const targetUrl = item.url || item.lanUrl;
+                if (targetUrl) {
+                  const icon = await getAutoIcon(targetUrl);
+                  if (icon) item.icon = icon;
+                }
+              } finally {
+                importProgress.value++;
+              }
+            }),
+          );
+        }
+        document.body.style.cursor = "default";
 
         // Preserve existing config, append new groups
         const existingGroups = store.groups;
@@ -1022,6 +1114,7 @@ const handleFileChange = (event: Event) => {
       console.error("[SettingsModal][Import] failed", err);
     } finally {
       if (fileInput.value) fileInput.value.value = "";
+      isImporting.value = false;
     }
   };
   reader.readAsText(file);
@@ -1257,6 +1350,28 @@ watch(activeTab, (val) => {
 
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      v-if="isImporting"
+      class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center"
+    >
+      <div class="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full mx-4 text-center space-y-4">
+        <div
+          class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto"
+        ></div>
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">正在导入配置...</h3>
+          <p class="text-sm text-gray-500 mt-1">正在自动抓取图标，请勿关闭页面</p>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+          <div
+            class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+            :style="{ width: `${importTotal > 0 ? (importProgress / importTotal) * 100 : 0}%` }"
+          ></div>
+        </div>
+        <p class="text-xs text-gray-400">{{ importProgress }} / {{ importTotal }}</p>
+      </div>
+    </div>
+
     <div
       class="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col md:flex-row h-[600px] md:h-[480px] relative"
       :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)` }"

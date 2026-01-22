@@ -145,18 +145,21 @@ const confirmAddCategory = () => {
   } else {
     let widget = store.widgets.find((w) => w.type === "bookmarks");
     if (!widget) {
-      widget = {
+      const newWidget = {
         id: "w" + Date.now(),
         type: "bookmarks",
         enable: true,
         isPublic: false,
         data: [],
       };
-      store.widgets.push(widget);
+      store.widgets.push(newWidget);
+      widget = store.widgets[store.widgets.length - 1];
     }
 
-    if (!widget.data) widget.data = [];
-    (widget.data as BookmarkCategory[]).push(newCat);
+    if (widget && !widget.data) widget.data = [];
+    if (widget) {
+      (widget.data as BookmarkCategory[]).push(newCat);
+    }
   }
 
   store.saveData();
@@ -290,17 +293,18 @@ const handleFileUpload = (event: Event) => {
         let widget = store.widgets.find((w) => w.type === "bookmarks");
 
         if (!widget) {
-          widget = {
+          const newWidget = {
             id: "w" + Date.now(),
             type: "bookmarks",
             enable: true,
             isPublic: false,
             data: [],
           };
-          store.widgets.push(widget);
+          store.widgets.push(newWidget);
+          widget = store.widgets[store.widgets.length - 1];
         }
 
-        if (!widget.data) widget.data = [];
+        if (widget && !widget.data) widget.data = [];
 
         // 分离文件夹和独立的书签
         const folders: BookmarkCategory[] = [];
@@ -315,21 +319,25 @@ const handleFileUpload = (event: Event) => {
         }
 
         // 1. 文件夹直接添加到根目录
-        (widget.data as BookmarkCategory[]).push(...folders);
+        if (widget) {
+          (widget.data as BookmarkCategory[]).push(...folders);
 
-        // 2. 独立书签添加到“默认收藏”
-        if (links.length > 0) {
-          let defaultCat = (widget.data as BookmarkCategory[]).find((c) => c.title === "默认收藏");
-          if (!defaultCat) {
-            defaultCat = {
-              id: Date.now().toString() + "_default",
-              title: "默认收藏",
-              collapsed: false,
-              children: [],
-            };
-            (widget.data as BookmarkCategory[]).push(defaultCat);
+          // 2. 独立书签添加到“默认收藏”
+          if (links.length > 0) {
+            let defaultCat = (widget.data as BookmarkCategory[]).find(
+              (c) => c.title === "默认收藏",
+            );
+            if (!defaultCat) {
+              defaultCat = {
+                id: Date.now().toString() + "_default",
+                title: "默认收藏",
+                collapsed: false,
+                children: [],
+              };
+              (widget.data as BookmarkCategory[]).push(defaultCat);
+            }
+            defaultCat.children.push(...links);
           }
-          defaultCat.children.push(...links);
         }
 
         // Save store
@@ -560,17 +568,22 @@ const confirmAddBookmark = async () => {
   let widget = store.widgets.find((w) => w.type === "bookmarks");
 
   if (!widget) {
-    widget = {
+    const newWidget = {
       id: "w" + Date.now(),
       type: "bookmarks",
       enable: true,
       isPublic: false,
       data: [],
     };
-    store.widgets.push(widget);
+    store.widgets.push(newWidget);
+    widget = store.widgets[store.widgets.length - 1];
   }
 
-  if (!widget.data) widget.data = [];
+  if (widget && !widget.data) widget.data = [];
+  if (!widget) {
+    alert("Bookmark widget not found");
+    return;
+  }
   const categories = widget.data as BookmarkCategory[];
 
   if (!selectedCategoryForAdd.value) {

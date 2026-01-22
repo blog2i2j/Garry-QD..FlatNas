@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const XLSX = require('xlsx');
 const workbook = XLSX.readFile('C:\\Users\\80425\\Downloads\\AMap_adcode_citycode_20210406.xlsx');
 const sheetName = workbook.SheetNames[0];

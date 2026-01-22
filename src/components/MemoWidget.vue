@@ -45,6 +45,9 @@ watch(
   () => props.widget.data,
   (newVal) => {
     if (typeof newVal === "string" && newVal !== localData.value) {
+      // 如果正在编辑中，不接受来自服务端的更新，防止回滚
+      if (isFocused.value) return;
+      
       suppressSave = true;
       localData.value = newVal;
       localBackup.value = newVal;

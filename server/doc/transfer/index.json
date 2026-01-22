@@ -1,13 +1,6 @@
 {
   "items": [
     {
-      "id": "b6039da9-2c6f-4e9c-a6bc-a8b042b1da1c",
-      "type": "text",
-      "content": "123",
-      "timestamp": 1768916597480,
-      "sender": "ceshi"
-    },
-    {
       "id": "b02504a7-d0f2-4927-b4a7-0b9e7272d46e",
       "type": "text",
       "content": "多选模式需要手动退出，切记",

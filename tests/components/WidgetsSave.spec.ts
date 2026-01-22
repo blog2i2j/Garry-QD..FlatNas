@@ -51,6 +51,51 @@ describe("Widget Auto Save Logic", () => {
     expect(widget.data).toBe("new content");
   });
 
+  it("MemoWidget ignores prop updates while focused to prevent rollback", async () => {
+    const store = useMainStore();
+    Object.defineProperty(store, "isLogged", { get: () => true });
+
+    const widget = reactive({
+      id: "m2",
+      type: "memo",
+      data: "initial",
+      enable: true,
+      isPublic: false,
+    });
+    const wrapper = mount(MemoWidget, {
+      props: { widget },
+    });
+
+    const textarea = wrapper.find("textarea");
+
+    // 1. Simulate user typing
+    await textarea.setValue("user typed");
+    expect(textarea.element.value).toBe("user typed");
+
+    // 2. Simulate focus
+    await textarea.trigger("focus");
+    // Verify internal state if possible, or trust the trigger. 
+    // We can't easily access isFocused ref from outside without defineExpose, 
+    // but the behavior change is what we test.
+
+    // 3. Simulate backend update (prop change)
+    widget.data = "server update";
+    await wrapper.vm.$nextTick();
+
+    // 4. Verify content did NOT change to "server update"
+    expect(textarea.element.value).toBe("user typed");
+
+    // 5. Simulate blur
+    await textarea.trigger("blur");
+
+    // 6. Simulate another backend update
+    widget.data = "server update 2";
+    await wrapper.vm.$nextTick();
+
+    // 7. Now it SHOULD update
+    expect(textarea.element.value).toBe("server update 2");
+  });
+
   it("TodoWidget calls saveWidget on add item", async () => {
     const store = useMainStore();
     Object.defineProperty(store, "isLogged", { get: () => true });
