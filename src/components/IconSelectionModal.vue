@@ -86,6 +86,8 @@ watch(
     visibleCount.value = PAGE_SIZE;
   },
 );
+
+const presetIcons = ["icons/douyin.svg"];
 </script>
 
 <template>
@@ -112,6 +114,30 @@ watch(
       </div>
 
       <div class="flex-1 overflow-y-auto p-2 min-h-[200px]">
+        <div v-if="presetIcons.length > 0 && source === 'local'" class="mb-6">
+          <h4 class="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">推荐图标</h4>
+          <div class="grid grid-cols-4 sm:grid-cols-6 gap-4">
+            <button
+              v-for="icon in presetIcons"
+              :key="icon"
+              @click="selectIcon(icon)"
+              class="group flex flex-col items-center gap-3 p-3 rounded-xl hover:bg-blue-50 transition-all border border-gray-100 hover:border-blue-200 hover:shadow-md"
+            >
+              <div
+                class="w-12 h-12 flex items-center justify-center bg-white rounded-lg shadow-sm group-hover:scale-110 transition-transform"
+              >
+                <img :src="store.getAssetUrl(icon)" class="w-8 h-8 object-contain" loading="lazy" />
+              </div>
+              <span
+                class="text-xs text-gray-600 truncate w-full text-center font-medium"
+                :title="getIconName(icon)"
+              >
+                {{ getIconName(icon) }}
+              </span>
+            </button>
+          </div>
+        </div>
+
         <div class="grid grid-cols-4 sm:grid-cols-6 gap-4">
           <button
             v-for="icon in visibleCandidates"

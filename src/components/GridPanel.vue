@@ -11,7 +11,7 @@ import {
 } from "vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { GridLayout, GridItem } from "grid-layout-plus";
-import { useStorage, useWindowSize } from "@vueuse/core";
+import { useStorage, useWindowSize, useIntervalFn } from "@vueuse/core";
 import { useMainStore } from "../stores/main";
 import { useWallpaperRotation } from "../composables/useWallpaperRotation";
 import { useDevice } from "../composables/useDevice";
@@ -334,6 +334,10 @@ watch(
   () => [store.widgets, widgetColNum.value, deviceKey.value],
   () => {
     if (isInternalUpdate) return;
+
+    // 防止编辑时因服务端推送导致的布局回弹 (Rebound)
+    // 处于编辑模式(活跃)时，忽略外部更新，以本地拖拽状态为准
+    if (isEditMode.value) return;
 
     const visibleWidgets = store.widgets
       .filter(
@@ -673,6 +677,33 @@ const handleSave = (payload: { item: NavItem; groupId?: string }) => {
   else if (payload.groupId)
     store.addItem({ ...payload.item, id: Date.now().toString() }, payload.groupId);
 };
+
+// --- Heartbeat / Polling Mechanism for Layout ---
+// Active (Edit Mode): Stop polling to prevent interference.
+// Inactive (View Mode): Poll to keep in sync.
+const { pause: pausePolling, resume: resumePolling } = useIntervalFn(
+  async () => {
+    if (store.isLogged && !isEditMode.value) {
+      await store.fetchData();
+    }
+  },
+  30000,
+  { immediate: false },
+);
+
+watch(
+  isEditMode,
+  (active) => {
+    if (active) {
+      pausePolling();
+    } else {
+      resumePolling();
+      // 退出编辑模式时，立即刷新一次以同步最新状态
+      if (store.isLogged) store.fetchData();
+    }
+  },
+  { immediate: true },
+);
 
 // const deleteItem = (id: string) => {
 //   openDeleteConfirm(id)
@@ -1217,9 +1248,10 @@ const onGroupItemsChange = (groupId: string, newItems: NavItem[]) => {
   }
 };
 
-const openBackupUrl = (url: string) => {
-  if (!url) return;
-  window.open(url, "_blank");
+const openBackupUrl = (url: string | { url: string }) => {
+  const target = typeof url === "string" ? url : url.url;
+  if (!target) return;
+  window.open(target, "_blank");
 };
 
 // --- Context Menu Logic ---
@@ -1406,10 +1438,11 @@ const handleMenuWanOpen = () => {
   window.open(item.url, "_blank");
 };
 
-const handleMenuOpen = (url: string) => {
+const handleMenuOpen = (url: string | { url: string }) => {
   closeContextMenu();
-  if (!url) return;
-  window.open(url, "_blank");
+  const target = typeof url === "string" ? url : url.url;
+  if (!target) return;
+  window.open(target, "_blank");
 };
 
 const handleMenuEdit = () => {
@@ -1955,8 +1988,38 @@ onMounted(() => {
               {{ store.appConfig.customTitle }}
             </h1>
             <div
-              class="flex items-center bg-white/90 backdrop-blur border border-gray-200 shadow-sm rounded-full p-1 gap-1 h-8"
+              class="items-center bg-white/90 backdrop-blur border border-gray-200 shadow-sm rounded-full p-1 gap-1 h-8"
+              :class="store.appConfig.hideHeaderOnMobile ? 'hidden xl:flex' : 'flex'"
             >
+              <button
+                @click="openSettings"
+                class="xl:hidden w-6 h-6 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition-all"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  class="w-4 h-4"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567l-.091.549a.798.798 0 01-.517.608 7.45 7.45 0 00-.478.198.798.798 0 01-.796-.064l-.453-.324a1.875 1.875 0 00-2.416.2l-.043.044a1.875 1.875 0 00-.204 2.416l.325.454a.798.798 0 01.064.796 7.448 7.448 0 00-.198.478.798.798 0 01-.608.517l-.55.092a1.875 1.875 0 00-1.566 1.849v.044c0 .917.663 1.699 1.567 1.85l.549.091c.281.047.508.25.608.517.06.162.127.321.198.478a.798.798 0 01-.064.796l-.324.453a1.875 1.875 0 00.2 2.416l.044.043a1.875 1.875 0 002.416.204l.454-.325a.798.798 0 01.796-.064c.157.071.316.137.478.198.267.1.47.327.517.608l.092.55c.15.903.932 1.566 1.849 1.566h.044c.917 0 1.699-.663 1.85-1.567l.091-.549a.798.798 0 01.517-.608 7.52 7.52 0 00.478-.198.798.798 0 01.796.064l.453.324a1.875 1.875 0 002.416-.2l.043-.044a1.875 1.875 0 00.204-2.416l-.325-.454a.798.798 0 01-.064-.796c.071-.157.137-.316.198-.478.1-.267.327-.47.608-.517l.55-.092a1.875 1.875 0 001.566-1.849v-.044c0-.917-.663-1.699-1.567-1.85l-.549-.091a.798.798 0 01-.608-.517 7.507 7.507 0 00-.198-.478.798.798 0 01.064-.796l.324-.453a1.875 1.875 0 00-.2-2.416l-.044-.043a1.875 1.875 0 00-2.416-.204l-.454.325a.798.798 0 01-.796.064 7.462 7.462 0 00-.478-.198.798.798 0 01-.517-.608l-.092-.55a1.875 1.875 0 00-1.849-1.566h-.044zM12 15.75a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+              <button
+                v-if="store.isLogged"
+                @click="isEditMode = !isEditMode"
+                class="xl:hidden px-3 h-6 rounded-full text-[10px] font-bold transition-all"
+                :class="
+                  isEditMode
+                    ? 'bg-red-500 text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                "
+              >
+                {{ isEditMode ? "完成" : "编辑" }}
+              </button>
               <button
                 @click="toggleForceMode"
                 class="px-3 h-6 rounded-full text-[10px] font-bold transition-all"
@@ -2052,16 +2115,17 @@ onMounted(() => {
           </div>
 
           <div
-            class="flex gap-3 flex-shrink-0 z-10 items-center transition-all duration-500 flatnas-handshake-signal"
+            class="flex gap-1 xl:gap-3 flex-shrink-0 z-10 items-center transition-all duration-500 flatnas-handshake-signal absolute left-0 top-0 w-full xl:w-auto xl:static opacity-80 hover:opacity-100 xl:opacity-100 pointer-events-none xl:pointer-events-auto"
             :style="{ order: isHeaderRowLayout && store.appConfig.titleAlign === 'right' ? 0 : 2 }"
           >
             <MiniPlayer
               v-if="checkVisible(store.widgets.find((w) => w.type === 'player'))"
               key="mini-player-static"
+              class="mr-auto xl:mr-0 pointer-events-auto"
             />
             <button
               @click="openSettings"
-              class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 text-white flex items-center justify-center backdrop-blur transition-all border border-white/20 shadow-sm"
+              class="hidden xl:flex pointer-events-auto rounded-full text-white items-center justify-center backdrop-blur transition-all w-8 h-8 xl:w-10 xl:h-10 bg-transparent xl:bg-white/20 xl:hover:bg-white/40 border-0 xl:border xl:border-white/20 shadow-none xl:shadow-sm"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -2079,9 +2143,11 @@ onMounted(() => {
             <button
               v-if="store.isLogged"
               @click="isEditMode = !isEditMode"
-              class="px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm"
+              class="hidden xl:block pointer-events-auto rounded-lg text-sm font-medium transition-all"
               :class="
-                isEditMode ? 'bg-red-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                isEditMode
+                  ? 'bg-red-500 text-white px-4 py-2 shadow-sm'
+                  : 'bg-transparent text-white/70 hover:text-white xl:bg-white xl:text-gray-700 xl:hover:bg-gray-50 px-2 py-1 xl:px-4 xl:py-2 xl:shadow-sm shadow-none'
               "
             >
               {{ isEditMode ? "完成" : "编辑" }}
@@ -2620,7 +2686,9 @@ onMounted(() => {
                         fontSize: Math.max(10, getLayoutConfig(group).iconSize * 0.14) + 'px',
                         lineHeight: 1,
                       }"
-                      :title="'外网: ' + url"
+                      :title="
+                        typeof url === 'string' ? '外网: ' + url : url.name || '外网: ' + url.url
+                      "
                     >
                       {{ idx + 1 }}
                     </div>
@@ -2642,7 +2710,9 @@ onMounted(() => {
                         fontSize: Math.max(10, getLayoutConfig(group).iconSize * 0.14) + 'px',
                         lineHeight: 1,
                       }"
-                      :title="'内网: ' + url"
+                      :title="
+                        typeof url === 'string' ? '内网: ' + url : url.name || '内网: ' + url.url
+                      "
                     >
                       {{ idx + 1 }}
                     </div>
@@ -2925,7 +2995,12 @@ onMounted(() => {
           @click="handleMenuOpen(url)"
           class="px-4 py-2 hover:bg-green-50 text-green-600 cursor-pointer flex items-center gap-2 text-sm transition-colors border-b border-gray-100"
         >
-          <span>🌐</span> 备用内网 {{ index + 1 }}
+          <span>🌐</span>
+          {{
+            typeof url === "string"
+              ? "备用内网 " + (index + 1)
+              : url.name || "备用内网 " + (index + 1)
+          }}
         </div>
       </template>
 
@@ -2944,7 +3019,12 @@ onMounted(() => {
           @click="handleMenuOpen(url)"
           class="px-4 py-2 hover:bg-blue-50 text-blue-600 cursor-pointer flex items-center gap-2 text-sm transition-colors border-b border-gray-100"
         >
-          <span>🛰️</span> 备用外网 {{ index + 1 }}
+          <span>🛰️</span>
+          {{
+            typeof url === "string"
+              ? "备用外网 " + (index + 1)
+              : url.name || "备用外网 " + (index + 1)
+          }}
         </div>
       </template>
 

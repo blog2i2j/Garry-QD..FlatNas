@@ -129,7 +129,7 @@ export const useMainStore = defineStore("main", () => {
   };
 
   // Version Check
-  const currentVersion = "1.0.73";
+  const currentVersion = "1.0.74dev";
   const latestVersion = ref("");
   const dockerUpdateAvailable = ref(false);
 
@@ -302,6 +302,115 @@ export const useMainStore = defineStore("main", () => {
     }
   };
 
+  const makeDefaultCommonGroup = (): NavGroup => {
+    const now = Date.now();
+    const items: NavItem[] = [
+      {
+        id: `common-${now}-1`,
+        title: "GitHub",
+        url: "https://github.com/",
+        lanUrl: "https://github.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-2`,
+        title: "Bilibili",
+        url: "https://www.bilibili.com/",
+        lanUrl: "https://www.bilibili.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-3`,
+        title: "掘金",
+        url: "https://juejin.cn/",
+        lanUrl: "https://juejin.cn/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-4`,
+        title: "V2EX",
+        url: "https://www.v2ex.com/",
+        lanUrl: "https://www.v2ex.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-5`,
+        title: "知乎",
+        url: "https://www.zhihu.com/",
+        lanUrl: "https://www.zhihu.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-6`,
+        title: "微博",
+        url: "https://weibo.com/",
+        lanUrl: "https://weibo.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-7`,
+        title: "IT之家",
+        url: "https://www.ithome.com/",
+        lanUrl: "https://www.ithome.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-8`,
+        title: "腾讯视频",
+        url: "https://v.qq.com/",
+        lanUrl: "https://v.qq.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-9`,
+        title: "YouTube",
+        url: "https://www.youtube.com/",
+        lanUrl: "https://www.youtube.com/",
+        icon: "",
+        isPublic: true,
+      },
+      {
+        id: `common-${now}-10`,
+        title: "Google",
+        url: "https://www.google.com/",
+        lanUrl: "https://www.google.com/",
+        icon: "",
+        isPublic: true,
+      },
+    ];
+
+    return {
+      id: "common-group",
+      title: "常用",
+      preset: true,
+      items,
+    };
+  };
+
+  const ensureDefaultCommonGroup = () => {
+    const common = groups.value.find((g) => g.id === "common-group" || g.title === "常用");
+    if (!common) {
+      if (groups.value.length === 0) {
+        groups.value = [makeDefaultCommonGroup()];
+      }
+      return;
+    }
+
+    if (!Array.isArray(common.items)) common.items = [];
+    if (common.items.length === 0) {
+      common.items = makeDefaultCommonGroup().items;
+    }
+    if (common.preset !== true) common.preset = true;
+  };
+
   const handleDataUpdate = (data: BackupData) => {
     // If we got username back, ensure it matches
     if (data.username && data.username !== username.value) {
@@ -317,6 +426,8 @@ export const useMainStore = defineStore("main", () => {
     } else {
       groups.value = [];
     }
+
+    ensureDefaultCommonGroup();
 
     if (Array.isArray(data.widgets)) {
       widgets.value = data.widgets;

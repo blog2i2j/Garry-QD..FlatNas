@@ -78,14 +78,18 @@ const handleSubmit = async () => {
       <div
         class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50"
       >
-        <h3 class="text-lg font-bold text-gray-800">
-          {{
-            isRegister
-              ? "👤 新用户注册"
-              : store.systemConfig.authMode === "single"
-                ? "🔒 管理员登录"
-                : "🔒 用户登录"
-          }}
+        <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <span v-if="isRegister">👤 新用户注册</span>
+          <template v-else>
+            <img src="/ICON.PNG" class="w-6 h-6 object-contain" alt="lock" />
+            <span>
+              {{
+                store.systemConfig.authMode === "single"
+                  ? "管理员登录"
+                  : "用户登录"
+              }}
+            </span>
+          </template>
         </h3>
         <button @click="close" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">
           &times;

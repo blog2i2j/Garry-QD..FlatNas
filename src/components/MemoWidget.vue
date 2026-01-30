@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch, onMounted, ref } from "vue";
-import { useStorage, useDebounceFn } from "@vueuse/core";
+import { useStorage, useDebounceFn, useIntervalFn } from "@vueuse/core";
 import type { WidgetConfig } from "@/types";
 import { useMainStore } from "../stores/main";
 
@@ -47,7 +47,7 @@ watch(
     if (typeof newVal === "string" && newVal !== localData.value) {
       // 如果正在编辑中，不接受来自服务端的更新，防止回滚
       if (isFocused.value) return;
-      
+
       suppressSave = true;
       localData.value = newVal;
       localBackup.value = newVal;
@@ -70,6 +70,50 @@ const handleScrollIsolation = (e: WheelEvent) => {
     e.stopPropagation();
   }
 };
+
+// --- Heartbeat / Polling Mechanism ---
+// Active (Focused): Stop polling, broadcast updates (handled by autoSave).
+// Inactive (Blurred): Start polling, receive updates.
+const { pause, resume } = useIntervalFn(
+  async () => {
+    // Only poll if logged in and not focused
+    if (store.isLogged && !isFocused.value) {
+      try {
+        const headers = store.getHeaders();
+        const res = await fetch(`/api/widgets/${props.widget.id}`, { headers });
+        if (res.ok) {
+          const widgetData = await res.json();
+          // Check if data changed
+          if (
+            widgetData &&
+            typeof widgetData.data === "string" &&
+            widgetData.data !== props.widget.data
+          ) {
+            // Update store, which triggers the watch handler below
+            const w = store.widgets.find((w) => w.id === props.widget.id);
+            if (w) w.data = widgetData.data;
+          }
+        }
+      } catch (e) {
+        console.error("Memo polling failed", e);
+      }
+    }
+  },
+  30000, // Poll every 30s
+  { immediate: false },
+);
+
+watch(
+  isFocused,
+  (focused) => {
+    if (focused) {
+      pause();
+    } else {
+      resume();
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

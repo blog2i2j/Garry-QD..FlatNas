@@ -413,6 +413,7 @@ const editingBookmarkId = ref<string | null>(null);
 const editingBookmarkTitle = ref("");
 const editingBookmarkUrl = ref("");
 const editingBookmarkIcon = ref("");
+const selectedCategoryForEdit = ref<string>("");
 const addInputRef = ref<HTMLInputElement | null>(null);
 const editInputRef = ref<HTMLInputElement | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -476,6 +477,65 @@ const openAddModal = () => {
 
 const editingItemType = ref<"link" | "category">("link");
 
+const flattenCategories = (categories: BookmarkCategory[]) => {
+  const out: { id: string; label: string }[] = [];
+  const walk = (items: BookmarkCategory[], prefix: string) => {
+    for (const c of items) {
+      const nextLabel = prefix ? `${prefix} / ${c.title}` : c.title;
+      out.push({ id: c.id, label: nextLabel });
+      if (Array.isArray(c.children)) {
+        const childCats = c.children.filter(
+          (x): x is BookmarkCategory => typeof x === "object" && x !== null && "children" in x,
+        );
+        if (childCats.length > 0) walk(childCats, nextLabel);
+      }
+    }
+  };
+  walk(categories, "");
+  return out;
+};
+
+const allBookmarkCategories = computed(() => flattenCategories(bookmarks.value || []));
+
+const findLinkParentCategoryId = (id: string, categories: BookmarkCategory[]) => {
+  const walk = (items: BookmarkCategory[], parentId: string | null): string | null => {
+    for (const item of items) {
+      if (item.id === id && parentId) return parentId;
+      for (const child of item.children || []) {
+        if (
+          typeof child === "object" &&
+          child &&
+          "id" in child &&
+          (child as { id: string }).id === id
+        ) {
+          return item.id;
+        }
+        if (typeof child === "object" && child && "children" in child) {
+          const found = walk([child as BookmarkCategory], item.id);
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  };
+  return walk(categories, null);
+};
+
+const findCategoryById = (categories: BookmarkCategory[], id: string): BookmarkCategory | null => {
+  const walk = (items: BookmarkCategory[]): BookmarkCategory | null => {
+    for (const c of items) {
+      if (c.id === id) return c;
+      const childCats = (c.children || []).filter(
+        (x): x is BookmarkCategory => typeof x === "object" && x !== null && "children" in x,
+      );
+      const found = walk(childCats);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(categories);
+};
+
 const openEditModal = (item: BookmarkItem | BookmarkCategory) => {
   editingBookmarkId.value = item.id;
   editingBookmarkTitle.value = item.title;
@@ -484,10 +544,15 @@ const openEditModal = (item: BookmarkItem | BookmarkCategory) => {
     editingItemType.value = "link";
     editingBookmarkUrl.value = item.url;
     editingBookmarkIcon.value = item.icon || "";
+    selectedCategoryForEdit.value =
+      findLinkParentCategoryId(item.id, bookmarks.value || []) ||
+      bookmarks.value?.find((c) => c.title === "默认收藏")?.id ||
+      "";
   } else {
     editingItemType.value = "category";
     editingBookmarkUrl.value = "";
     editingBookmarkIcon.value = "";
+    selectedCategoryForEdit.value = "";
   }
 
   showEditModal.value = true;
@@ -545,6 +610,24 @@ const confirmEditBookmark = async () => {
 
       // Recursive search
       if (findAndEdit(data)) {
+        if (editingItemType.value === "link" && selectedCategoryForEdit.value) {
+          const currentParentId = findLinkParentCategoryId(editingBookmarkId.value, data);
+          const targetId = selectedCategoryForEdit.value;
+          if (currentParentId && targetId && currentParentId !== targetId) {
+            const from = findCategoryById(data, currentParentId);
+            const to = findCategoryById(data, targetId);
+            if (from && to) {
+              const idx = (from.children || []).findIndex(
+                (x) => (x as { id?: string }).id === editingBookmarkId.value,
+              );
+              if (idx !== -1) {
+                const [moved] = from.children.splice(idx, 1);
+                to.children = Array.isArray(to.children) ? to.children : [];
+                to.children.push(moved as BookmarkItem);
+              }
+            }
+          }
+        }
         store.saveData();
         showEditModal.value = false;
         return;
@@ -1534,6 +1617,31 @@ const toggle = () => {
                 />
               </div>
               <template v-if="editingItemType === 'link'">
+                <div>
+                  <label
+                    class="text-xs opacity-70 mb-1 block"
+                    :class="store.appConfig.background ? 'text-black' : 'text-gray-600'"
+                    >分组</label
+                  >
+                  <select
+                    v-model="selectedCategoryForEdit"
+                    class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none transition-colors appearance-none"
+                    :class="
+                      store.appConfig.background
+                        ? 'bg-white/40 border-white/40 text-black focus:bg-white/60 focus:border-white/60'
+                        : 'bg-gray-50 border-gray-200 text-gray-900 focus:bg-white focus:border-blue-500'
+                    "
+                  >
+                    <option
+                      v-for="cat in allBookmarkCategories"
+                      :key="cat.id"
+                      :value="cat.id"
+                      class="text-black"
+                    >
+                      {{ cat.label }}
+                    </option>
+                  </select>
+                </div>
                 <div>
                   <label
                     class="text-xs opacity-70 mb-1 block"

@@ -91,8 +91,20 @@ watch(activeTab, (val) => {
   console.log("Active Tab Changed:", val);
 });
 
+const iconSrc = ref("");
+
 // Ensure Docker Widget Exists
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const response = await fetch("/base644.txt");
+    if (response.ok) {
+      const text = await response.text();
+      iconSrc.value = text.trim();
+    }
+  } catch (e) {
+    console.error("Failed to load custom icon:", e);
+  }
+
   // 移除强制恢复逻辑，避免覆盖用户配置
   // const hasDocker = store.widgets.some((w) => w.type === "docker");
   // if (!hasDocker) { ... }
@@ -1498,6 +1510,9 @@ watch(activeTab, (val) => {
             关于
           </button>
         </nav>
+        <div v-if="iconSrc" class="mt-auto px-4 pb-4 hidden md:flex justify-center">
+          <img :src="iconSrc" class="w-1/4 h-auto rounded-lg shadow-sm" alt="Custom Icon" />
+        </div>
       </div>
 
       <div class="flex-1 flex flex-col bg-transparent overflow-hidden">
@@ -1614,6 +1629,19 @@ watch(activeTab, (val) => {
                     "
                   >
                     <span class="text-sm">反转布局</span>
+                  </button>
+                  <button
+                    @click="
+                      store.appConfig.hideHeaderOnMobile = !store.appConfig.hideHeaderOnMobile
+                    "
+                    class="hidden xl:flex flex-1 p-2 border-2 rounded-xl items-center justify-center gap-2 transition-colors"
+                    :class="
+                      store.appConfig.hideHeaderOnMobile
+                        ? 'border-gray-900 bg-gray-100 text-gray-900 font-bold'
+                        : 'border-gray-200 text-gray-500 bg-white hover:bg-gray-50'
+                    "
+                  >
+                    <span class="text-sm">手机隐藏顶部</span>
                   </button>
                 </div>
               </div>
@@ -2433,6 +2461,54 @@ watch(activeTab, (val) => {
                       class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
                     ></div>
                   </label>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] text-gray-500">保留版本</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    :disabled="!dockerWidget?.data?.autoUpdate"
+                    :value="dockerWidget?.data?.autoUpdateKeepImages ?? 2"
+                    @change="
+                      (e) => {
+                        if (dockerWidget) {
+                          if (!dockerWidget.data) dockerWidget.data = {};
+                          dockerWidget.data.autoUpdateKeepImages = Math.max(
+                            1,
+                            Math.min(20, Number((e.target as HTMLInputElement).value || 2)),
+                          );
+                          store.saveData();
+                        }
+                      }
+                    "
+                    class="w-16 px-2 py-1 border border-gray-200 rounded text-xs focus:border-gray-900 outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                  />
+                  <span class="text-[10px] text-gray-500">个</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] text-gray-500">最小可用空间</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    :disabled="!dockerWidget?.data?.autoUpdate"
+                    :value="dockerWidget?.data?.autoUpdateMinFreeGB ?? 5"
+                    @change="
+                      (e) => {
+                        if (dockerWidget) {
+                          if (!dockerWidget.data) dockerWidget.data = {};
+                          dockerWidget.data.autoUpdateMinFreeGB = Math.max(
+                            0,
+                            Number((e.target as HTMLInputElement).value || 5),
+                          );
+                          store.saveData();
+                        }
+                      }
+                    "
+                    class="w-20 px-2 py-1 border border-gray-200 rounded text-xs focus:border-gray-900 outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                  />
+                  <span class="text-[10px] text-gray-500">GB</span>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="text-xs text-gray-700 font-medium">内网主机</span>
@@ -3811,7 +3887,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain transition-all"
                     alt="支付宝"
                   />
-                  <span class="text-[10px] text-gray-500">支付宝</span>
+                  <span class="text-[15px] text-gray-500">支付宝</span>
                 </div>
                 <div class="flex flex-col items-center gap-2">
                   <img
@@ -3819,7 +3895,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     class="w-40 h-40 rounded-lg shadow-sm border border-gray-100 object-contain transition-all"
                     alt="微信"
                   />
-                  <span class="text-[10px] text-gray-500">微信</span>
+                  <span class="text-[15px] text-gray-500">微信</span>
                 </div>
               </div>
             </div>

@@ -64,7 +64,12 @@ const simpleIconsData = shallowRef<SimpleIcon[] | null>(null);
 const aliIconsData = shallowRef<AliIcon[] | null>(null);
 
 // 表单数据 (合并管理，比以前分散的 ref 更整洁)
-const form = ref<Omit<NavItem, "id">>({
+interface EditForm extends Omit<NavItem, "id" | "backupUrls" | "backupLanUrls"> {
+  backupUrls: { name: string; url: string }[];
+  backupLanUrls: { name: string; url: string }[];
+}
+
+const form = ref<EditForm>({
   title: "",
   url: "",
   lanUrl: "",
@@ -641,8 +646,16 @@ watch(
         // 编辑模式：回填数据
         form.value = {
           ...props.data,
-          backupUrls: props.data.backupUrls ? [...props.data.backupUrls] : [],
-          backupLanUrls: props.data.backupLanUrls ? [...props.data.backupLanUrls] : [],
+          backupUrls: props.data.backupUrls
+            ? props.data.backupUrls.map((u) =>
+                typeof u === "string" ? { name: "", url: u } : { ...u },
+              )
+            : [],
+          backupLanUrls: props.data.backupLanUrls
+            ? props.data.backupLanUrls.map((u) =>
+                typeof u === "string" ? { name: "", url: u } : { ...u },
+              )
+            : [],
           description1: props.data.description1 || "",
           description2: props.data.description2 || "",
           description3: props.data.description3 || "",
@@ -698,7 +711,7 @@ watch(
 
 const addBackupUrl = () => {
   if (!form.value.backupUrls) form.value.backupUrls = [];
-  form.value.backupUrls.push("");
+  form.value.backupUrls.push({ name: "", url: "" });
 };
 
 const removeBackupUrl = (index: number) => {
@@ -709,12 +722,31 @@ const removeBackupUrl = (index: number) => {
 
 const addBackupLanUrl = () => {
   if (!form.value.backupLanUrls) form.value.backupLanUrls = [];
-  form.value.backupLanUrls.push("");
+  form.value.backupLanUrls.push({ name: "", url: "" });
 };
 
 const removeBackupLanUrl = (index: number) => {
   if (form.value.backupLanUrls) {
     form.value.backupLanUrls.splice(index, 1);
+  }
+};
+
+const isValidUrl = (url: string) => {
+  if (!url) return true; // allow empty for now? No, required if item exists?
+  // User said: Address field RFC 3986 validation.
+  // Simple regex
+  return /^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i.test(url);
+};
+
+const focusNextInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const parent = target.parentElement?.parentElement;
+  if (parent) {
+    const inputs = parent.querySelectorAll("input");
+    if (inputs.length > 1 && inputs[0] === target && inputs[1]) {
+      (inputs[1] as HTMLElement).focus();
+      event.preventDefault();
+    }
   }
 };
 
@@ -939,19 +971,80 @@ const submit = async () => {
           <!-- Backup URLs -->
           <div v-if="form.backupUrls && form.backupUrls.length > 0" class="space-y-2 mt-2">
             <div
-              v-for="(url, index) in form.backupUrls"
+              v-for="(item, index) in form.backupUrls"
               :key="'backup-wan-' + index"
-              class="relative flex items-center gap-2"
+              class="flex flex-col sm:flex-row gap-2 items-start sm:items-center p-2 bg-gray-50 rounded-lg border border-gray-100"
             >
-              <input
-                v-model="form.backupUrls![index]"
-                type="text"
-                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
-                :placeholder="'备用外网地址 ' + (index + 1)"
-              />
+              <!-- Name Field -->
+              <div class="relative flex-1 w-full sm:w-auto">
+                <input
+                  v-model="item.name"
+                  type="text"
+                  maxlength="50"
+                  class="w-full px-3 py-2 rounded-lg border focus:border-gray-900 outline-none transition-colors text-sm pr-8"
+                  :class="[
+                    form.backupUrls.filter(
+                      (i, idx) => i.name && i.name === item.name && idx !== index,
+                    ).length > 0
+                      ? 'border-red-300'
+                      : 'border-gray-200',
+                  ]"
+                  placeholder="名称"
+                  @keydown.enter.prevent
+                  @keydown.tab="focusNextInput($event)"
+                />
+                <button
+                  v-if="item.name"
+                  @click="item.name = ''"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 rounded-full p-0.5"
+                  title="清除"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3 h-3"
+                  >
+                    <path
+                      d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- URL Field -->
+              <div class="relative flex-[2] w-full sm:w-auto">
+                <input
+                  v-model="item.url"
+                  type="text"
+                  maxlength="500"
+                  class="w-full px-3 py-2 rounded-lg border focus:border-gray-900 outline-none transition-colors text-sm pr-8"
+                  :class="isValidUrl(item.url) ? 'border-gray-200' : 'border-red-300 bg-red-50'"
+                  placeholder="请输入完整URL地址"
+                  @keydown.enter.prevent
+                />
+                <button
+                  v-if="item.url"
+                  @click="item.url = ''"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 rounded-full p-0.5"
+                  title="清除"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3 h-3"
+                  >
+                    <path
+                      d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+                    />
+                  </svg>
+                </button>
+              </div>
+
               <button
                 @click="removeBackupUrl(index)"
-                class="text-gray-400 hover:text-red-500 p-1"
+                class="text-gray-400 hover:text-red-500 p-2 sm:p-1 self-end sm:self-center"
                 title="删除"
               >
                 ✕
@@ -980,19 +1073,80 @@ const submit = async () => {
           <!-- Backup LAN URLs -->
           <div v-if="form.backupLanUrls && form.backupLanUrls.length > 0" class="space-y-2 mt-2">
             <div
-              v-for="(url, index) in form.backupLanUrls"
+              v-for="(item, index) in form.backupLanUrls"
               :key="'backup-lan-' + index"
-              class="relative flex items-center gap-2"
+              class="flex flex-col sm:flex-row gap-2 items-start sm:items-center p-2 bg-gray-50 rounded-lg border border-gray-100"
             >
-              <input
-                v-model="form.backupLanUrls![index]"
-                type="text"
-                class="flex-1 px-4 py-2 rounded-lg border border-gray-200 focus:border-gray-900 outline-none transition-colors text-sm"
-                :placeholder="'备用内网地址 ' + (index + 1)"
-              />
+              <!-- Name Field -->
+              <div class="relative flex-1 w-full sm:w-auto">
+                <input
+                  v-model="item.name"
+                  type="text"
+                  maxlength="50"
+                  class="w-full px-3 py-2 rounded-lg border focus:border-gray-900 outline-none transition-colors text-sm pr-8"
+                  :class="[
+                    form.backupLanUrls.filter(
+                      (i, idx) => i.name && i.name === item.name && idx !== index,
+                    ).length > 0
+                      ? 'border-red-300'
+                      : 'border-gray-200',
+                  ]"
+                  placeholder="名称"
+                  @keydown.enter.prevent
+                  @keydown.tab="focusNextInput($event)"
+                />
+                <button
+                  v-if="item.name"
+                  @click="item.name = ''"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 rounded-full p-0.5"
+                  title="清除"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3 h-3"
+                  >
+                    <path
+                      d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- URL Field -->
+              <div class="relative flex-[2] w-full sm:w-auto">
+                <input
+                  v-model="item.url"
+                  type="text"
+                  maxlength="500"
+                  class="w-full px-3 py-2 rounded-lg border focus:border-gray-900 outline-none transition-colors text-sm pr-8"
+                  :class="isValidUrl(item.url) ? 'border-gray-200' : 'border-red-300 bg-red-50'"
+                  placeholder="请输入完整URL地址"
+                  @keydown.enter.prevent
+                />
+                <button
+                  v-if="item.url"
+                  @click="item.url = ''"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 rounded-full p-0.5"
+                  title="清除"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    class="w-3 h-3"
+                  >
+                    <path
+                      d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+                    />
+                  </svg>
+                </button>
+              </div>
+
               <button
                 @click="removeBackupLanUrl(index)"
-                class="text-gray-400 hover:text-red-500 p-1"
+                class="text-gray-400 hover:text-red-500 p-2 sm:p-1 self-end sm:self-center"
                 title="删除"
               >
                 ✕

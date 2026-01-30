@@ -160,6 +160,7 @@ const MOCK_CONTAINERS: DockerContainer[] = [
 ];
 
 const useMock = computed(() => Boolean(props.widget?.data?.useMock));
+const autoUpdateEnabled = computed(() => Boolean(props.widget?.data?.autoUpdate));
 const containers = ref<DockerContainer[]>([]);
 const error = ref("");
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -231,6 +232,10 @@ const isCheckingUpdate = ref(false);
 
 const triggerUpdateCheck = async () => {
   if (isCheckingUpdate.value || updateStatus.value?.isChecking) return;
+  if (!autoUpdateEnabled.value) {
+    showToast("请先开启自动升级镜像");
+    return;
+  }
   try {
     isCheckingUpdate.value = true;
     const headers = store.getHeaders();
@@ -860,9 +865,11 @@ const getStatusColor = (state: string) => {
                         updateStatus.failures.map((f) => `- ${f.name}: ${f.error}`).join('\n')
                       : ''
                   }`
-                : '检测镜像更新'
+                : autoUpdateEnabled
+                  ? '检测镜像更新'
+                  : '请先开启自动升级镜像'
           "
-          :disabled="updateStatus?.isChecking"
+          :disabled="updateStatus?.isChecking || !autoUpdateEnabled"
         >
           <span
             v-if="updateStatus?.isChecking"

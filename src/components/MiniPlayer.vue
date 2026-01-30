@@ -244,7 +244,7 @@ watch(
 
 <template>
   <div
-    class="h-10 w-[160px] px-0 rounded-full bg-transparent flex items-center gap-2 transition-all group select-none relative -left-[5px]"
+    class="h-10 w-10 xl:w-[160px] px-0 rounded-full bg-transparent flex items-center gap-2 transition-all group select-none relative left-0 xl:-left-[5px]"
   >
     <audio
       ref="audioRef"
@@ -288,7 +288,7 @@ watch(
 
     <div
       ref="titleWrapRef"
-      class="flex-1 overflow-hidden text-xs font-medium text-white text-shadow flex flex-col justify-center min-w-0 h-full py-0.5"
+      class="flex-1 overflow-hidden text-xs font-medium text-white text-shadow hidden xl:flex flex-col justify-center min-w-0 h-full py-0.5"
       :title="currentSongName"
     >
       <span

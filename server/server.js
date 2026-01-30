@@ -21,28 +21,29 @@ import os from "os";
 import multer from "multer";
 import Docker from "dockerode";
 import si from "systeminformation";
+import { runAutoUpdateTick } from "./dockerAutoUpdate.js";
 
 // --- Security Utils ---
-const isPrivateIp = (ip) => {
-  const parts = ip.split(".");
-  if (parts.length === 4) {
-    const first = parseInt(parts[0], 10);
-    const second = parseInt(parts[1], 10);
-    if (first === 127) return true;
-    if (first === 10) return true;
-    if (first === 172 && second >= 16 && second <= 31) return true;
-    if (first === 192 && second === 168) return true;
-    if (first === 0) return true;
-    return false;
-  } else if (ip.includes(":")) {
-    if (ip === "::1") return true;
-    if (ip === "::") return true;
-    if (ip.toLowerCase().startsWith("fc") || ip.toLowerCase().startsWith("fd")) return true;
-    if (ip.toLowerCase().startsWith("fe80")) return true;
-    return false;
-  }
-  return false;
-};
+// const isPrivateIp = (ip) => {
+//   const parts = ip.split(".");
+//   if (parts.length === 4) {
+//     const first = parseInt(parts[0], 10);
+//     const second = parseInt(parts[1], 10);
+//     if (first === 127) return true;
+//     if (first === 10) return true;
+//     if (first === 172 && second >= 16 && second <= 31) return true;
+//     if (first === 192 && second === 168) return true;
+//     if (first === 0) return true;
+//     return false;
+//   } else if (ip.includes(":")) {
+//     if (ip === "::1") return true;
+//     if (ip === "::") return true;
+//     if (ip.toLowerCase().startsWith("fc") || ip.toLowerCase().startsWith("fd")) return true;
+//     if (ip.toLowerCase().startsWith("fe80")) return true;
+//     return false;
+//   }
+//   return false;
+// };
 
 const safeUrlCheck = (urlStr) => {
   try {
@@ -50,7 +51,8 @@ const safeUrlCheck = (urlStr) => {
     if (u.protocol !== "http:" && u.protocol !== "https:") return false;
     const hostname = u.hostname;
     if (hostname === "localhost") return false;
-    if (isPrivateIp(hostname)) return false;
+    // Allow private IPs for NAS use cases (user self-hosted APIs)
+    // if (isPrivateIp(hostname)) return false;
     return true;
   } catch {
     return false;
@@ -245,6 +247,11 @@ const updateCheckStatus = {
 };
 
 const checkContainerUpdates = async (force = false) => {
+  if (!force) {
+    const adminData = cachedUsersData["admin"];
+    const dockerWidget = adminData?.widgets?.find((w) => w.type === "docker" || w.id === "docker");
+    if (!dockerWidget?.data?.autoUpdate) return;
+  }
   if (isUpdateCheckerRunning) return;
 
   // Minimum check interval: 5 minutes (unless forced)
@@ -376,10 +383,6 @@ const checkContainerUpdates = async (force = false) => {
     console.log("[UpdateChecker] Finished.");
   }
 };
-
-// Run update check on startup (delayed) and periodically
-setTimeout(checkContainerUpdates, 60 * 1000); // Start 1 min after boot
-setInterval(checkContainerUpdates, 6 * 60 * 60 * 1000); // Check every 6 hours
 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -1075,34 +1078,81 @@ app.post("/api/wallpaper/resolve", async (req, res) => {
   if (!safeUrlCheck(url)) return res.status(400).json({ error: "Invalid or unsafe URL" });
 
   try {
-    const response = await fetch(url, { redirect: "follow", method: "HEAD" });
-    // If HEAD fails (e.g. 405 Method Not Allowed, or 404 from API gateway), try GET
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    };
+
+    // Use GET directly to support JSON APIs and better compatibility
+    const response = await fetch(url, { redirect: "follow", headers });
+
     if (!response.ok) {
-      console.log(`[WallpaperResolve] HEAD failed (${response.status}), trying GET for ${url}`);
-      const getResp = await fetch(url, { redirect: "follow" });
-      if (!getResp.ok) {
-        // If GET also fails, return error or null so frontend knows
-        console.warn(`[WallpaperResolve] GET also failed (${getResp.status}) for ${url}`);
-        // Return the final URL anyway? No, it might be a 404 page.
-        // Let's return the URL but frontend might check it.
-        // Better: throw error so frontend keeps the original URL (which will fail later, but at least not "success" with a 404 url)
-        return res.status(400).json({ error: `Resolve failed: ${getResp.status}` });
-      }
-      return res.json({ url: getResp.url });
+      return res.status(400).json({ error: `Resolve failed: ${response.status}` });
     }
+
+    const contentType = response.headers.get("content-type") || "";
+
+    // If it's a JSON response, try to extract the image URL
+    if (contentType.includes("application/json")) {
+      try {
+        const data = await response.json();
+
+        // Helper to find URL in JSON
+        const findUrl = (obj) => {
+          if (!obj || typeof obj !== "object") return null;
+
+          // Common fields
+          const candidates = ["url", "img", "image", "src", "download_url", "link", "path"];
+          for (const key of candidates) {
+            if (typeof obj[key] === "string" && obj[key].startsWith("http")) return obj[key];
+          }
+
+          // Unsplash / Pexels style nested objects (urls.regular, src.large)
+          const nestedCandidates = ["urls", "src", "images", "data"];
+          for (const key of nestedCandidates) {
+            if (obj[key] && typeof obj[key] === "object") {
+              for (const subKey of ["full", "regular", "large", "original", "url"]) {
+                if (typeof obj[key][subKey] === "string" && obj[key][subKey].startsWith("http")) {
+                  return obj[key][subKey];
+                }
+              }
+            }
+          }
+
+          // Array handling (e.g. Bing daily returns { images: [...] })
+          if (Array.isArray(obj.images) && obj.images.length > 0) {
+            const first = obj.images[0];
+            // Bing specific: url is relative usually, but check for full url first
+            if (first.url && first.url.startsWith("http")) return first.url;
+            if (first.url) return new URL(first.url, url).href;
+          }
+
+          return null;
+        };
+
+        const resolvedUrl = findUrl(data);
+        if (resolvedUrl) {
+          return res.json({ url: resolvedUrl });
+        }
+      } catch (e) {
+        console.warn("[WallpaperResolve] JSON parse failed or no URL found:", e);
+      }
+    }
+
+    // Default: return the final URL (after redirects)
     res.json({ url: response.url });
   } catch (e) {
-    // If fetch fails, just return the original URL (maybe it's not reachable by server but reachable by client?)
-    // Or return error. Let's return original to be safe, or error?
-    // If server can't reach it, it can't download it later either.
     console.error("[WallpaperResolve] Error:", e);
-    res.status(500).json({ error: "Failed to resolve URL" });
+    res.status(500).json({ error: "Failed to resolve URL: " + e.message });
   }
 });
 
 // System Config API
 app.get("/api/system-config", (req, res) => {
-  res.json(systemConfig);
+  res.json({
+    authMode: systemConfig.authMode,
+    enableDocker: Boolean(systemConfig.enableDocker),
+  });
 });
 
 // Docker Status API
@@ -1230,6 +1280,11 @@ app.get("/api/docker/containers", authenticateToken, async (req, res) => {
 app.post("/api/docker/check-updates", authenticateToken, async (req, res) => {
   if (isUpdateCheckerRunning) {
     return res.json({ success: true, message: "Update check already running" });
+  }
+  const adminData = cachedUsersData["admin"];
+  const dockerWidget = adminData?.widgets?.find((w) => w.type === "docker" || w.id === "docker");
+  if (!dockerWidget?.data?.autoUpdate) {
+    return res.json({ success: true, message: "Auto update disabled" });
   }
   // Run async, don't wait. Force check (ignore debounce)
   checkContainerUpdates(true);
@@ -1543,7 +1598,13 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
       io.emit("auth-mode-changed", { mode: authMode });
     }
 
-    res.json({ success: true, systemConfig });
+    res.json({
+      success: true,
+      systemConfig: {
+        authMode: systemConfig.authMode,
+        enableDocker: Boolean(systemConfig.enableDocker),
+      },
+    });
   } else {
     res.status(400).json({ error: "Invalid config" });
   }
@@ -1552,102 +1613,26 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
 // Auto Update Docker Containers Task
 const AUTO_UPDATE_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
 setInterval(async () => {
-  // Check if auto update is enabled in any admin config
   const adminData = cachedUsersData["admin"];
-  if (!adminData || !adminData.widgets) return;
+  const result = await runAutoUpdateTick({
+    docker,
+    si,
+    systemConfig,
+    adminData,
+    systemConfigFilePath: SYSTEM_CONFIG_FILE,
+    atomicWrite,
+    updateContainerIdGlobally,
+  });
 
-  const dockerWidget = adminData.widgets.find((w) => w.type === "docker" || w.id === "docker");
-  if (!dockerWidget || !dockerWidget.data || !dockerWidget.data.autoUpdate) return;
-
-  console.log("[AutoUpdate] Checking for container updates...");
-  try {
-    const containers = await docker.listContainers({ all: true });
-    for (const c of containers) {
-      if (c.State !== "running") continue;
-
-      // Skip FlatNas itself to prevent suicide during update
-      if (c.Image.includes("flatnas") || c.Names.some((n) => n.toLowerCase().includes("flatnas"))) {
-        continue;
-      }
-
-      // Check for updates logic (simplified version of what frontend does via API)
-      // Note: In a real scenario, we need to pull the image and check if the ID changed
-      // or check the digest. Here we reuse the logic we used in `docker-status.json` or similar.
-      // But wait, the previous `docker-status.json` logic isn't fully implemented in backend here?
-      // Actually, we don't have a backend background job that checks for updates yet.
-      // The frontend shows red dots based on... wait, where does frontend get "hasUpdate"?
-      // Ah, looking at GridPanel.vue, it seems `containerStatuses` has `hasUpdate`.
-      // But where does `hasUpdate` come from? It comes from `fetchContainerStatuses` in GridPanel.vue.
-      // And in GridPanel.vue, for non-mock data, it seems it MIGHT come from `docker-status.json` via `/api/docker-status`?
-      // Let's check `fetchContainerStatuses` in GridPanel.vue again.
-      // Actually, looking at the code, `fetchContainerStatuses` in GridPanel.vue fetches `/api/docker-status`?
-      // No, `fetchContainerStatuses` in GridPanel.vue seems to be polling `containerStatuses` ref which is populated... how?
-      // Wait, I missed where `containerStatuses` gets real data in GridPanel.vue.
-      // Ah, I see `fetchContainerStatuses` in GridPanel.vue (line 731).
-      // It iterates `store.groups` and sets `statusMap`.
-      // But for REAL data, where does it fetch?
-      // It seems GridPanel.vue DOES NOT fetch real status updates for `hasUpdate` from backend for REAL containers yet?
-      // Let's look at `DockerWidget.vue`. It fetches `/api/docker/containers`.
-      // The `/api/docker/containers` endpoint in server.js (line 558) returns `stats` but not `hasUpdate`.
-      // So currently the "Red Dot" feature might only be fully implemented for Mock data or I missed something.
-      //
-      // However, the user wants "detect if update available".
-      // To do this properly in backend:
-      // 1. We need to `docker pull` the image.
-      // 2. Compare the new image ID with the container's image ID.
-      // 3. If different -> Update.
-
-      try {
-        const info = await docker.getContainer(c.Id).inspect();
-        const imageName = info.Config.Image;
-        const currentImageId = info.Image; // SHA of current image
-
-        // Pull the image
-        await new Promise((resolve, reject) => {
-          docker.pull(imageName, (err, stream) => {
-            if (err) return reject(err);
-            docker.modem.followProgress(stream, (err, output) => {
-              if (err) return reject(err);
-              resolve(output);
-            });
-          });
-        });
-
-        // Inspect the image to get the new ID
-        const imageInfo = await docker.getImage(imageName).inspect();
-        const newImageId = imageInfo.Id;
-
-        if (currentImageId !== newImageId) {
-          console.log(`[AutoUpdate] Update available for ${c.Names[0]} (${imageName})`);
-          console.log(`[AutoUpdate] Updating...`);
-
-          // Perform Update (Stop -> Remove -> Recreate -> Start)
-          const container = docker.getContainer(c.Id);
-          await container.stop();
-          await container.remove();
-
-          const options = {
-            name: info.Name.replace(/^\//, ""),
-            ...info.Config,
-            HostConfig: info.HostConfig,
-            NetworkingConfig: { EndpointsConfig: info.NetworkSettings.Networks },
-          };
-          // Ensure we use the correct image name (tag)
-          options.Image = imageName;
-
-          const newContainer = await docker.createContainer(options);
-          await newContainer.start();
-          console.log(`[AutoUpdate] Updated ${c.Names[0]} successfully.`);
-
-          // Update container ID in all user configs
-          await updateContainerIdGlobally(c.Id, newContainer.id, info.Name);
-        }
-      } catch (err) {
-        console.error(`[AutoUpdate] Failed to check/update ${c.Names[0]}:`, err.message);
-      }
-    }
-  } catch (err) {
-    console.error("[AutoUpdate] Error listing containers:", err);
+  if (!result.enabled) return;
+  if (result.skippedDueToDisk) {
+    console.warn("[AutoUpdate] Skipped due to low disk space");
+    return;
+  }
+  if (result.ran) {
+    console.log(
+      `[AutoUpdate] Tick done. pulls=${result.pulls} updates=${result.updates} pruned=${result.pruned} errors=${result.errors.length}`,
+    );
   }
 }, AUTO_UPDATE_INTERVAL);
 
@@ -1702,6 +1687,64 @@ app.get("/api/public/groups", async (req, res) => {
 
   const userData = cachedUsersData[username];
   res.json({ groups: userData.groups || [] });
+});
+
+app.get("/api/widgets/:id", async (req, res) => {
+  const widgetId = req.params.id;
+  try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    let username = "";
+    if (token) {
+      try {
+        const user = jwt.verify(token, SECRET_KEY);
+        if (user && typeof user === "object" && "username" in user) {
+          username = user.username;
+        }
+      } catch {
+        // Ignore invalid token
+      }
+    }
+
+    let isGuest = false;
+    if (!username) {
+      username = "admin";
+      isGuest = true;
+    }
+
+    if (!cachedUsersData[username]) {
+      const filePath = getUserFile(username);
+      try {
+        const json = await fs.readFile(filePath, "utf-8");
+        cachedUsersData[username] = JSON.parse(json);
+      } catch {
+        return res.status(404).json({ error: "User data not found" });
+      }
+    }
+
+    const userData = cachedUsersData[username];
+    // userData might be undefined if readFile failed and we didn't return
+    if (!userData) {
+      return res.status(404).json({ error: "User data not found" });
+    }
+
+    const widgets = userData.widgets || [];
+    const widget = widgets.find((w) => w.id === widgetId);
+
+    if (!widget) {
+      return res.status(404).json({ error: "Widget not found" });
+    }
+
+    if (isGuest && !widget.isPublic) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    res.json(widget);
+  } catch (err) {
+    console.error("[Read Widget Failed]:", err);
+    res.status(500).json({ error: "Failed to read widget" });
+  }
 });
 
 app.get("/api/data", async (req, res) => {

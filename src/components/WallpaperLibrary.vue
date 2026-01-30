@@ -605,7 +605,7 @@ onMounted(() => {
               class="flex items-center gap-2 mr-2 bg-gray-50 p-1 rounded-lg border border-gray-100"
             >
               <div class="flex items-center gap-1 px-1">
-                <span class="text-[10px] text-gray-500">模糊</span>
+                <span class="text-[13px] text-gray-500">模糊</span>
                 <input
                   type="range"
                   v-model.number="store.appConfig.backgroundBlur"
@@ -618,7 +618,7 @@ onMounted(() => {
               </div>
               <div class="w-px h-3 bg-gray-300"></div>
               <div class="flex items-center gap-1 px-1">
-                <span class="text-[10px] text-gray-500">遮罩</span>
+                <span class="text-[13px] text-gray-500">遮罩</span>
                 <input
                   type="range"
                   v-model.number="store.appConfig.backgroundMask"
@@ -636,7 +636,7 @@ onMounted(() => {
               class="flex items-center gap-2 mr-2 bg-gray-50 p-1 rounded-lg border border-gray-100"
             >
               <div class="flex items-center gap-1 px-1">
-                <span class="text-[10px] text-gray-500">模糊</span>
+                <span class="text-[13px] text-gray-500">模糊</span>
                 <input
                   type="range"
                   v-model.number="store.appConfig.mobileBackgroundBlur"
@@ -649,7 +649,7 @@ onMounted(() => {
               </div>
               <div class="w-px h-3 bg-gray-300"></div>
               <div class="flex items-center gap-1 px-1">
-                <span class="text-[10px] text-gray-500">遮罩</span>
+                <span class="text-[13px] text-gray-500">遮罩</span>
                 <input
                   type="range"
                   v-model.number="store.appConfig.mobileBackgroundMask"
@@ -813,8 +813,16 @@ onMounted(() => {
           <!-- API Management -->
           <div v-if="activeTab === 'api'" class="space-y-6 p-1">
             <div class="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm leading-relaxed">
-              在此处可以直接输入图片的 URL 地址，或使用第三方随机壁纸 API。
-              设置后，每次刷新页面可能会根据 API 返回不同的图片（取决于 API 行为）。
+              <ul class="list-disc list-inside space-y-1">
+                <li>在此处可以直接输入图片的 URL 地址，或使用第三方随机壁纸 API。</li>
+                <li>
+                  支持 <b>JSON 格式 API</b>（如 Unsplash/Bing），系统会自动解析并提取图片链接。
+                </li>
+                <li>支持 <b>局域网/自建 API</b>（如 http://192.168.x.x），不再受内网访问限制。</li>
+              </ul>
+              <div class="mt-2 text-xs opacity-80">
+                设置后，每次刷新页面可能会根据 API 返回不同的图片（取决于 API 行为）。
+              </div>
             </div>
 
             <div class="border border-gray-200 rounded-xl bg-white p-6 shadow-sm">

@@ -3,8 +3,8 @@ export interface NavItem {
   title: string;
   url: string;
   lanUrl?: string;
-  backupUrls?: string[];
-  backupLanUrls?: string[];
+  backupUrls?: (string | { name: string; url: string })[];
+  backupLanUrls?: (string | { name: string; url: string })[];
   icon: string;
   // Horizontal mode custom text lines
   description1?: string;
@@ -167,6 +167,7 @@ export interface AppConfig {
   customJsDisclaimerAgreed?: boolean;
   mouseHoverEffect?: "scale" | "lift" | "glow" | "none" | string;
   autoUltrawide?: boolean;
+  hideHeaderOnMobile?: boolean;
 }
 
 export interface WidgetConfig {

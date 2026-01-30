@@ -77,6 +77,8 @@ describe("SettingsModal Custom JS Logic", () => {
     setActivePinia(pinia);
     const store = useMainStore();
     store.appConfig.customJsDisclaimerAgreed = false;
+    store.appConfig.customJsList = [];
+    store.appConfig.customCssList = [];
 
     const wrapper = mount(SettingsModal, {
       props: { show: true },
@@ -100,8 +102,17 @@ describe("SettingsModal Custom JS Logic", () => {
     // Verify store update
     expect(store.appConfig.customJsDisclaimerAgreed).toBe(true);
 
-    // Verify textarea visibility
-    const textarea = wrapper.find('textarea[placeholder*="console.log"]');
-    expect(textarea.exists()).toBe(true);
+    const jsSection = wrapper
+      .findAll("div")
+      .find((d) => d.classes().includes("bg-gray-50") && d.text().includes("自定义 JS"));
+    expect(jsSection).toBeTruthy();
+
+    const addBtn = jsSection?.findAll("button").find((b) => b.text().includes("添加新脚本"));
+    expect(addBtn).toBeTruthy();
+
+    await addBtn?.trigger("click");
+
+    const textarea = jsSection?.find('textarea[placeholder*="console.log"]');
+    expect(textarea?.exists()).toBe(true);
   });
 });
