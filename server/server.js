@@ -1612,6 +1612,18 @@ app.post("/api/system-config", authenticateToken, async (req, res) => {
 
 // Auto Update Docker Containers Task
 const AUTO_UPDATE_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
+const DOCKER_AUTO_UPDATE_AUDIT_LOG = path.join(DATA_DIR, "docker-auto-update-audit.jsonl");
+const appendDockerAutoUpdateAuditLog = async (entry) => {
+  try {
+    const line = JSON.stringify(entry) + "\n";
+    await fs.appendFile(DOCKER_AUTO_UPDATE_AUDIT_LOG, line, "utf-8");
+  } catch (e) {
+    console.warn(
+      "[AutoUpdate] Failed to write audit log:",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+};
 setInterval(async () => {
   const adminData = cachedUsersData["admin"];
   const result = await runAutoUpdateTick({
@@ -1622,6 +1634,7 @@ setInterval(async () => {
     systemConfigFilePath: SYSTEM_CONFIG_FILE,
     atomicWrite,
     updateContainerIdGlobally,
+    appendAuditLog: appendDockerAutoUpdateAuditLog,
   });
 
   if (!result.enabled) return;

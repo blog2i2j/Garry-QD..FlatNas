@@ -6,17 +6,17 @@ import { useMainStore } from "../src/stores/main";
 
 // Mock components
 vi.mock("../src/components/IconUploader.vue", () => ({
-  default: { template: '<div data-testid="icon-uploader"></div>' }
+  default: { template: '<div data-testid="icon-uploader"></div>' },
 }));
 vi.mock("../src/components/WallpaperLibrary.vue", () => ({
-  default: { template: '<div data-testid="wallpaper-library"></div>' }
+  default: { template: '<div data-testid="wallpaper-library"></div>' },
 }));
 vi.mock("../src/components/PasswordConfirmModal.vue", () => ({
-  default: { template: '<div data-testid="password-confirm-modal"></div>' }
+  default: { template: '<div data-testid="password-confirm-modal"></div>' },
 }));
 // Mock vue-draggable-plus
 vi.mock("vue-draggable-plus", () => ({
-  VueDraggable: { template: '<div><slot></slot></div>' }
+  VueDraggable: { template: "<div><slot></slot></div>" },
 }));
 
 describe("SettingsModal Color Reset", () => {
@@ -24,17 +24,17 @@ describe("SettingsModal Color Reset", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useMainStore();
-    
+
     // 初始化一个非白色的颜色
     store.appConfig.titleColor = "#ff0000";
 
     const wrapper = mount(SettingsModal, {
       props: {
-        show: true
+        show: true,
       },
       global: {
-        plugins: [pinia]
-      }
+        plugins: [pinia],
+      },
     });
 
     // 确保组件已渲染

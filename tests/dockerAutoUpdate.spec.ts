@@ -14,6 +14,7 @@ const makeDocker = (overrides = {}) => {
         Config: { Image: "nginx:latest" },
         Image: "sha256:old",
         Name: "/c1",
+        State: { Running: true, Status: "running" },
         HostConfig: {},
         NetworkSettings: { Networks: {} },
       }),
@@ -21,7 +22,8 @@ const makeDocker = (overrides = {}) => {
       remove: vi.fn().mockResolvedValue(undefined),
     })),
     getImage: vi.fn(() => ({
-      inspect: vi.fn().mockResolvedValue({ Id: "sha256:old" }),
+      inspect: vi.fn().mockResolvedValue({ Id: "sha256:old", RepoDigests: ["nginx@sha256:d1"] }),
+      distributionInspect: vi.fn((cb) => cb(null, { Descriptor: { digest: "sha256:d1" } })),
       remove: vi.fn().mockResolvedValue(undefined),
     })),
     createContainer: vi.fn().mockResolvedValue({
@@ -106,12 +108,16 @@ describe("docker auto update", () => {
           Config: { Image: "nginx:latest" },
           Image: "sha256:old",
           Name: "/c1",
+          State: { Running: true, Status: "running" },
           HostConfig: {},
           NetworkSettings: { Networks: {} },
         }),
       })),
       getImage: vi.fn(() => ({
-        inspect: vi.fn().mockResolvedValue({ Id: "sha256:old" }),
+        inspect: vi
+          .fn()
+          .mockResolvedValue({ Id: "sha256:old", RepoDigests: ["nginx@sha256:same"] }),
+        distributionInspect: vi.fn((cb) => cb(null, { Descriptor: { digest: "sha256:same" } })),
         remove: vi.fn().mockResolvedValue(undefined),
       })),
     });
@@ -131,7 +137,7 @@ describe("docker auto update", () => {
     });
 
     expect(result.enabled).toBe(true);
-    expect(result.pulls).toBe(1);
+    expect(result.pulls).toBe(0);
     expect(result.updates).toBe(0);
     expect(atomicWrite).toHaveBeenCalledTimes(1);
     const content = atomicWrite.mock.calls[0]?.[1];
@@ -162,21 +168,40 @@ describe("docker auto update", () => {
             State: "running",
           },
         ]),
-      getContainer: vi.fn(() => ({
-        inspect: vi.fn().mockResolvedValue({
-          Config: { Image: "nginx:latest" },
-          Image: "sha256:id2",
-          Name: "/c1",
-          HostConfig: {},
-          NetworkSettings: { Networks: {} },
-        }),
+      getContainer: vi.fn((id) => ({
+        inspect: vi.fn().mockResolvedValue(
+          id === "new-container-id"
+            ? {
+                Config: { Image: "nginx:latest" },
+                Image: "sha256:id4",
+                Name: "/c1",
+                State: { Running: true, Status: "running" },
+                HostConfig: {},
+                NetworkSettings: { Networks: {} },
+              }
+            : {
+                Config: { Image: "nginx:latest" },
+                Image: "sha256:id2",
+                Name: "/c1",
+                State: { Running: true, Status: "running" },
+                HostConfig: {},
+                NetworkSettings: { Networks: {} },
+              },
+        ),
         stop: vi.fn().mockResolvedValue(undefined),
         remove: vi.fn().mockResolvedValue(undefined),
       })),
       getImage: vi.fn((idOrName) => ({
         inspect: vi
           .fn()
-          .mockResolvedValue({ Id: idOrName === "nginx:latest" ? "sha256:id4" : idOrName }),
+          .mockResolvedValue(
+            idOrName === "nginx:latest"
+              ? { Id: "sha256:id4", RepoDigests: ["nginx@sha256:new"] }
+              : { Id: idOrName },
+          ),
+        distributionInspect: vi.fn((cb) =>
+          cb(null, { Descriptor: { digest: "sha256:remote-new" } }),
+        ),
         remove,
       })),
       createContainer: vi.fn().mockResolvedValue({
@@ -209,6 +234,8 @@ describe("docker auto update", () => {
       systemConfigFilePath: "system.json",
       atomicWrite: vi.fn().mockResolvedValue(undefined),
       updateContainerIdGlobally: vi.fn(),
+      healthCheck: { timeoutMs: 1000, intervalMs: 1 },
+      sleep: () => Promise.resolve(),
     });
 
     expect(result.updates).toBe(1);
@@ -246,5 +273,200 @@ describe("docker auto update", () => {
     expect(result.pulls).toBe(0);
     expect(result.updates).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("skips update when container is unhealthy before upgrade", async () => {
+    const docker = makeDocker({
+      listContainers: vi.fn().mockResolvedValue([
+        {
+          Id: "c1",
+          Names: ["/c1"],
+          Image: "nginx:latest",
+          ImageID: "sha256:old",
+          State: "running",
+        },
+      ]),
+      getContainer: vi.fn(() => ({
+        inspect: vi.fn().mockResolvedValue({
+          Config: { Image: "nginx:latest" },
+          Image: "sha256:old",
+          Name: "/c1",
+          State: { Running: true, Status: "running", Health: { Status: "unhealthy" } },
+          HostConfig: {},
+          NetworkSettings: { Networks: {} },
+        }),
+      })),
+    });
+    const si = makeSi();
+    const systemConfig = { authMode: "single" };
+    const adminData = { widgets: [{ id: "docker", type: "docker", data: { autoUpdate: true } }] };
+
+    const result = await runAutoUpdateTick({
+      docker,
+      si,
+      systemConfig,
+      adminData,
+      systemConfigFilePath: "system.json",
+      atomicWrite: vi.fn().mockResolvedValue(undefined),
+      updateContainerIdGlobally: vi.fn(),
+    });
+
+    expect(result.updates).toBe(0);
+    expect(docker.pull).not.toHaveBeenCalled();
+  });
+
+  it("rolls back when new container becomes unhealthy", async () => {
+    const updateContainerIdGlobally = vi.fn().mockResolvedValue(undefined);
+    const docker = makeDocker({
+      listContainers: vi.fn().mockResolvedValue([
+        {
+          Id: "c1",
+          Names: ["/c1"],
+          Image: "nginx:stable",
+          ImageID: "sha256:old",
+          State: "running",
+        },
+      ]),
+      getContainer: vi.fn((id) => ({
+        inspect: vi.fn().mockResolvedValue(
+          id === "new-container-id"
+            ? {
+                Config: { Image: "nginx:stable" },
+                Image: "sha256:new",
+                Name: "/c1",
+                State: { Running: true, Status: "running", Health: { Status: "unhealthy" } },
+                HostConfig: {},
+                NetworkSettings: { Networks: {} },
+              }
+            : id === "restored-id"
+              ? {
+                  Config: { Image: "sha256:old" },
+                  Image: "sha256:old",
+                  Name: "/c1",
+                  State: { Running: true, Status: "running" },
+                  HostConfig: {},
+                  NetworkSettings: { Networks: {} },
+                }
+              : {
+                  Config: { Image: "nginx:stable" },
+                  Image: "sha256:old",
+                  Name: "/c1",
+                  State: { Running: true, Status: "running" },
+                  HostConfig: {},
+                  NetworkSettings: { Networks: {} },
+                },
+        ),
+        stop: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      })),
+      getImage: vi.fn(() => ({
+        inspect: vi
+          .fn()
+          .mockResolvedValue({ Id: "sha256:new", RepoDigests: ["nginx@sha256:newd"] }),
+        distributionInspect: vi.fn((cb) =>
+          cb(null, { Descriptor: { digest: "sha256:remote-newd" } }),
+        ),
+        remove: vi.fn().mockResolvedValue(undefined),
+      })),
+      createContainer: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: "new-container-id",
+          start: vi.fn().mockResolvedValue(undefined),
+        })
+        .mockResolvedValueOnce({
+          id: "restored-id",
+          start: vi.fn().mockResolvedValue(undefined),
+        }),
+    });
+    const si = makeSi();
+    const systemConfig = { authMode: "single" };
+    const adminData = { widgets: [{ id: "docker", type: "docker", data: { autoUpdate: true } }] };
+
+    const result = await runAutoUpdateTick({
+      docker,
+      si,
+      systemConfig,
+      adminData,
+      systemConfigFilePath: "system.json",
+      atomicWrite: vi.fn().mockResolvedValue(undefined),
+      updateContainerIdGlobally,
+      healthCheck: { timeoutMs: 1000, intervalMs: 1 },
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(result.updates).toBe(0);
+    expect(updateContainerIdGlobally).not.toHaveBeenCalled();
+    expect(docker.createContainer).toHaveBeenCalledTimes(2);
+  });
+
+  it("always pulls for non-latest tags", async () => {
+    const pull = vi.fn((imageName, cb) => cb(null, {}));
+    const docker = makeDocker({
+      pull,
+      listContainers: vi.fn().mockResolvedValue([
+        {
+          Id: "c1",
+          Names: ["/c1"],
+          Image: "nginx:stable",
+          ImageID: "sha256:old",
+          State: "running",
+        },
+      ]),
+      getContainer: vi.fn((id) => ({
+        inspect: vi.fn().mockResolvedValue(
+          id === "new-container-id"
+            ? {
+                Config: { Image: "nginx:stable" },
+                Image: "sha256:new",
+                Name: "/c1",
+                State: { Running: true, Status: "running" },
+                HostConfig: {},
+                NetworkSettings: { Networks: {} },
+              }
+            : {
+                Config: { Image: "nginx:stable" },
+                Image: "sha256:old",
+                Name: "/c1",
+                State: { Running: true, Status: "running" },
+                HostConfig: {},
+                NetworkSettings: { Networks: {} },
+              },
+        ),
+        stop: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      })),
+      getImage: vi.fn(() => ({
+        inspect: vi
+          .fn()
+          .mockResolvedValue({ Id: "sha256:new", RepoDigests: ["nginx@sha256:newd"] }),
+        distributionInspect: vi.fn((cb) =>
+          cb(null, { Descriptor: { digest: "sha256:remote-newd" } }),
+        ),
+        remove: vi.fn().mockResolvedValue(undefined),
+      })),
+      createContainer: vi.fn().mockResolvedValue({
+        id: "new-container-id",
+        start: vi.fn().mockResolvedValue(undefined),
+      }),
+    });
+    const si = makeSi();
+    const systemConfig = { authMode: "single" };
+    const adminData = { widgets: [{ id: "docker", type: "docker", data: { autoUpdate: true } }] };
+
+    const result = await runAutoUpdateTick({
+      docker,
+      si,
+      systemConfig,
+      adminData,
+      systemConfigFilePath: "system.json",
+      atomicWrite: vi.fn().mockResolvedValue(undefined),
+      updateContainerIdGlobally: vi.fn(),
+      healthCheck: { timeoutMs: 1000, intervalMs: 1 },
+      sleep: () => Promise.resolve(),
+    });
+
+    expect(result.updates).toBe(1);
+    expect(pull).toHaveBeenCalledTimes(1);
   });
 });

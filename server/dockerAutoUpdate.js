@@ -20,6 +20,129 @@ export function getAutoUpdateSettingsFromAdminData(adminData) {
   return { enabled, keepImages, minFreeBytes, maxPrunePerRun };
 }
 
+export function parseImageReference(imageRef) {
+  const raw = String(imageRef || "").trim();
+  const at = raw.lastIndexOf("@");
+  const base = at >= 0 ? raw.slice(0, at) : raw;
+  const digest = at >= 0 ? raw.slice(at + 1) : "";
+  const lastSlash = base.lastIndexOf("/");
+  const lastColon = base.lastIndexOf(":");
+  const hasTag = lastColon > lastSlash;
+  const name = hasTag ? base.slice(0, lastColon) : base;
+  const tag = hasTag ? base.slice(lastColon + 1) : "";
+  return {
+    raw,
+    name,
+    tag: tag || "",
+    effectiveTag: tag || "latest",
+    digest: digest || "",
+    isDigestPinned: Boolean(digest),
+  };
+}
+
+export function pickLocalRepoDigest(imageInspect, repoName) {
+  const digs =
+    imageInspect && Array.isArray(imageInspect.RepoDigests) ? imageInspect.RepoDigests : [];
+  const repo = String(repoName || "").trim();
+  if (!repo || !digs.length) return "";
+  const exact = digs.find((d) => typeof d === "string" && d.startsWith(`${repo}@`));
+  const any = exact || digs.find((d) => typeof d === "string" && d.includes("@"));
+  if (!any) return "";
+  const idx = any.lastIndexOf("@");
+  return idx >= 0 ? any.slice(idx + 1) : "";
+}
+
+export async function getRemoteTagDigest({ docker, imageName, authconfig }) {
+  const img = docker.getImage(imageName);
+  return await new Promise((resolve, reject) => {
+    const cb = (err, data) => {
+      if (err) return reject(err);
+      const digest =
+        data && data.Descriptor && typeof data.Descriptor.digest === "string"
+          ? data.Descriptor.digest
+          : "";
+      resolve(digest);
+    };
+    try {
+      if (authconfig) {
+        img.distributionInspect(authconfig, cb);
+      } else {
+        img.distributionInspect(cb);
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+export function buildCreateOptionsFromInspect(info, containerName, imageRefOverride) {
+  const name = String(containerName || "").replace(/^\//, "");
+  const networks =
+    info &&
+    info.NetworkSettings &&
+    info.NetworkSettings.Networks &&
+    typeof info.NetworkSettings.Networks === "object"
+      ? info.NetworkSettings.Networks
+      : {};
+  const options = {
+    name,
+    ...(info && info.Config ? info.Config : {}),
+    HostConfig: (info && info.HostConfig) || {},
+    NetworkingConfig: { EndpointsConfig: networks },
+  };
+  if (imageRefOverride) options.Image = imageRefOverride;
+  return options;
+}
+
+export function getHealthStatus(info) {
+  const health =
+    info && info.State && info.State.Health && typeof info.State.Health.Status === "string"
+      ? info.State.Health.Status
+      : "";
+  return String(health || "");
+}
+
+export async function waitForContainerReady({
+  docker,
+  containerId,
+  timeoutMs,
+  intervalMs,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+}) {
+  const timeout = Number.isFinite(Number(timeoutMs)) ? Math.max(1000, Number(timeoutMs)) : 60000;
+  const interval = Number.isFinite(Number(intervalMs)) ? Math.max(200, Number(intervalMs)) : 2000;
+  const deadline = Date.now() + timeout;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      const info = await docker.getContainer(containerId).inspect();
+      last = info;
+      const running = Boolean(info && info.State && info.State.Running);
+      const status =
+        info && info.State && typeof info.State.Status === "string" ? info.State.Status : "";
+      const exitCode =
+        info && info.State && Number.isFinite(Number(info.State.ExitCode))
+          ? Number(info.State.ExitCode)
+          : null;
+
+      if (!running && status === "exited" && exitCode !== null && exitCode !== 0) {
+        return { ok: false, reason: `exited:${exitCode}`, lastInspect: last };
+      }
+      const health = getHealthStatus(info);
+      if (running && (!health || health === "healthy")) {
+        return { ok: true, reason: health ? "healthy" : "running", lastInspect: last };
+      }
+      if (health === "unhealthy") {
+        return { ok: false, reason: "unhealthy", lastInspect: last };
+      }
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e), lastInspect: last };
+    }
+    await sleep(interval);
+  }
+  return { ok: false, reason: "timeout", lastInspect: last };
+}
+
 export function ensureDockerAutoUpdateState(systemConfig) {
   if (!systemConfig || typeof systemConfig !== "object") return;
   if (!systemConfig.dockerAutoUpdate || typeof systemConfig.dockerAutoUpdate !== "object") {
@@ -186,15 +309,20 @@ export async function pruneImagesById({ docker, imageIds, usedImageIds, limit })
   return { removed, failed };
 }
 
-export async function runAutoUpdateTick({
-  docker,
-  si,
-  systemConfig,
-  adminData,
-  systemConfigFilePath,
-  atomicWrite,
-  updateContainerIdGlobally,
-}) {
+export async function runAutoUpdateTick(opts) {
+  const {
+    docker,
+    si,
+    systemConfig,
+    adminData,
+    systemConfigFilePath,
+    atomicWrite,
+    updateContainerIdGlobally,
+    appendAuditLog,
+    authconfig,
+    healthCheck,
+    sleep,
+  } = opts || {};
   const settings = getAutoUpdateSettingsFromAdminData(adminData);
   if (!settings.enabled)
     return {
@@ -209,6 +337,14 @@ export async function runAutoUpdateTick({
 
   ensureDockerAutoUpdateState(systemConfig);
 
+  const tickId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const safeAppendAudit = async (entry) => {
+    if (!appendAuditLog) return;
+    try {
+      await appendAuditLog(entry);
+    } catch {}
+  };
+
   const errors = [];
   let pulls = 0;
   let updates = 0;
@@ -219,6 +355,15 @@ export async function runAutoUpdateTick({
   const { freeBytes } = await getDockerRootFreeBytes({ docker, si });
   if (typeof freeBytes === "number" && freeBytes < settings.minFreeBytes) {
     skippedDueToDisk = true;
+    await safeAppendAudit({
+      ts: Date.now(),
+      kind: "dockerAutoUpdateTick",
+      tickId,
+      enabled: true,
+      skippedDueToDisk: true,
+      minFreeBytes: settings.minFreeBytes,
+      freeBytes,
+    });
     return { enabled: true, ran: false, pulls, updates, pruned, skippedDueToDisk, errors };
   }
 
@@ -227,6 +372,14 @@ export async function runAutoUpdateTick({
     containers = await docker.listContainers({ all: true });
   } catch (e) {
     errors.push({ scope: "listContainers", error: e instanceof Error ? e.message : String(e) });
+    await safeAppendAudit({
+      ts: Date.now(),
+      kind: "dockerAutoUpdateTick",
+      tickId,
+      enabled: true,
+      ran: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return { enabled: true, ran: false, pulls, updates, pruned, skippedDueToDisk, errors };
   }
 
@@ -241,19 +394,85 @@ export async function runAutoUpdateTick({
     }
 
     try {
+      const opStartedAt = Date.now();
       const info = await docker.getContainer(c.Id).inspect();
       const imageName = info?.Config?.Image || c.Image;
       const currentImageId = info?.Image || c.ImageID;
       if (!imageName || String(imageName).startsWith("sha256:")) continue;
 
-      await pullImageWithTimeout(docker, imageName, {
-        idleTimeoutMs: 60000,
-        totalTimeoutMs: 600000,
-      });
-      pulls++;
+      const parsed = parseImageReference(imageName);
+      const containerName = String(info?.Name || name).replace(/^\//, "");
+
+      if (parsed.isDigestPinned) {
+        await safeAppendAudit({
+          ts: Date.now(),
+          kind: "dockerAutoUpdateContainer",
+          tickId,
+          containerId: c.Id,
+          containerName,
+          image: imageName,
+          tagType: "digest",
+          action: "skip",
+          reason: "digest_pinned",
+          currentImageId,
+          durationMs: Date.now() - opStartedAt,
+        });
+        continue;
+      }
+
+      const currentHealth = getHealthStatus(info);
+      if (currentHealth && currentHealth !== "healthy") {
+        await safeAppendAudit({
+          ts: Date.now(),
+          kind: "dockerAutoUpdateContainer",
+          tickId,
+          containerId: c.Id,
+          containerName,
+          image: imageName,
+          tagType: parsed.effectiveTag === "latest" ? "latest" : "tag",
+          action: "skip",
+          reason: `precheck_${currentHealth}`,
+          currentImageId,
+          durationMs: Date.now() - opStartedAt,
+        });
+        continue;
+      }
+
+      let localDigest = "";
+      let remoteDigest = "";
+      let shouldPull = true;
+      try {
+        const localInspect = await docker.getImage(imageName).inspect();
+        localDigest = pickLocalRepoDigest(localInspect, parsed.name);
+      } catch {}
+
+      if (parsed.effectiveTag === "latest") {
+        try {
+          remoteDigest = await getRemoteTagDigest({ docker, imageName, authconfig });
+          if (remoteDigest && localDigest && remoteDigest === localDigest) {
+            shouldPull = false;
+          }
+        } catch (e) {
+          errors.push({
+            scope: "digestCompare",
+            image: imageName,
+            error: e instanceof Error ? e.message : String(e),
+          });
+          shouldPull = true;
+        }
+      }
+
+      if (shouldPull) {
+        await pullImageWithTimeout(docker, imageName, {
+          idleTimeoutMs: 60000,
+          totalTimeoutMs: 600000,
+        });
+        pulls++;
+      }
 
       const imageInfo = await docker.getImage(imageName).inspect();
       const newImageId = imageInfo?.Id;
+      const newDigest = pickLocalRepoDigest(imageInfo, parsed.name);
       if (currentImageId) {
         if (updateImageHistory(systemConfig, imageName, currentImageId)) systemConfigDirty = true;
       }
@@ -262,26 +481,183 @@ export async function runAutoUpdateTick({
       }
 
       if (!newImageId || !currentImageId || currentImageId === newImageId) {
+        await safeAppendAudit({
+          ts: Date.now(),
+          kind: "dockerAutoUpdateContainer",
+          tickId,
+          containerId: c.Id,
+          containerName,
+          image: imageName,
+          tagType: parsed.effectiveTag === "latest" ? "latest" : "tag",
+          action: shouldPull ? "checked" : "skipped",
+          reason: currentImageId === newImageId ? "no_update" : "missing_image_id",
+          currentImageId,
+          newImageId: newImageId || "",
+          localDigest,
+          remoteDigest,
+          newDigest,
+          durationMs: Date.now() - opStartedAt,
+        });
         continue;
       }
 
-      const container = docker.getContainer(c.Id);
-      await container.stop();
-      await container.remove();
+      const oldContainer = docker.getContainer(c.Id);
+      const backupName = `${containerName}__flatnas_backup__${Date.now()}`;
+      const backupOptions = buildCreateOptionsFromInspect(info, containerName, currentImageId);
+      const newOptions = buildCreateOptionsFromInspect(info, containerName, imageName);
+      let backupMode = "rename";
 
-      const options = {
-        name: String(info?.Name || "").replace(/^\//, ""),
-        ...info.Config,
-        HostConfig: info.HostConfig,
-        NetworkingConfig: { EndpointsConfig: info.NetworkSettings.Networks },
-      };
-      options.Image = imageName;
+      try {
+        await oldContainer.stop();
+      } catch {}
 
-      const newContainer = await docker.createContainer(options);
-      await newContainer.start();
+      try {
+        if (typeof oldContainer.rename === "function") {
+          await oldContainer.rename({ name: backupName });
+        } else {
+          backupMode = "recreate";
+        }
+      } catch {
+        backupMode = "recreate";
+      }
+
+      if (backupMode === "recreate") {
+        try {
+          await oldContainer.remove();
+        } catch {}
+      }
+
+      let newContainer;
+      try {
+        newContainer = await docker.createContainer(newOptions);
+        await newContainer.start();
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        errors.push({ scope: "updateStart", container: containerName, error: errMsg });
+
+        try {
+          if (newContainer && newContainer.id) {
+            try {
+              await docker.getContainer(newContainer.id).stop();
+            } catch {}
+            try {
+              await docker.getContainer(newContainer.id).remove();
+            } catch {}
+          }
+        } catch {}
+
+        if (backupMode === "rename") {
+          try {
+            await oldContainer.rename({ name: containerName });
+          } catch {}
+          try {
+            await oldContainer.start();
+          } catch {}
+        } else {
+          try {
+            const restored = await docker.createContainer(backupOptions);
+            await restored.start();
+          } catch {}
+        }
+
+        await safeAppendAudit({
+          ts: Date.now(),
+          kind: "dockerAutoUpdateContainer",
+          tickId,
+          containerId: c.Id,
+          containerName,
+          image: imageName,
+          tagType: parsed.effectiveTag === "latest" ? "latest" : "tag",
+          action: "rollback",
+          reason: "start_failed",
+          error: errMsg,
+          currentImageId,
+          newImageId,
+          localDigest,
+          remoteDigest,
+          newDigest,
+          backupMode,
+          durationMs: Date.now() - opStartedAt,
+        });
+        continue;
+      }
+
+      const waitRes = await waitForContainerReady({
+        docker,
+        containerId: newContainer.id,
+        timeoutMs: healthCheck && healthCheck.timeoutMs,
+        intervalMs: healthCheck && healthCheck.intervalMs,
+        sleep,
+      });
+
+      if (!waitRes.ok) {
+        const reason = waitRes.reason || "health_check_failed";
+        errors.push({ scope: "healthCheck", container: containerName, error: reason });
+
+        try {
+          await docker.getContainer(newContainer.id).stop();
+        } catch {}
+        try {
+          await docker.getContainer(newContainer.id).remove();
+        } catch {}
+
+        if (backupMode === "rename") {
+          try {
+            await oldContainer.rename({ name: containerName });
+          } catch {}
+          try {
+            await oldContainer.start();
+          } catch {}
+          await waitForContainerReady({
+            docker,
+            containerId: c.Id,
+            timeoutMs: healthCheck && healthCheck.timeoutMs,
+            intervalMs: healthCheck && healthCheck.intervalMs,
+            sleep,
+          });
+        } else {
+          try {
+            const restored = await docker.createContainer(backupOptions);
+            await restored.start();
+            await waitForContainerReady({
+              docker,
+              containerId: restored.id,
+              timeoutMs: healthCheck && healthCheck.timeoutMs,
+              intervalMs: healthCheck && healthCheck.intervalMs,
+              sleep,
+            });
+          } catch {}
+        }
+
+        await safeAppendAudit({
+          ts: Date.now(),
+          kind: "dockerAutoUpdateContainer",
+          tickId,
+          containerId: c.Id,
+          containerName,
+          image: imageName,
+          tagType: parsed.effectiveTag === "latest" ? "latest" : "tag",
+          action: "rollback",
+          reason,
+          currentImageId,
+          newImageId,
+          localDigest,
+          remoteDigest,
+          newDigest,
+          backupMode,
+          durationMs: Date.now() - opStartedAt,
+        });
+        continue;
+      }
+
       updates++;
-
       await updateContainerIdGlobally(c.Id, newContainer.id, info.Name);
+
+      if (backupMode === "rename") {
+        try {
+          await docker.getContainer(c.Id).remove();
+        } catch {}
+      }
 
       let containersAfter;
       try {
@@ -307,8 +683,37 @@ export async function runAutoUpdateTick({
       for (const f of pruneRes.failed) {
         errors.push({ scope: "pruneImage", imageId: f.id, error: f.error });
       }
+
+      await safeAppendAudit({
+        ts: Date.now(),
+        kind: "dockerAutoUpdateContainer",
+        tickId,
+        containerId: c.Id,
+        containerName,
+        image: imageName,
+        tagType: parsed.effectiveTag === "latest" ? "latest" : "tag",
+        action: "updated",
+        currentImageId,
+        newImageId,
+        localDigest,
+        remoteDigest,
+        newDigest,
+        backupMode,
+        prune: { removed: pruneRes.removed, failed: pruneRes.failed },
+        durationMs: Date.now() - opStartedAt,
+      });
     } catch (e) {
       errors.push({ scope: "container", name, error: e instanceof Error ? e.message : String(e) });
+      await safeAppendAudit({
+        ts: Date.now(),
+        kind: "dockerAutoUpdateContainer",
+        tickId,
+        containerId: c.Id,
+        containerName: String(name || "").replace(/^\//, ""),
+        image: String(c.Image || ""),
+        action: "error",
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -322,6 +727,19 @@ export async function runAutoUpdateTick({
       });
     }
   }
+
+  await safeAppendAudit({
+    ts: Date.now(),
+    kind: "dockerAutoUpdateTick",
+    tickId,
+    enabled: true,
+    ran: true,
+    pulls,
+    updates,
+    pruned,
+    skippedDueToDisk,
+    errors,
+  });
 
   return { enabled: true, ran: true, pulls, updates, pruned, skippedDueToDisk, errors };
 }
