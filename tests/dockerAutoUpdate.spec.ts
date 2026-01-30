@@ -254,6 +254,12 @@ describe("docker auto update", () => {
           State: "running",
         },
       ]),
+      // Ensure shouldPull=true by simulating a digest mismatch
+      getImage: vi.fn(() => ({
+        inspect: vi.fn().mockResolvedValue({ Id: "sha256:old", RepoDigests: ["nginx@sha256:old"] }),
+        distributionInspect: vi.fn((cb) => cb(null, { Descriptor: { digest: "sha256:new" } })),
+        remove: vi.fn().mockResolvedValue(undefined),
+      })),
       pull: vi.fn((imageName, cb) => cb(new Error("network_error"))),
     });
     const si = makeSi();
@@ -468,5 +474,44 @@ describe("docker auto update", () => {
 
     expect(result.updates).toBe(1);
     expect(pull).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips container if it is in disabledContainers list", async () => {
+    const docker = makeDocker({
+      listContainers: vi.fn().mockResolvedValue([
+        {
+          Id: "c1",
+          Names: ["/c1"],
+          Image: "nginx:latest",
+          ImageID: "sha256:old",
+          State: "running",
+        },
+      ]),
+    });
+    const si = makeSi();
+    const systemConfig = { authMode: "single" };
+    const adminData = {
+      widgets: [
+        {
+          id: "docker",
+          type: "docker",
+          data: { autoUpdate: true, disabledContainers: ["c1"] },
+        },
+      ],
+    };
+
+    const result = await runAutoUpdateTick({
+      docker,
+      si,
+      systemConfig,
+      adminData,
+      systemConfigFilePath: "system.json",
+      atomicWrite: vi.fn().mockResolvedValue(undefined),
+      updateContainerIdGlobally: vi.fn(),
+    });
+
+    expect(result.updates).toBe(0);
+    expect(result.pulls).toBe(0);
+    expect(docker.pull).not.toHaveBeenCalled();
   });
 });

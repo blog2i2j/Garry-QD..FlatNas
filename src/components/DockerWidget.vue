@@ -712,6 +712,33 @@ const getContainerPublicUrl = (c: DockerContainer): string => {
   return `${scheme}://${host}:${port}`;
 };
 
+const getDisabledContainers = () => {
+  if (!props.widget || !props.widget.data) return [];
+  return (props.widget.data.disabledContainers as string[]) || [];
+};
+
+const isAutoUpdateDisabled = (id: string) => {
+  const list = getDisabledContainers();
+  return list.includes(id);
+};
+
+const toggleAutoUpdateDisabled = (id: string, disabled: boolean) => {
+  if (!props.widget) return;
+  if (!props.widget.data) props.widget.data = {};
+
+  const list = new Set(getDisabledContainers());
+  if (disabled) {
+    list.add(id);
+  } else {
+    list.delete(id);
+  }
+
+  props.widget.data.disabledContainers = Array.from(list);
+  store.saveData();
+
+  showToast(disabled ? "已禁止该容器自动升级" : "已恢复该容器自动升级");
+};
+
 const openContainerUrl = (c: DockerContainer) => {
   const url = getContainerLanUrl(c);
   if (url) window.open(url, "_blank");
@@ -979,25 +1006,22 @@ const getStatusColor = (state: string) => {
         <div
           v-for="c in containers"
           :key="c.Id"
-          class="flex flex-col gap-1 p-1.5 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-100 dark:border-gray-600"
+          class="flex flex-col gap-1 p-1.5 bg-white rounded-lg border border-black"
         >
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2 overflow-hidden flex-1">
               <div :class="['w-2 h-2 rounded-full shrink-0', getStatusColor(c.State)]"></div>
               <div class="flex flex-col overflow-hidden min-w-0">
-                <span
-                  class="font-medium text-sm truncate text-gray-700 dark:text-gray-200"
-                  :title="c.Names?.[0] || ''"
-                >
+                <span class="font-medium text-sm truncate text-black" :title="c.Names?.[0] || ''">
                   {{ (c.Names?.[0] || "").replace(/^\//, "") }}
                 </span>
-                <span class="text-[10px] text-gray-400 truncate block" :title="c.Image">
+                <span class="text-[10px] text-black truncate block" :title="c.Image">
                   {{ c.Image }}
                 </span>
               </div>
               <button
                 @click="promptPublicHost(c)"
-                class="text-[10px] text-blue-500 hover:underline px-1 shrink-0"
+                class="text-[10px] text-black hover:underline px-1 shrink-0"
                 title="添加外网地址"
               >
                 添加外网地址
@@ -1026,7 +1050,7 @@ const getStatusColor = (state: string) => {
               </div>
             </div>
             <div class="flex flex-col items-end shrink-0 ml-2">
-              <span class="text-[10px] text-gray-400">{{ c.Status }}</span>
+              <span class="text-[10px] text-black">{{ c.Status }}</span>
               <div class="flex gap-1 mt-0.5" v-if="getDetectedPorts(c).length">
                 <span
                   v-for="(p, i) in getDetectedPorts(c).slice(0, 1)"
@@ -1035,7 +1059,7 @@ const getStatusColor = (state: string) => {
                 >
                   {{ p }}
                 </span>
-                <span v-if="getDetectedPorts(c).length > 1" class="text-[9px] text-gray-400"
+                <span v-if="getDetectedPorts(c).length > 1" class="text-[9px] text-black"
                   >+{{ getDetectedPorts(c).length - 1 }}</span
                 >
               </div>
@@ -1044,49 +1068,53 @@ const getStatusColor = (state: string) => {
 
           <div class="grid grid-cols-2 gap-2 mt-1">
             <div class="flex flex-col gap-1">
-              <div class="flex justify-between text-[10px] text-gray-500 items-end">
+              <div
+                class="flex justify-between text-[10px] text-gray-500 dark:text-gray-300 items-end"
+              >
                 <span>CPU</span>
                 <span v-if="c.stats" class="font-mono">{{ c.stats.cpuPercent.toFixed(1) }}%</span>
-                <span v-else class="text-gray-300">--</span>
+                <span v-else class="text-gray-300 dark:text-gray-500">--</span>
               </div>
-              <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-1.5 bg-gray-100 dark:bg-gray-600 rounded-full overflow-hidden">
                 <div
                   class="h-full bg-blue-500 rounded-full transition-all duration-500"
                   :style="{ width: c.stats ? Math.min(c.stats.cpuPercent, 100) + '%' : '0%' }"
                 ></div>
               </div>
               <div
-                class="flex justify-between text-[9px] text-gray-400 mt-0.5 font-mono items-center"
+                class="flex justify-between text-[9px] text-gray-400 dark:text-gray-400 mt-0.5 font-mono items-center"
               >
                 <span>NET</span>
                 <span v-if="c.stats && c.stats.netIO" class="tracking-tighter">
                   ↓{{ formatBytes(c.stats.netIO.rx) }} ↑{{ formatBytes(c.stats.netIO.tx) }}
                 </span>
-                <span v-else class="text-gray-300">--</span>
+                <span v-else class="text-gray-300 dark:text-gray-500">--</span>
               </div>
             </div>
             <div class="flex flex-col gap-1">
-              <div class="flex justify-between text-[10px] text-gray-500 items-end">
+              <div
+                class="flex justify-between text-[10px] text-gray-500 dark:text-gray-300 items-end"
+              >
                 <span>MEM</span>
                 <span v-if="c.stats" class="font-mono"
                   >{{ (c.stats.memUsage / 1024 / 1024).toFixed(0) }}MB</span
                 >
-                <span v-else class="text-gray-300">--</span>
+                <span v-else class="text-gray-300 dark:text-gray-500">--</span>
               </div>
-              <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-1.5 bg-gray-100 dark:bg-gray-600 rounded-full overflow-hidden">
                 <div
                   class="h-full bg-purple-500 rounded-full transition-all duration-500"
                   :style="{ width: c.stats ? Math.min(c.stats.memPercent, 100) + '%' : '0%' }"
                 ></div>
               </div>
               <div
-                class="flex justify-between text-[9px] text-gray-400 mt-0.5 font-mono items-center"
+                class="flex justify-between text-[9px] text-gray-400 dark:text-gray-400 mt-0.5 font-mono items-center"
               >
                 <span>I/O</span>
                 <span v-if="c.stats && c.stats.blockIO" class="tracking-tighter">
                   R{{ formatBytes(c.stats.blockIO.read) }} W{{ formatBytes(c.stats.blockIO.write) }}
                 </span>
-                <span v-else class="text-gray-300">--</span>
+                <span v-else class="text-gray-300 dark:text-gray-500">--</span>
               </div>
             </div>
           </div>
@@ -1098,7 +1126,7 @@ const getStatusColor = (state: string) => {
               <button
                 v-if="c.State === 'running' && getPreferredPort(c)"
                 @click="openContainerUrl(c)"
-                class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
+                class="px-2 py-1 hover:bg-gray-100 text-black rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="内网打开"
               >
                 <svg
@@ -1118,7 +1146,7 @@ const getStatusColor = (state: string) => {
               <button
                 v-if="c.State === 'running' && getPreferredPort(c)"
                 @click="openContainerPublicUrl(c)"
-                class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
+                class="px-2 py-1 hover:bg-gray-100 text-black rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="外网打开"
               >
                 <svg
@@ -1138,7 +1166,7 @@ const getStatusColor = (state: string) => {
               <button
                 v-if="c.State === 'running'"
                 @click="addToHome(c)"
-                class="px-2 py-1 hover:bg-gray-100 text-gray-600 rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
+                class="px-2 py-1 hover:bg-gray-100 text-black rounded transition-colors text-xs flex items-center gap-1 whitespace-nowrap"
                 title="添加到桌面"
               >
                 <svg
@@ -1149,12 +1177,27 @@ const getStatusColor = (state: string) => {
                 >
                   <path
                     fill-rule="evenodd"
-                    d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z"
+                    d="M12 2.25c-5.385 0-9.75 4.365-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z"
                     clip-rule="evenodd"
                   />
                 </svg>
                 <span>添加卡片</span>
               </button>
+
+              <label
+                class="flex items-center gap-1 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded select-none"
+                title="勾选后将跳过此容器的自动升级"
+              >
+                <input
+                  type="checkbox"
+                  class="rounded text-blue-600 focus:ring-blue-500 w-3 h-3 cursor-pointer"
+                  :checked="isAutoUpdateDisabled(c.Id)"
+                  @change="
+                    (e) => toggleAutoUpdateDisabled(c.Id, (e.target as HTMLInputElement).checked)
+                  "
+                />
+                <span class="text-xs text-black">禁止自动升级</span>
+              </label>
             </div>
 
             <button

@@ -2,6 +2,7 @@ export function getAutoUpdateSettingsFromAdminData(adminData) {
   const dockerWidget = adminData?.widgets?.find((w) => w.type === "docker" || w.id === "docker");
   const data = dockerWidget?.data || {};
   const enabled = Boolean(data.autoUpdate);
+  const disabledContainers = Array.isArray(data.disabledContainers) ? data.disabledContainers : [];
   const keepImagesRaw = data.autoUpdateKeepImages;
   const keepImages = Number.isFinite(Number(keepImagesRaw))
     ? Math.max(1, Math.min(20, Math.floor(Number(keepImagesRaw))))
@@ -17,7 +18,7 @@ export function getAutoUpdateSettingsFromAdminData(adminData) {
     ? Math.max(0, Math.min(200, Math.floor(Number(maxPruneRaw))))
     : 30;
 
-  return { enabled, keepImages, minFreeBytes, maxPrunePerRun };
+  return { enabled, disabledContainers, keepImages, minFreeBytes, maxPrunePerRun };
 }
 
 export function parseImageReference(imageRef) {
@@ -386,6 +387,24 @@ export async function runAutoUpdateTick(opts) {
   for (const c of containers) {
     if (c.State !== "running") continue;
     const name = Array.isArray(c.Names) && c.Names[0] ? c.Names[0] : "";
+
+    if (settings.disabledContainers.includes(c.Id)) {
+      await safeAppendAudit({
+        ts: Date.now(),
+        kind: "dockerAutoUpdateContainer",
+        tickId,
+        containerId: c.Id,
+        containerName: String(name).replace(/^\//, ""),
+        image: c.Image || "",
+        tagType: "unknown",
+        action: "skip",
+        reason: "disabled_by_user",
+        currentImageId: c.ImageID,
+        durationMs: 0,
+      });
+      continue;
+    }
+
     if (
       String(c.Image || "").includes("flatnas") ||
       (Array.isArray(c.Names) && c.Names.some((n) => String(n).toLowerCase().includes("flatnas")))
